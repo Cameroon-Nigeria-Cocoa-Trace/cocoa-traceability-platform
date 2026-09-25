@@ -101,7 +101,7 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3 sm:gap-4">
-              <Link href="/signup" className="group flex items-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-[1.05rem] font-semibold text-[#073b2b] transition hover:bg-[#d2ffb9] sm:gap-3 sm:px-7 sm:py-4 sm:text-base">
+              <Link href="/signup" className="group flex items-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-[1rem] font-semibold text-[#073b2b] transition hover:bg-[#d2ffb9] sm:gap-3 sm:px-7 sm:py-4 sm:text-base">
                 Register Your Farm
                 <ArrowRight size={18} className="transition group-hover:translate-x-1" />
               </Link>
@@ -185,7 +185,7 @@ export default function HomePage() {
               Every movement creates a traceable digital record,
               preserving the origin and chain of custody of the cocoa.
             </p>
-            <Link href="/signup" className="group mt-4 inline-flex items-center gap-3 rounded-full bg-[#075d3d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b8f58b] hover:text-black sm:px-7 sm:py-4 sm:text-base">
+            <Link href="/signup" className="group mt-4 inline-flex items-center gap-3 rounded-full bg-[#075d3d] px-5 py-3 text-sm font-semibold text-white! transition hover:bg-[#b8f58b] hover:text-black sm:px-7 sm:py-4 sm:text-base">
                 Learn more
                 <ArrowRight size={18} className="transition group-hover:translate-x-1" />
             </Link>
@@ -225,13 +225,67 @@ export default function HomePage() {
       </div>
     </section>
 
-    <section className="w-full overflow-hidden bg-[#e7ece1]">
+    <section className="relative w-full overflow-hidden bg-[#e7ece1]">
+      {/* The Background Image */}
       <div className="w-full">
         <img
           src="/images/cameroon-crossriver-section.jpg"
           alt="Cameroon cocoa farm"
-          className="h-[350px] w-full object-cover object-center sm:h-[350px] md:h-[400px] lg:h-full"
+          className="h-[400px] w-full object-cover object-center sm:h-[400px] md:h-[450px] lg:h-full"
         />
+      </div>
+
+      {/* Dynamic Text & Button Overlay Container */}
+      <div className="absolute inset-0 flex items-center justify-center pb-10 lg:pb-15 lg:pr-23">
+        <div className="w-full max-w-7xl px-5 sm:px-7 lg:px-10">
+          
+          {/* 
+            This wrapper positions your text directly in the center column. 
+            It aligns perfectly with the visual gap between the cocoa pods and the phone mockup.
+          */}
+          <div className="ml-auto mr-auto max-w-md text-left md:max-w-xl lg:ml-[38%] lg:mr-0 lg:max-w-lg xl:ml-[40%]">
+            
+            {/* Top Tagline */}
+            <p className="text-[10px] font-bold tracking-widest text-[#b8f58b] uppercase sm:text-xs">
+              Trusted by Farmers. Powered by Technology.
+            </p>
+
+            {/* Main Heading */}
+            <h2 className="mt-2 text-xl font-bold leading-tight text-white sm:text-3xl md:text-4xl">
+              CocoaTrace connects Cameroon's cocoa to the world.
+            </h2>
+
+            {/* 4-Column Stats Grid */}
+            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-2">
+              <div>
+                <div className="text-xl font-black text-white sm:text-2xl">100%</div>
+                <div className="text-[10px] leading-tight text-white/70 sm:text-xs">Traceable from farm to export</div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-white sm:text-2xl">500+</div>
+                <div className="text-[10px] leading-tight text-white/70 sm:text-xs">Registered Farmers</div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-white sm:text-2xl">50+</div>
+                <div className="text-[10px] leading-tight text-white/70 sm:text-xs">Active Buyers</div>
+              </div>
+              <div>
+                <div className="text-xl font-black text-white sm:text-2xl">10+</div>
+                <div className="text-[10px] leading-tight text-white/70 sm:text-xs">Logistics Partners</div>
+              </div>
+            </div>
+
+            {/* Call to Action Button */}
+            <div className="mt-6">
+              <button className="flex items-center gap-2 rounded-full bg-[#b8f58b] px-6 py-2.5 text-xs font-bold text-[#062d22] transition hover:bg-[#d0ffb0] sm:text-[0.8rem]">
+                Join the Movement 
+                <span className="text-sm font-light">→</span>
+              </button>
+            </div>
+
+          </div>
+
+        </div>
       </div>
     </section>
 
