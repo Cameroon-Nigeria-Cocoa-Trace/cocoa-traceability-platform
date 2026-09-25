@@ -81,14 +81,14 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-t from-[#062c20] via-transparent to-transparent" />
         </div>
 
-        <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-25 sm:px-7 md:px-10 lg:px-18">
+        <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-20 sm:px-7 md:px-10 lg:px-18">
           <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.22em] text-[#b8f58b]">
-              <span className="h-px w-8 bg-[#b8f58b]" />
+            <div className="mb-3 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b8f58b] sm:text-xs sm:tracking-[0.22em]">
+              <span className="h-px w-6 bg-[#b8f58b] sm:w-8" />
               Cameroon — Cross River Cocoa Traceability
             </div>
 
-            <h1 className="text-4xl font-semibold leading-[0.95] tracking-[-0.04em] text-white sm:text-6xl lg:text-[5rem]">
+            <h1 className="text-[2.7rem] font-semibold leading-[0.95] tracking-[-0.04em] text-white sm:text-[4rem] lg:text-[5rem]">
               Genuine Cocoa.
               <br />
               <span className="text-white">Known Origin.</span>
@@ -96,17 +96,17 @@ export default function HomePage() {
               <span className="text-[#b8f58b]">Global Trust.</span>
             </h1>
 
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-white/75 sm:text-xl">
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/75 sm:text-lg sm:leading-8">
               A transparent, secure and compliant platform that tracks Cameroonian cocoa from farm to international market, ensuring traceability, authenticity and trust for buyers and consumers worldwide.
             </p>
 
-            <div className="mt-8 flex flex-wrap gap-4">
-              <Link href="/signup" className="group flex items-center gap-3 rounded-full bg-[#b8f58b] px-7 py-4 font-semibold text-[#073b2b] transition hover:bg-[#d2ffb9]">
+            <div className="mt-8 flex flex-wrap gap-3 sm:gap-4">
+              <Link href="/signup" className="group flex items-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-[1.05rem] font-semibold text-[#073b2b] transition hover:bg-[#d2ffb9] sm:gap-3 sm:px-7 sm:py-4 sm:text-base">
                 Register Your Farm
                 <ArrowRight size={18} className="transition group-hover:translate-x-1" />
               </Link>
 
-              <button type="button" className="flex items-center gap-3 rounded-full border border-white/30 px-7 py-4 font-medium text-white backdrop-blur transition hover:bg-white/10">
+              <button type="button" className="flex items-center gap-2 rounded-full border border-white/30 px-5 py-3 text-sm font-medium text-white backdrop-blur transition hover:bg-white/10 sm:gap-3 sm:px-7 sm:py-4 sm:text-base">
                 <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/50">
                   <Play size={12} fill="currentColor" />
                 </span>
@@ -140,7 +140,7 @@ export default function HomePage() {
             <div
               key={item.title}
               /* Added relative layout and pseudo-element classes for responsive dividers */
-              className="group relative px-7 py-7 text-center transition hover:bg-[#f5f8f2]
+              className="group relative px-7 py-7 text-center text-[1.2rem] transition hover:bg-[#f5f8f2]
                         after:absolute after:bg-gray-200
                         /* Mobile/Stacked: Short line at the bottom */
                         after:bottom-0 after:left-1/4 after:h-[1px] after:w-1/2
@@ -167,25 +167,25 @@ export default function HomePage() {
       </div>
     </section>
 
-    <section className="bg-[#f4f6ef] py-24">
+    <section className="bg-[#f4f6ef] py-16 sm:py-24">
       <div className="mx-auto max-w-[88rem] px-6 lg:px-8">
-        <div className="grid gap-16 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#08744b]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#08744b] sm:text-xs">
               How it works
             </p>
 
-            <h2 className="mt-5 text-4xl font-semibold tracking-tight text-[#10251d] sm:text-5xl">
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-[#10251d] sm:mt-5 sm:text-4xl lg:text-5xl">
               From farm
               <br />
               to global market.
             </h2>
 
-            <p className="mt-4 max-w-md text-lg leading-8 text-slate-500">
+            <p className="mt-4 max-w-md text-base leading-7 text-slate-500 sm:text-lg sm:leading-8">
               Every movement creates a traceable digital record,
               preserving the origin and chain of custody of the cocoa.
             </p>
-            <Link href="/signup" className="group mt-4 max-w-43 flex items-center gap-3 rounded-full bg-[#075d3d] px-7 py-4 font-semibold text-white! transition hover:bg-[#b8f58b] hover:text-black!">
+            <Link href="/signup" className="group mt-4 inline-flex items-center gap-3 rounded-full bg-[#075d3d] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b8f58b] hover:text-black sm:px-7 sm:py-4 sm:text-base">
                 Learn more
                 <ArrowRight size={18} className="transition group-hover:translate-x-1" />
             </Link>
@@ -225,9 +225,13 @@ export default function HomePage() {
       </div>
     </section>
 
-    <section>
-      <div>
-        <img src="/images/cameroon-crossriver-section.jpg" alt="Cameroon cocoa farm" className="h-full w-full object-cover" />
+    <section className="w-full overflow-hidden bg-[#e7ece1]">
+      <div className="w-full">
+        <img
+          src="/images/cameroon-crossriver-section.jpg"
+          alt="Cameroon cocoa farm"
+          className="h-[350px] w-full object-cover object-center sm:h-[350px] md:h-[400px] lg:h-full"
+        />
       </div>
     </section>
 
@@ -247,15 +251,15 @@ export default function HomePage() {
       </div>
     </section>
 
-    <section className="bg-[#f7f8f3] px-6 py-20">
-      <div className="mx-auto max-w-[85rem] overflow-hidden rounded-[2rem] bg-[#06432f] px-8 py-14 text-white sm:px-14">
-        <div className="flex flex-col items-start justify-between gap-10 md:flex-row md:items-center">
+    <section className="bg-[#f7f8f3] px-4 py-14 sm:px-6 sm:py-20">
+      <div className="mx-auto max-w-[85rem] overflow-hidden rounded-[2rem] bg-[#06432f] px-6 py-10 text-white sm:px-14 sm:py-14">
+        <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
           <div>
-            <p className="text-sm font-medium text-[#b8f58b]">
+            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#b8f58b] sm:text-sm sm:tracking-[0.2em]">
               BUILDING A BETTER COCOA SUPPLY CHAIN
             </p>
 
-            <h2 className="mt-3 max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2 className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl lg:text-4xl">
               Better traceability.
               <br />
               Greater confidence.
@@ -264,7 +268,7 @@ export default function HomePage() {
 
           <Link
             href="/register"
-            className="group flex shrink-0 items-center gap-3 rounded-full bg-[#b8f58b] px-7 py-4 font-semibold text-[#073b2b]!"
+            className="group inline-flex shrink-0 items-center gap-3 rounded-full bg-[#b8f58b] px-5 py-3 text-sm font-semibold text-[#073b2b] sm:px-7 sm:py-4 sm:text-base"
           >
             Get Started
             <ArrowRight

@@ -113,7 +113,7 @@ export function Navbar() {
           <div className="mb-5 mt-3 rounded-2xl border border-white/10 bg-[#073b2b]/95 p-6 shadow-[0_20px_35px_rgba(5,22,17,0.28)] lg:hidden">
             <div className="flex flex-col gap-5">
               {links.map(([label, href]) => (
-                <Link key={label} href={href} onClick={() => setOpen(false)} className="text-white/90">
+                <Link key={label} href={href} onClick={() => setOpen(false)} className="text-white!">
                   {label}
                 </Link>
               ))}
