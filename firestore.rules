@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net - Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Security Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Entity Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'displayName', 'email', 'role', 'createdAt']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.email is string && data.email.size() <= 120 &&
+        (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+        (!('role' in data) || (data.role in ['farmer', 'buyer', 'cooperative', 'admin'])) &&
+        data.createdAt is string && data.createdAt.size() <= 40;
+    }
+
+    function isValidFarm(data) {
+      return data.keys().hasAll(['id', 'farmerId', 'farmName', 'region', 'geolocation', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'farmerId', 'farmerName', 'farmName', 'region', 'cooperative', 'geolocation', 'sizeHectares', 'eudrCompliant', 'createdAt']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.farmerId is string && data.farmerId.size() <= 128 &&
+        data.farmName is string && data.farmName.size() > 0 && data.farmName.size() <= 120 &&
+        data.region is string && data.region.size() > 0 && data.region.size() <= 100 &&
+        data.geolocation is string && data.geolocation.size() > 0 && data.geolocation.size() <= 60 &&
+        (!('farmerName' in data) || (data.farmerName is string && data.farmerName.size() <= 100)) &&
+        (!('cooperative' in data) || (data.cooperative is string && data.cooperative.size() <= 120)) &&
+        (!('sizeHectares' in data) || (data.sizeHectares is number)) &&
+        (!('eudrCompliant' in data) || (data.eudrCompliant is bool)) &&
+        data.createdAt is string && data.createdAt.size() <= 40;
+    }
+
+    function isValidProductLot(data) {
+      return data.keys().hasAll(['id', 'title', 'seller', 'origin', 'quantity', 'price', 'compliance', 'status', 'trace', 'route']) &&
+        data.keys().hasOnly(['id', 'title', 'seller', 'sellerId', 'origin', 'geolocation', 'quantity', 'price', 'compliance', 'status', 'trace', 'route', 'description', 'createdAt']) &&
+        data.id is string && data.id.size() <= 64 &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 120 &&
+        data.seller is string && data.seller.size() > 0 && data.seller.size() <= 100 &&
+        (!('sellerId' in data) || (data.sellerId is string && data.sellerId.size() <= 128)) &&
+        data.origin is string && data.origin.size() > 0 && data.origin.size() <= 120 &&
+        (!('geolocation' in data) || (data.geolocation is string && data.geolocation.size() <= 60)) &&
+        data.quantity is string && data.quantity.size() <= 50 &&
+        data.price is string && data.price.size() <= 50 &&
+        data.compliance is string && data.compliance.size() <= 60 &&
+        data.status in ['Available', 'Reserved', 'Sold', 'In-Transit'] &&
+        data.trace is string && data.trace.size() <= 64 &&
+        data.route is string && data.route.size() <= 120 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+        (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 40));
+    }
+
+    function isValidTraceEvent(data) {
+      return data.keys().hasAll(['id', 'lotId', 'step', 'detail', 'date']) &&
+        data.keys().hasOnly(['id', 'lotId', 'step', 'detail', 'date', 'verified']) &&
+        data.id is string && data.id.size() <= 64 &&
+        data.lotId is string && data.lotId.size() <= 64 &&
+        data.step is string && data.step.size() > 0 && data.step.size() <= 100 &&
+        data.detail is string && data.detail.size() > 0 && data.detail.size() <= 500 &&
+        data.date is string && data.date.size() > 0 && data.date.size() <= 50 &&
+        (!('verified' in data) || (data.verified is bool));
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && (!('role' in incoming()) || incoming().role != 'admin');
+      allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName']) &&
+        incoming().id == existing().id &&
+        incoming().email == existing().email;
+      allow delete: if isAdmin();
+    }
+
+    // Farms Collection
+    match /farms/{farmId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(farmId) && isValidFarm(incoming()) && incoming().farmerId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(farmId) && (existing().farmerId == request.auth.uid || isAdmin()) &&
+        isValidFarm(incoming()) &&
+        incoming().farmerId == existing().farmerId &&
+        incoming().id == existing().id &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['farmName', 'region', 'cooperative', 'geolocation', 'sizeHectares', 'eudrCompliant']);
+      allow delete: if isSignedIn() && isValidId(farmId) && (existing().farmerId == request.auth.uid || isAdmin());
+    }
+
+    // Marketplace / Traceable Cocoa Lots
+    match /lots/{lotId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(lotId) && isValidProductLot(incoming()) && (incoming().sellerId == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && isValidId(lotId) && isValidProductLot(incoming()) &&
+        (existing().sellerId == request.auth.uid || isAdmin()) &&
+        incoming().sellerId == existing().sellerId &&
+        incoming().id == existing().id &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['title', 'price', 'status', 'description', 'route', 'compliance', 'quantity']);
+      allow delete: if isSignedIn() && isValidId(lotId) && (existing().sellerId == request.auth.uid || isAdmin());
+
+      // Sub-collection: Chain of Custody Trace Events
+      match /events/{eventId} {
+        allow get, list: if true;
+        allow create: if isSignedIn() && isValidId(eventId) && isValidTraceEvent(incoming()) &&
+          incoming().lotId == lotId &&
+          (get(/databases/$(database)/documents/lots/$(lotId)).data.sellerId == request.auth.uid || isAdmin());
+        allow update, delete: if isAdmin();
+      }
+    }
+  }
+}

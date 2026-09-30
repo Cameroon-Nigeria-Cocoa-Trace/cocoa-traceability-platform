@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation"; // FIXED: Imported pathname hook for dynamic tracking
 import { Globe2, Menu, X } from "lucide-react";
 import { useState } from "react";
+import { useFirebase } from "@/context/FirebaseContext";
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname(); // FIXED: Initialized tracking state
+  const { user, logout } = useFirebase();
 
   const links = [
     ["Home", "/"],
@@ -91,9 +93,24 @@ export function Navbar() {
               </svg>
             </div>
 
-            <Link href="/login" className="rounded-full border border-white/25 bg-white/5 px-5 py-2.5 text-sm font-medium text-white! transition hover:bg-white/10">
-              Login
-            </Link>
+            {user ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-white/80 max-w-[120px] truncate">
+                  {user.displayName || user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => logout()}
+                  className="rounded-full border border-white/25 bg-white/5 px-4 py-2 text-xs font-medium text-white! transition hover:bg-white/10 cursor-pointer"
+                >
+                  Log out
+                </button>
+              </div>
+            ) : (
+              <Link href="/login" className="rounded-full border border-white/25 bg-white/5 px-5 py-2.5 text-sm font-medium text-white! transition hover:bg-white/10">
+                Login
+              </Link>
+            )}
 
             <Link href="/signup" className="rounded-full bg-[#b8f58b] px-5 py-2.5 text-sm font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
               Register Your Farm

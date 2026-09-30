@@ -1,0 +1,222 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "App user profile with role and contact information.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Firebase Auth UID",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Full name of the user",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the user",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "description": "User role",
+          "enum": ["farmer", "buyer", "cooperative", "admin"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "email", "createdAt"]
+    },
+    "Farm": {
+      "title": "Farm",
+      "description": "Registered cocoa farm plot with geolocation and EUDR compliance info.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique farm record ID",
+          "maxLength": 128
+        },
+        "farmerId": {
+          "type": "string",
+          "description": "UID of the registered farmer",
+          "maxLength": 128
+        },
+        "farmerName": {
+          "type": "string",
+          "description": "Farmer full name",
+          "maxLength": 100
+        },
+        "farmName": {
+          "type": "string",
+          "description": "Name of the farm plot",
+          "maxLength": 120
+        },
+        "region": {
+          "type": "string",
+          "description": "Cameroon administrative region (e.g. Southwest, Northwest, Adamawa)",
+          "maxLength": 100
+        },
+        "cooperative": {
+          "type": "string",
+          "description": "Cooperative name or aggregator",
+          "maxLength": 120
+        },
+        "geolocation": {
+          "type": "string",
+          "description": "GPS coordinates (latitude, longitude)",
+          "maxLength": 60
+        },
+        "sizeHectares": {
+          "type": "number",
+          "description": "Plot size in hectares"
+        },
+        "eudrCompliant": {
+          "type": "boolean",
+          "description": "Whether due diligence requirements are verified"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "farmerId", "farmName", "region", "geolocation", "createdAt"]
+    },
+    "ProductLot": {
+      "title": "ProductLot",
+      "description": "Traceable Cameroonian cocoa lot available in the marketplace or under due diligence.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Lot identifier (e.g. LOT-CR-081)",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "description": "Lot title",
+          "maxLength": 120
+        },
+        "seller": {
+          "type": "string",
+          "description": "Seller or cooperative name",
+          "maxLength": 100
+        },
+        "sellerId": {
+          "type": "string",
+          "description": "UID of the seller or creator",
+          "maxLength": 128
+        },
+        "origin": {
+          "type": "string",
+          "description": "Cameroon origin locality",
+          "maxLength": 120
+        },
+        "geolocation": {
+          "type": "string",
+          "description": "Plot geolocation coordinates",
+          "maxLength": 60
+        },
+        "quantity": {
+          "type": "string",
+          "description": "Quantity description (e.g. 2,480 kg)",
+          "maxLength": 50
+        },
+        "price": {
+          "type": "string",
+          "description": "Price tag (e.g. $3,420)",
+          "maxLength": 50
+        },
+        "compliance": {
+          "type": "string",
+          "description": "EUDR compliance badge text",
+          "maxLength": 60
+        },
+        "status": {
+          "type": "string",
+          "description": "Current status",
+          "enum": ["Available", "Reserved", "Sold", "In-Transit"]
+        },
+        "trace": {
+          "type": "string",
+          "description": "Traceability certificate code",
+          "maxLength": 64
+        },
+        "route": {
+          "type": "string",
+          "description": "Logistics and trade corridor route",
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "Lot description and provenance narrative",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Record creation timestamp",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "title", "seller", "origin", "quantity", "price", "compliance", "status", "trace", "route"]
+    },
+    "TraceEvent": {
+      "title": "TraceEvent",
+      "description": "Supply chain custody milestone for a cocoa lot.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique event identifier",
+          "maxLength": 64
+        },
+        "lotId": {
+          "type": "string",
+          "description": "Parent cocoa lot ID",
+          "maxLength": 64
+        },
+        "step": {
+          "type": "string",
+          "description": "Milestone title (e.g. Producer plot geofence)",
+          "maxLength": 100
+        },
+        "detail": {
+          "type": "string",
+          "description": "Milestone detail and provenance verification",
+          "maxLength": 500
+        },
+        "date": {
+          "type": "string",
+          "description": "Date or period of occurrence",
+          "maxLength": 50
+        }
+      },
+      "required": ["id", "lotId", "step", "detail", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile records accessible by the user."
+    },
+    "/farms/{farmId}": {
+      "schema": "Farm",
+      "description": "Registered farm plots georeferenced to Cameroon."
+    },
+    "/lots/{lotId}": {
+      "schema": "ProductLot",
+      "description": "Traceable cocoa marketplace and due-diligence lots."
+    },
+    "/lots/{lotId}/events/{eventId}": {
+      "schema": "TraceEvent",
+      "description": "Sub-collection of custody milestones for a specific lot."
+    }
+  }
+}
