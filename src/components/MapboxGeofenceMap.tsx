@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { MapPin, Maximize2 } from "lucide-react";
+import { MapPin, Maximize2, Crosshair } from "lucide-react";
 import { MAPBOX_TOKEN, getMapStyle } from "@/lib/mapStyles";
 
 export interface PlotPolygonData {
@@ -24,6 +24,7 @@ interface MapboxGeofenceMapProps {
   isWalking?: boolean;
   currentPosition?: [number, number] | null;
   interactiveDrawing?: boolean;
+  autoFollowUser?: boolean;
   onPolygonChange?: (polygon: [number, number][]) => void;
   heightClass?: string;
   selectedPlotId?: string | null;
@@ -31,7 +32,7 @@ interface MapboxGeofenceMapProps {
 }
 
 export default function MapboxGeofenceMap({
-  initialCenter = [9.1245, 4.5912], // Ekondo-Titi / Ndian, Cameroon
+  initialCenter = [9.1245, 4.5912], // Default Cameroon Cocoa Belt
   initialZoom = 15,
   activePolygon = [],
   existingPlots = [],
@@ -39,6 +40,7 @@ export default function MapboxGeofenceMap({
   isWalking = false,
   currentPosition = null,
   interactiveDrawing = false,
+  autoFollowUser = true,
   onPolygonChange,
   heightClass = "h-[420px]",
   selectedPlotId,
@@ -48,6 +50,7 @@ export default function MapboxGeofenceMap({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const hasNavigatedToUserRef = useRef(false);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapStyle, setMapStyle] = useState<"satellite" | "streets" | "outdoors">("satellite");
@@ -61,10 +64,12 @@ export default function MapboxGeofenceMap({
       mapboxgl.accessToken = MAPBOX_TOKEN;
     }
 
+    const startCenter = currentPosition || initialCenter;
+
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: getMapStyle(mapStyle),
-      center: initialCenter,
+      center: startCenter,
       zoom: initialZoom,
       pitch: 30,
       attributionControl: false,
@@ -76,9 +81,25 @@ export default function MapboxGeofenceMap({
     map.on("load", () => {
       setMapLoaded(true);
       mapRef.current = map;
+      map.resize();
+
+      if (currentPosition) {
+        map.flyTo({ center: currentPosition, zoom: 16.5, essential: true, duration: 1000 });
+      }
     });
 
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapRef.current) {
+        mapRef.current.resize();
+      }
+    });
+
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -91,6 +112,21 @@ export default function MapboxGeofenceMap({
       mapRef.current.setStyle(getMapStyle(newStyle));
     }
   };
+
+  // Automatically navigate camera to user's location when GPS fix updates or walking
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded || !currentPosition) return;
+
+    if (isWalking || (!hasNavigatedToUserRef.current && autoFollowUser)) {
+      hasNavigatedToUserRef.current = true;
+      mapRef.current.flyTo({
+        center: currentPosition,
+        zoom: Math.max(mapRef.current.getZoom(), 16.5),
+        essential: true,
+        duration: isWalking ? 800 : 1200,
+      });
+    }
+  }, [currentPosition, isWalking, mapLoaded, autoFollowUser]);
 
   // Map Click Handler for Interactive Point Placement
   useEffect(() => {
@@ -149,16 +185,13 @@ export default function MapboxGeofenceMap({
             data: geojsonData,
           });
 
-          const isSelected = selectedPlotId === plot.id;
-          const fillColor = isSelected ? "#b8f58b" : plot.color || "#2a7a33";
-
           map.addLayer({
             id: fillLayerId,
             type: "fill",
             source: sourceId,
             paint: {
-              "fill-color": fillColor,
-              "fill-opacity": isSelected ? 0.45 : 0.28,
+              "fill-color": plot.color || "#22c55e",
+              "fill-opacity": selectedPlotId === plot.id ? 0.55 : 0.3,
             },
           });
 
@@ -167,8 +200,8 @@ export default function MapboxGeofenceMap({
             type: "line",
             source: sourceId,
             paint: {
-              "line-color": isSelected ? "#b8f58b" : "#2a7a33",
-              "line-width": isSelected ? 3.5 : 2,
+              "line-color": plot.color || "#15803d",
+              "line-width": selectedPlotId === plot.id ? 3.5 : 2,
             },
           });
 
@@ -179,10 +212,10 @@ export default function MapboxGeofenceMap({
       }
     });
 
-    // 2. Render Active Polygon (Being created or inspected)
-    const activeSourceId = "active-geofence-source";
-    const activeFillId = "active-geofence-fill";
-    const activeLineId = "active-geofence-line";
+    // 2. Render Active Polygon being mapped
+    const activeSourceId = "active-polygon-source";
+    const activeFillId = "active-polygon-fill";
+    const activeLineId = "active-polygon-line";
 
     if (activePolygon.length >= 3) {
       const closed = [...activePolygon];
@@ -225,17 +258,40 @@ export default function MapboxGeofenceMap({
           type: "line",
           source: activeSourceId,
           paint: {
-            "line-color": "#2d6130",
+            "line-color": "#b8f58b",
+            "line-width": 3.5,
+          },
+        });
+      }
+    } else if (activePolygon.length >= 2) {
+      const lineGeoJSON: GeoJSON.Feature<GeoJSON.LineString> = {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "LineString",
+          coordinates: activePolygon,
+        },
+      };
+
+      if (map.getSource(activeSourceId)) {
+        (map.getSource(activeSourceId) as mapboxgl.GeoJSONSource).setData(lineGeoJSON);
+      } else {
+        map.addSource(activeSourceId, {
+          type: "geojson",
+          data: lineGeoJSON,
+        });
+
+        map.addLayer({
+          id: activeLineId,
+          type: "line",
+          source: activeSourceId,
+          paint: {
+            "line-color": "#b8f58b",
             "line-width": 3,
             "line-dasharray": [2, 1],
           },
         });
       }
-    } else if (map.getSource(activeSourceId)) {
-      (map.getSource(activeSourceId) as mapboxgl.GeoJSONSource).setData({
-        type: "FeatureCollection",
-        features: [],
-      });
     }
 
     // 3. Render Breadcrumb Path (Canopy Walk trail)
@@ -297,12 +353,15 @@ export default function MapboxGeofenceMap({
       markersRef.current.push(marker);
     });
 
-    // 5. User Current Position Marker
+    // 5. User Current Position Marker (Animated Pulse Radar Beacon)
     if (currentPosition) {
       if (!userMarkerRef.current) {
         const userEl = document.createElement("div");
-        userEl.className =
-          "relative flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-[#3b82f6] shadow-lg animate-pulse";
+        userEl.className = "relative flex h-6 w-6 items-center justify-center";
+        userEl.innerHTML = `
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75"></span>
+          <span class="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-sky-500 shadow-lg"></span>
+        `;
         userMarkerRef.current = new mapboxgl.Marker({ element: userEl })
           .setLngLat(currentPosition)
           .addTo(map);
@@ -325,6 +384,25 @@ export default function MapboxGeofenceMap({
   useEffect(() => {
     updateMapLayers();
   }, [updateMapLayers]);
+
+  // Navigate directly to user's location
+  const handleLocateMe = () => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (currentPosition) {
+      map.flyTo({ center: currentPosition, zoom: 17, essential: true, duration: 1000 });
+    } else if (typeof window !== "undefined" && "geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const coords: [number, number] = [pos.coords.longitude, pos.coords.latitude];
+          map.flyTo({ center: coords, zoom: 17, essential: true, duration: 1000 });
+        },
+        (err) => console.warn("Locate error:", err.message),
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+    }
+  };
 
   // Fit bounds helper
   const fitBoundsToPolygon = () => {
@@ -385,6 +463,16 @@ export default function MapboxGeofenceMap({
           </button>
         </div>
 
+        {/* Locate User Current GPS Button */}
+        <button
+          type="button"
+          onClick={handleLocateMe}
+          title="Navigate to My Current Location"
+          className="flex items-center gap-1 rounded-xl bg-sky-500/20 text-sky-300 border border-sky-400/30 px-2.5 py-1 text-[11px] font-semibold transition hover:bg-sky-500/30 cursor-pointer"
+        >
+          <Crosshair size={12} className="animate-spin-slow" /> My Location
+        </button>
+
         {/* Fit Bounds Button */}
         {(activePolygon.length > 0 || breadcrumbs.length > 0) && (
           <button
@@ -393,7 +481,7 @@ export default function MapboxGeofenceMap({
             title="Focus on Farm Perimeter"
             className="flex items-center gap-1 rounded-xl bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-white/20 cursor-pointer"
           >
-            <Maximize2 size={12} /> Focus
+            <Maximize2 size={12} /> Focus Plot
           </button>
         )}
 

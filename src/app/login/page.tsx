@@ -102,6 +102,12 @@ export default function LoginPage() {
         detail: null,
       };
     }
+    if (msg.includes("auth/argument-error")) {
+      return {
+        title: "Please ensure your email and password fields are filled out properly.",
+        detail: null,
+      };
+    }
     return {
       title: err.message,
       detail: null,

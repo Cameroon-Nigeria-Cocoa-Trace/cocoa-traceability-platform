@@ -1,11 +1,6 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import {
   getAuth,
-  initializeAuth,
-  browserLocalPersistence,
-  browserSessionPersistence,
-  inMemoryPersistence,
-  indexedDBLocalPersistence,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
@@ -29,24 +24,8 @@ export const db =
     ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
     : getFirestore(app);
 
-// Initialize Auth with iframe-friendly persistence
-export const auth = (() => {
-  if (typeof window === "undefined") {
-    return getApps().length > 0 ? getAuth(getApp()) : getAuth(app);
-  }
-
-  try {
-    const isIframe = window.self !== window.top;
-    return initializeAuth(app, {
-      persistence: isIframe
-        ? [browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
-        : [indexedDBLocalPersistence, browserLocalPersistence, inMemoryPersistence],
-    });
-  } catch {
-    // If initializeAuth was already called or fails, fallback to getAuth
-    return getAuth(app);
-  }
-})();
+// Initialize Auth (standard getAuth conforms with Firebase SDK specifications and prevents auth/argument-error)
+export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
@@ -59,7 +38,6 @@ export async function loginWithGoogle() {
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err) {
       const code = (err as { code: string }).code;
-      // If popup was blocked by browser iframe policy, fallback to redirect
       if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
         console.warn("Popup blocked or cancelled, attempting signInWithRedirect...");
         await signInWithRedirect(auth, googleProvider);
@@ -84,79 +62,90 @@ export async function signUpWithEmail(
   pass: string,
   displayName?: string
 ) {
+  const cleanEmail = (email || "").trim();
+  const cleanPass = (pass || "").trim();
+  const cleanName = (displayName || "").trim();
+
+  if (!cleanEmail || !cleanPass) {
+    throw new Error("Email and password cannot be empty.");
+  }
+  if (cleanPass.length < 6) {
+    throw new Error("Password must be at least 6 characters.");
+  }
+
   try {
-    // Attempt standard Client SDK with a 3.5s timeout for iframe indexedDB hanging
-    const clientPromise = (async () => {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-      if (displayName && userCredential.user) {
-        await updateProfile(userCredential.user, { displayName });
+    const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPass);
+    if (cleanName && userCredential.user) {
+      try {
+        await updateProfile(userCredential.user, { displayName: cleanName });
+      } catch (pErr) {
+        console.warn("Profile name update notice:", pErr);
       }
-      return userCredential;
-    })();
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("CLIENT_AUTH_TIMEOUT")), 3500)
-    );
-
-    return await Promise.race([clientPromise, timeoutPromise]);
+    }
+    return userCredential;
   } catch (err: unknown) {
-    const isTimeout = err instanceof Error && err.message === "CLIENT_AUTH_TIMEOUT";
-    const isIframe = typeof window !== "undefined" && window.self !== window.top;
-
-    // In iframe or upon timeout, fallback to server-side auth proxy
-    if (isTimeout || isIframe) {
-      console.warn("Using server-side auth proxy for iframe compatibility...");
+    // Attempt fallback to server-side authentication proxy
+    try {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signup", email, password: pass, displayName }),
+        body: JSON.stringify({
+          action: "signup",
+          email: cleanEmail,
+          password: cleanPass,
+          displayName: cleanName,
+        }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to create account.");
+      if (res.ok && data.success && data.user) {
+        return {
+          user: {
+            uid: data.user.uid,
+            email: data.user.email,
+            displayName: data.user.displayName,
+          },
+        } as unknown as UserCredential;
       }
-      return {
-        user: {
-          uid: data.user.uid,
-          email: data.user.email,
-          displayName: data.user.displayName,
-        },
-      } as unknown as UserCredential;
+    } catch {
+      // ignore proxy error if original error is more descriptive
     }
     throw err;
   }
 }
 
 export async function loginWithEmail(email: string, pass: string) {
+  const cleanEmail = (email || "").trim();
+  const cleanPass = (pass || "").trim();
+
+  if (!cleanEmail || !cleanPass) {
+    throw new Error("Email and password cannot be empty.");
+  }
+
   try {
-    const clientPromise = signInWithEmailAndPassword(auth, email, pass);
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("CLIENT_AUTH_TIMEOUT")), 3500)
-    );
-
-    return await Promise.race([clientPromise, timeoutPromise]);
+    return await signInWithEmailAndPassword(auth, cleanEmail, cleanPass);
   } catch (err: unknown) {
-    const isTimeout = err instanceof Error && err.message === "CLIENT_AUTH_TIMEOUT";
-    const isIframe = typeof window !== "undefined" && window.self !== window.top;
-
-    if (isTimeout || isIframe) {
-      console.warn("Using server-side auth proxy for iframe compatibility...");
+    try {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "signin", email, password: pass }),
+        body: JSON.stringify({
+          action: "signin",
+          email: cleanEmail,
+          password: cleanPass,
+        }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Invalid email or password.");
+      if (res.ok && data.success && data.user) {
+        return {
+          user: {
+            uid: data.user.uid,
+            email: data.user.email,
+            displayName: data.user.displayName || cleanEmail.split("@")[0],
+          },
+        } as unknown as UserCredential;
       }
-      return {
-        user: {
-          uid: data.user.uid,
-          email: data.user.email,
-          displayName: data.user.displayName || email.split("@")[0],
-        },
-      } as unknown as UserCredential;
+    } catch {
+      // ignore
     }
     throw err;
   }

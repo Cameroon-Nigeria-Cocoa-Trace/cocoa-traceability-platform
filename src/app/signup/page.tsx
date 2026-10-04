@@ -259,7 +259,11 @@ function SignupContent() {
       console.error(err);
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("auth/operation-not-allowed") || msg.includes("OPERATION_NOT_ALLOWED")) {
-        setAccountError("Email/Password provider is disabled in Firebase console. Enable it in Firebase Console → Authentication → Sign-in method, or use Google / Demo session.");
+        setAccountError("Email/Password provider is disabled in Firebase console. Enable it in Firebase Console → Authentication → Sign-in method, or use Google.");
+      } else if (msg.includes("auth/argument-error")) {
+        setAccountError("Please check that email and password fields are filled out properly.");
+      } else if (msg.includes("auth/email-already-in-use")) {
+        setAccountError("This email address is already registered. Please sign in instead.");
       } else {
         setAccountError(err instanceof Error ? err.message : "Failed to create account.");
       }
@@ -273,7 +277,8 @@ function SignupContent() {
     e.preventDefault();
     setAuthModalError(null);
     const cleanEmail = authModalEmail.trim();
-    if (!cleanEmail || !authModalPassword) {
+    const cleanPass = authModalPassword.trim();
+    if (!cleanEmail || !cleanPass) {
       setAuthModalError("Please provide both email and password.");
       return;
     }
@@ -281,13 +286,13 @@ function SignupContent() {
     try {
       setAuthModalLoading(true);
       if (authModalMode === "signup") {
-        if (authModalPassword.length < 6) {
+        if (cleanPass.length < 6) {
           setAuthModalError("Password must be at least 6 characters.");
           return;
         }
-        await signUpWithEmail(cleanEmail, authModalPassword, authModalName.trim() || farmerName.trim() || undefined);
+        await signUpWithEmail(cleanEmail, cleanPass, authModalName.trim() || farmerName.trim() || undefined);
       } else {
-        await loginWithEmail(cleanEmail, authModalPassword);
+        await loginWithEmail(cleanEmail, cleanPass);
       }
       setShowAuthModal(false);
       // Proceed with registration
@@ -296,7 +301,12 @@ function SignupContent() {
       }, 300);
     } catch (err: unknown) {
       console.error(err);
-      setAuthModalError(err instanceof Error ? err.message : "Authentication failed.");
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("auth/argument-error")) {
+        setAuthModalError("Please check your email and password values.");
+      } else {
+        setAuthModalError(err instanceof Error ? err.message : "Authentication failed.");
+      }
     } finally {
       setAuthModalLoading(false);
     }
