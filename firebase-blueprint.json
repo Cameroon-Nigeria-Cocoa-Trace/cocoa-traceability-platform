@@ -35,7 +35,7 @@
     },
     "Farm": {
       "title": "Farm",
-      "description": "Registered cocoa farm plot with geolocation and EUDR compliance info.",
+      "description": "Registered cocoa farm plot with onboarding details, harvest batches, trade route and compliance records.",
       "type": "object",
       "properties": {
         "id": {
@@ -53,6 +53,16 @@
           "description": "Farmer full name",
           "maxLength": 100
         },
+        "farmerPhone": {
+          "type": "string",
+          "description": "Farmer phone contact",
+          "maxLength": 40
+        },
+        "farmerEmail": {
+          "type": "string",
+          "description": "Farmer email address",
+          "maxLength": 120
+        },
         "farmName": {
           "type": "string",
           "description": "Name of the farm plot",
@@ -60,7 +70,22 @@
         },
         "region": {
           "type": "string",
-          "description": "Cameroon administrative region (e.g. Southwest, Northwest, Adamawa)",
+          "description": "Administrative region (e.g. Southwest, Northwest, Adamawa)",
+          "maxLength": 100
+        },
+        "village": {
+          "type": "string",
+          "description": "Village or community locality",
+          "maxLength": 100
+        },
+        "lga": {
+          "type": "string",
+          "description": "Local Government Area or Division",
+          "maxLength": 100
+        },
+        "state": {
+          "type": "string",
+          "description": "State or Province (e.g. Cross River State, Southwest Region)",
           "maxLength": 100
         },
         "cooperative": {
@@ -76,6 +101,104 @@
         "sizeHectares": {
           "type": "number",
           "description": "Plot size in hectares"
+        },
+        "registrationDate": {
+          "type": "string",
+          "description": "Date of farm registration",
+          "maxLength": 40
+        },
+        "cocoaVariety": {
+          "type": "string",
+          "description": "Cocoa variety or hybrid type",
+          "maxLength": 80
+        },
+        "harvestSeason": {
+          "type": "string",
+          "description": "Harvest season cycle",
+          "maxLength": 60
+        },
+        "estimatedAnnualYieldKg": {
+          "type": "number",
+          "description": "Estimated annual production yield in kg"
+        },
+        "quantityHarvestedKg": {
+          "type": "number",
+          "description": "Quantity harvested for current cycle/batch in kg"
+        },
+        "batchNumber": {
+          "type": "string",
+          "description": "Batch or lot tracking number",
+          "maxLength": 64
+        },
+        "aggregatorCenter": {
+          "type": "string",
+          "description": "Aggregator or collection centre depot",
+          "maxLength": 120
+        },
+        "batchMovementRoute": {
+          "type": "string",
+          "description": "Route and logistics custody flow description",
+          "maxLength": 200
+        },
+        "processorExporter": {
+          "type": "string",
+          "description": "Licensed cocoa processor or export company",
+          "maxLength": 120
+        },
+        "designatedBuyer": {
+          "type": "string",
+          "description": "Contracted off-taker or trading company",
+          "maxLength": 120
+        },
+        "landDocType": {
+          "type": "string",
+          "description": "Type of supporting land/legal title or customary document",
+          "maxLength": 100
+        },
+        "landDocReference": {
+          "type": "string",
+          "description": "Document reference or certificate number",
+          "maxLength": 100
+        },
+        "deforestationRisk": {
+          "type": "string",
+          "description": "Deforestation-risk assessment level and EUDR benchmark",
+          "maxLength": 100
+        },
+        "auditStatus": {
+          "type": "string",
+          "description": "Third-party audit and verification status",
+          "maxLength": 60
+        },
+        "auditCertificateNumber": {
+          "type": "string",
+          "description": "Audit certificate or inspection registry ID",
+          "maxLength": 100
+        },
+        "auditorName": {
+          "type": "string",
+          "description": "Name of verification agency or accredited inspector",
+          "maxLength": 100
+        },
+        "auditDate": {
+          "type": "string",
+          "description": "Date of field inspection audit",
+          "maxLength": 40
+        },
+        "paymentMethod": {
+          "type": "string",
+          "description": "Digital transaction method (e.g. MTN MoMo, Direct Bank Settlement)",
+          "maxLength": 80
+        },
+        "transactionReference": {
+          "type": "string",
+          "description": "Digital transaction or payout reference hash",
+          "maxLength": 100
+        },
+        "transactionAmount": {
+          "type": "string",
+          "description": "Transaction payment value / currency",
+          "maxLength": 60
         },
         "eudrCompliant": {
           "type": "boolean",

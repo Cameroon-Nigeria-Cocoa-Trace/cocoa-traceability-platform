@@ -12,7 +12,8 @@ export default function MarketplacePage() {
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
       <Navbar />
 
-      <main className="mx-auto max-w-[1280px] px-6 py-10 lg:px-8">
+      {/* FIXED: Applied pt-28 sm:pt-32 to clear fixed navbar */}
+      <main className="mx-auto max-w-[1280px] px-6 pt-28 pb-14 sm:pt-32 lg:px-8">
         <section className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -21,12 +22,15 @@ export default function MarketplacePage() {
               </span>
               <span className="flex items-center gap-1 rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.65rem] font-bold text-[#2d6130]">
                 <ShieldCheck size={12} />
-                Live Firestore Synced
+                Verified Catalog
               </span>
             </div>
             <h1 className="mt-3 max-w-2xl text-3xl font-semibold tracking-[-0.04em] text-[#10251d] md:text-4xl">
-              Cameroonian cocoa lots available for purchase
+              Cocoa lots available for purchase
             </h1>
+            <p className="mt-2 text-sm text-[#57655d]">
+              Verified single-origin cocoa beans, nibs, and powder with audited EUDR geolocation records.
+            </p>
           </div>
 
           <Link

@@ -45,17 +45,42 @@ service cloud.firestore {
 
     function isValidFarm(data) {
       return data.keys().hasAll(['id', 'farmerId', 'farmName', 'region', 'geolocation', 'createdAt']) &&
-        data.keys().hasOnly(['id', 'farmerId', 'farmerName', 'farmName', 'region', 'cooperative', 'geolocation', 'sizeHectares', 'eudrCompliant', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'farmerId', 'farmerName', 'farmerPhone', 'farmerEmail', 'farmName', 'region', 'village', 'lga', 'state', 'cooperative', 'geolocation', 'sizeHectares', 'registrationDate', 'cocoaVariety', 'harvestSeason', 'estimatedAnnualYieldKg', 'quantityHarvestedKg', 'batchNumber', 'aggregatorCenter', 'batchMovementRoute', 'processorExporter', 'designatedBuyer', 'landDocType', 'landDocReference', 'deforestationRisk', 'auditStatus', 'auditCertificateNumber', 'auditorName', 'auditDate', 'paymentMethod', 'transactionReference', 'transactionAmount', 'eudrCompliant', 'createdAt']) &&
         data.id is string && data.id.size() <= 128 &&
         data.farmerId is string && data.farmerId.size() <= 128 &&
         data.farmName is string && data.farmName.size() > 0 && data.farmName.size() <= 120 &&
         data.region is string && data.region.size() > 0 && data.region.size() <= 100 &&
         data.geolocation is string && data.geolocation.size() > 0 && data.geolocation.size() <= 60 &&
+        data.createdAt is string && data.createdAt.size() <= 40 &&
         (!('farmerName' in data) || (data.farmerName is string && data.farmerName.size() <= 100)) &&
+        (!('farmerPhone' in data) || (data.farmerPhone is string && data.farmerPhone.size() <= 40)) &&
+        (!('farmerEmail' in data) || (data.farmerEmail is string && data.farmerEmail.size() <= 120)) &&
+        (!('village' in data) || (data.village is string && data.village.size() <= 100)) &&
+        (!('lga' in data) || (data.lga is string && data.lga.size() <= 100)) &&
+        (!('state' in data) || (data.state is string && data.state.size() <= 100)) &&
         (!('cooperative' in data) || (data.cooperative is string && data.cooperative.size() <= 120)) &&
         (!('sizeHectares' in data) || (data.sizeHectares is number)) &&
-        (!('eudrCompliant' in data) || (data.eudrCompliant is bool)) &&
-        data.createdAt is string && data.createdAt.size() <= 40;
+        (!('registrationDate' in data) || (data.registrationDate is string && data.registrationDate.size() <= 40)) &&
+        (!('cocoaVariety' in data) || (data.cocoaVariety is string && data.cocoaVariety.size() <= 80)) &&
+        (!('harvestSeason' in data) || (data.harvestSeason is string && data.harvestSeason.size() <= 60)) &&
+        (!('estimatedAnnualYieldKg' in data) || (data.estimatedAnnualYieldKg is number)) &&
+        (!('quantityHarvestedKg' in data) || (data.quantityHarvestedKg is number)) &&
+        (!('batchNumber' in data) || (data.batchNumber is string && data.batchNumber.size() <= 64)) &&
+        (!('aggregatorCenter' in data) || (data.aggregatorCenter is string && data.aggregatorCenter.size() <= 120)) &&
+        (!('batchMovementRoute' in data) || (data.batchMovementRoute is string && data.batchMovementRoute.size() <= 200)) &&
+        (!('processorExporter' in data) || (data.processorExporter is string && data.processorExporter.size() <= 120)) &&
+        (!('designatedBuyer' in data) || (data.designatedBuyer is string && data.designatedBuyer.size() <= 120)) &&
+        (!('landDocType' in data) || (data.landDocType is string && data.landDocType.size() <= 100)) &&
+        (!('landDocReference' in data) || (data.landDocReference is string && data.landDocReference.size() <= 100)) &&
+        (!('deforestationRisk' in data) || (data.deforestationRisk is string && data.deforestationRisk.size() <= 100)) &&
+        (!('auditStatus' in data) || (data.auditStatus is string && data.auditStatus.size() <= 60)) &&
+        (!('auditCertificateNumber' in data) || (data.auditCertificateNumber is string && data.auditCertificateNumber.size() <= 100)) &&
+        (!('auditorName' in data) || (data.auditorName is string && data.auditorName.size() <= 100)) &&
+        (!('auditDate' in data) || (data.auditDate is string && data.auditDate.size() <= 40)) &&
+        (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 80)) &&
+        (!('transactionReference' in data) || (data.transactionReference is string && data.transactionReference.size() <= 100)) &&
+        (!('transactionAmount' in data) || (data.transactionAmount is string && data.transactionAmount.size() <= 60)) &&
+        (!('eudrCompliant' in data) || (data.eudrCompliant is bool));
     }
 
     function isValidProductLot(data) {
@@ -108,7 +133,7 @@ service cloud.firestore {
         isValidFarm(incoming()) &&
         incoming().farmerId == existing().farmerId &&
         incoming().id == existing().id &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['farmName', 'region', 'cooperative', 'geolocation', 'sizeHectares', 'eudrCompliant']);
+        incoming().diff(existing()).affectedKeys().hasOnly(['farmerName', 'farmerPhone', 'farmerEmail', 'farmName', 'region', 'village', 'lga', 'state', 'cooperative', 'geolocation', 'sizeHectares', 'registrationDate', 'cocoaVariety', 'harvestSeason', 'estimatedAnnualYieldKg', 'quantityHarvestedKg', 'batchNumber', 'aggregatorCenter', 'batchMovementRoute', 'processorExporter', 'designatedBuyer', 'landDocType', 'landDocReference', 'deforestationRisk', 'auditStatus', 'auditCertificateNumber', 'auditorName', 'auditDate', 'paymentMethod', 'transactionReference', 'transactionAmount', 'eudrCompliant']);
       allow delete: if isSignedIn() && isValidId(farmId) && (existing().farmerId == request.auth.uid || isAdmin());
     }
 

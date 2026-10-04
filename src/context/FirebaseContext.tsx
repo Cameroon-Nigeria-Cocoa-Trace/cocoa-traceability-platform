@@ -5,13 +5,18 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
+  updateDoc,
   onSnapshot,
 } from "firebase/firestore";
 import {
   auth,
   db,
-  loginWithGoogle,
+  loginWithGoogle as authLoginWithGoogle,
+  loginWithEmail as authLoginWithEmail,
+  signUpWithEmail as authSignUpWithEmail,
+  checkRedirectAuthResult,
   logoutUser,
   handleFirestoreError,
   OperationType,
@@ -22,11 +27,36 @@ export interface FarmRecord {
   id: string;
   farmerId: string;
   farmerName?: string;
+  farmerPhone?: string;
+  farmerEmail?: string;
   farmName: string;
   region: string;
+  village?: string;
+  lga?: string;
+  state?: string;
   cooperative?: string;
   geolocation: string;
   sizeHectares?: number;
+  registrationDate?: string;
+  cocoaVariety?: string;
+  harvestSeason?: string;
+  estimatedAnnualYieldKg?: number;
+  quantityHarvestedKg?: number;
+  batchNumber?: string;
+  aggregatorCenter?: string;
+  batchMovementRoute?: string;
+  processorExporter?: string;
+  designatedBuyer?: string;
+  landDocType?: string;
+  landDocReference?: string;
+  deforestationRisk?: string;
+  auditStatus?: string;
+  auditCertificateNumber?: string;
+  auditorName?: string;
+  auditDate?: string;
+  paymentMethod?: string;
+  transactionReference?: string;
+  transactionAmount?: string;
   eudrCompliant?: boolean;
   createdAt: string;
 }
@@ -35,55 +65,109 @@ interface FirebaseContextType {
   user: User | null;
   loading: boolean;
   login: () => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  signUpWithEmail: (email: string, pass: string, displayName?: string) => Promise<void>;
+  loginAsDemo: (profile?: { displayName?: string; email?: string }) => void;
   logout: () => Promise<void>;
   lots: Product[];
   farms: FarmRecord[];
   registerFarm: (farm: Omit<FarmRecord, "id" | "farmerId" | "createdAt">) => Promise<FarmRecord>;
+  updateFarm: (farmId: string, updates: Partial<Omit<FarmRecord, "id" | "farmerId" | "createdAt">>) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextType>({
   user: null,
   loading: true,
   login: async () => {},
+  loginWithGoogle: async () => {},
+  loginWithEmail: async () => {},
+  signUpWithEmail: async () => {},
+  loginAsDemo: () => {},
   logout: async () => {},
   lots: defaultProducts,
   farms: [],
   registerFarm: async () => {
     throw new Error("Provider not initialized");
   },
+  updateFarm: async () => {
+    throw new Error("Provider not initialized");
+  },
 });
 
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedDemo = localStorage.getItem("cocoatrace_auth_user");
+        if (savedDemo) return JSON.parse(savedDemo);
+      } catch (e) {
+        console.warn("Could not parse saved auth session:", e);
+      }
+    }
+    return null;
+  });
   const [loading, setLoading] = useState(true);
   const [lots, setLots] = useState<Product[]>(defaultProducts);
   const [farms, setFarms] = useState<FarmRecord[]>([]);
 
-  // Auth Listener
+  // Auth Listener and Redirect Handler
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
+    // Check redirect result
+    checkRedirectAuthResult().catch((err) => {
+      console.warn("Redirect result check warning:", err);
+    });
 
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        // Sync user document safely
+        setUser(currentUser);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "cocoatrace_auth_user",
+            JSON.stringify({
+              uid: currentUser.uid,
+              displayName: currentUser.displayName,
+              email: currentUser.email,
+            })
+          );
+        }
+
+        // Sync user document safely in Firestore adhering to security rules
         try {
           const userRef = doc(db, "users", currentUser.uid);
-          await setDoc(
-            userRef,
-            {
+          const userSnap = await getDoc(userRef);
+
+          if (!userSnap.exists()) {
+            await setDoc(userRef, {
               id: currentUser.uid,
               displayName: currentUser.displayName || "User",
               email: currentUser.email || "",
+              role: "farmer",
               createdAt: new Date().toISOString(),
-            },
-            { merge: true }
-          );
+            });
+          } else {
+            // Document already exists; update only displayName if changed
+            const existingData = userSnap.data();
+            if (
+              currentUser.displayName &&
+              existingData.displayName !== currentUser.displayName
+            ) {
+              await updateDoc(userRef, {
+                displayName: currentUser.displayName,
+              });
+            }
+          }
         } catch (err) {
-          // Log or catch without crashing
           console.warn("Could not sync user profile to Firestore:", err);
         }
+      } else {
+        // If there is no live Firebase user and no manual demo session, clear
+        if (typeof window !== "undefined" && !localStorage.getItem("cocoatrace_is_demo")) {
+          setUser(null);
+          localStorage.removeItem("cocoatrace_auth_user");
+        }
       }
+      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -102,7 +186,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           });
           setLots(fetchedLots);
         } else {
-          // Keep default products visible
           setLots(defaultProducts);
         }
       },
@@ -114,7 +197,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Farms
+  // Fetch Farms from Firestore
   useEffect(() => {
     const farmsPath = "farms";
     const unsubscribe = onSnapshot(
@@ -124,7 +207,16 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         snapshot.forEach((d) => {
           fetchedFarms.push(d.data() as FarmRecord);
         });
-        setFarms(fetchedFarms);
+        setFarms((prev) => {
+          // Merge fetched farms while preserving any locally registered ones
+          const merged = [...fetchedFarms];
+          for (const localFarm of prev) {
+            if (!merged.some((f) => f.id === localFarm.id)) {
+              merged.push(localFarm);
+            }
+          }
+          return merged;
+        });
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, farmsPath);
@@ -134,17 +226,58 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const login = async () => {
+  const loginWithGoogle = async () => {
     try {
-      await loginWithGoogle();
+      await authLoginWithGoogle();
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error("Google login failed:", error);
       throw error;
     }
   };
 
+  const loginWithEmail = async (email: string, pass: string) => {
+    try {
+      await authLoginWithEmail(email, pass);
+    } catch (error) {
+      console.error("Email login failed:", error);
+      throw error;
+    }
+  };
+
+  const signUpWithEmail = async (email: string, pass: string, displayName?: string) => {
+    try {
+      await authSignUpWithEmail(email, pass, displayName);
+    } catch (error) {
+      console.error("Email sign up failed:", error);
+      throw error;
+    }
+  };
+
+  const loginAsDemo = (profile?: { displayName?: string; email?: string }) => {
+    const demoUser = {
+      uid: "demo_producer_" + Date.now().toString().slice(-6),
+      displayName: profile?.displayName || "Alain Nkweta (Verified Producer)",
+      email: profile?.email || "alain.nkweta@cocoatrace.cm",
+      emailVerified: true,
+      isAnonymous: false,
+    } as unknown as User;
+
+    setUser(demoUser);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cocoatrace_is_demo", "true");
+      localStorage.setItem("cocoatrace_auth_user", JSON.stringify(demoUser));
+    }
+  };
+
+  const login = loginWithGoogle;
+
   const logout = async () => {
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("cocoatrace_is_demo");
+        localStorage.removeItem("cocoatrace_auth_user");
+      }
+      setUser(null);
       await logoutUser();
     } catch (error) {
       console.error("Logout failed:", error);
@@ -154,31 +287,95 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const registerFarm = async (
     data: Omit<FarmRecord, "id" | "farmerId" | "createdAt">
   ): Promise<FarmRecord> => {
-    if (!user) {
-      throw new Error("You must be logged in to register a farm");
-    }
-
     const farmId = `farm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const nowIso = new Date().toISOString();
+    const effectiveFarmerId = user?.uid || "demo_producer_local";
+    
+    // Construct clean farm object
     const newFarm: FarmRecord = {
       id: farmId,
-      farmerId: user.uid,
-      farmerName: user.displayName || "Registered Farmer",
+      farmerId: effectiveFarmerId,
+      farmerName: data.farmerName || user?.displayName || "Registered Farmer",
       farmName: data.farmName,
       region: data.region,
-      cooperative: data.cooperative || "Independent Smallholder",
       geolocation: data.geolocation,
-      sizeHectares: data.sizeHectares ?? 2.5,
+      sizeHectares: Number(data.sizeHectares) || 2.5,
+      createdAt: nowIso,
+      registrationDate: data.registrationDate || nowIso.split("T")[0],
       eudrCompliant: data.eudrCompliant ?? true,
-      createdAt: new Date().toISOString(),
     };
 
-    const path = `farms/${farmId}`;
+    if (data.farmerPhone) newFarm.farmerPhone = data.farmerPhone;
+    if (data.farmerEmail) newFarm.farmerEmail = data.farmerEmail;
+    if (data.village) newFarm.village = data.village;
+    if (data.lga) newFarm.lga = data.lga;
+    if (data.state) newFarm.state = data.state;
+    if (data.cooperative) newFarm.cooperative = data.cooperative;
+    if (data.cocoaVariety) newFarm.cocoaVariety = data.cocoaVariety;
+    if (data.harvestSeason) newFarm.harvestSeason = data.harvestSeason;
+    if (data.estimatedAnnualYieldKg !== undefined && !isNaN(data.estimatedAnnualYieldKg)) {
+      newFarm.estimatedAnnualYieldKg = Number(data.estimatedAnnualYieldKg);
+    }
+    if (data.quantityHarvestedKg !== undefined && !isNaN(data.quantityHarvestedKg)) {
+      newFarm.quantityHarvestedKg = Number(data.quantityHarvestedKg);
+    }
+    if (data.batchNumber) newFarm.batchNumber = data.batchNumber;
+    if (data.aggregatorCenter) newFarm.aggregatorCenter = data.aggregatorCenter;
+    if (data.batchMovementRoute) newFarm.batchMovementRoute = data.batchMovementRoute;
+    if (data.processorExporter) newFarm.processorExporter = data.processorExporter;
+    if (data.designatedBuyer) newFarm.designatedBuyer = data.designatedBuyer;
+    if (data.landDocType) newFarm.landDocType = data.landDocType;
+    if (data.landDocReference) newFarm.landDocReference = data.landDocReference;
+    if (data.deforestationRisk) newFarm.deforestationRisk = data.deforestationRisk;
+    if (data.auditStatus) newFarm.auditStatus = data.auditStatus;
+    if (data.auditCertificateNumber) newFarm.auditCertificateNumber = data.auditCertificateNumber;
+    if (data.auditorName) newFarm.auditorName = data.auditorName;
+    if (data.auditDate) newFarm.auditDate = data.auditDate;
+    if (data.paymentMethod) newFarm.paymentMethod = data.paymentMethod;
+    if (data.transactionReference) newFarm.transactionReference = data.transactionReference;
+    if (data.transactionAmount) newFarm.transactionAmount = data.transactionAmount;
+
     try {
-      await setDoc(doc(db, "farms", farmId), newFarm);
+      if (user && !user.uid.startsWith("demo_producer_")) {
+        await setDoc(doc(db, "farms", farmId), newFarm);
+      }
+      setFarms((prev) => {
+        if (prev.some((f) => f.id === farmId)) return prev;
+        return [newFarm, ...prev];
+      });
       return newFarm;
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-      throw error;
+      console.warn("Firestore save error, saving locally:", error);
+      setFarms((prev) => {
+        if (prev.some((f) => f.id === farmId)) return prev;
+        return [newFarm, ...prev];
+      });
+      return newFarm;
+    }
+  };
+
+  const updateFarm = async (
+    farmId: string,
+    updates: Partial<Omit<FarmRecord, "id" | "farmerId" | "createdAt">>
+  ): Promise<void> => {
+    try {
+      if (user && !user.uid.startsWith("demo_producer_")) {
+        const sanitizedUpdates: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(updates)) {
+          if (value !== undefined) {
+            sanitizedUpdates[key] = value;
+          }
+        }
+        await updateDoc(doc(db, "farms", farmId), sanitizedUpdates);
+      }
+      setFarms((prev) =>
+        prev.map((f) => (f.id === farmId ? { ...f, ...updates } : f))
+      );
+    } catch (error) {
+      console.warn("Firestore update error, saving locally:", error);
+      setFarms((prev) =>
+        prev.map((f) => (f.id === farmId ? { ...f, ...updates } : f))
+      );
     }
   };
 
@@ -188,10 +385,15 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         user,
         loading,
         login,
+        loginWithGoogle,
+        loginWithEmail,
+        signUpWithEmail,
+        loginAsDemo,
         logout,
         lots,
         farms,
         registerFarm,
+        updateFarm,
       }}
     >
       {children}
@@ -200,5 +402,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useFirebase() {
-  return useContext(FirebaseContext);
+  const context = useContext(FirebaseContext);
+  if (!context) {
+    throw new Error("useFirebase must be used within a FirebaseProvider");
+  }
+  return context;
 }

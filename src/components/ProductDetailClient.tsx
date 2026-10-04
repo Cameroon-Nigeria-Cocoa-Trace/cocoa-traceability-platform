@@ -17,10 +17,11 @@ export function ProductDetailClient({ product }: { product: Product }) {
     }, 400);
   };
 
-  const verificationMessage = `Certificate ${product.trace} verified in Cloud Firestore. The cocoa remains of 100% Cameroonian origin and is traceable to ${product.origin}.`;
+  const verificationMessage = `Certificate ${product.trace} verified in Cloud Firestore. Production origin is authenticated and traceable to ${product.origin}.`;
 
   return (
-    <main className="mx-auto max-w-[1280px] px-6 py-10 lg:px-8">
+    /* FIXED: Applied pt-28 sm:pt-32 to clear fixed navbar */
+    <main className="mx-auto max-w-[1280px] px-6 pt-28 pb-14 sm:pt-32 lg:px-8">
       <section className="mb-8 flex flex-col gap-6 rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-[0_18px_35px_rgba(16,37,29,0.05)] lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <div className="flex items-center gap-2">

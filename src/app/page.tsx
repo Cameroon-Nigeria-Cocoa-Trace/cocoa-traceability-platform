@@ -81,7 +81,8 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-t from-[#062c20] via-transparent to-transparent" />
         </div>
 
-        <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-20 sm:px-7 md:px-10 lg:px-18">
+        {/* FIXED: Applied pt-28 sm:pt-32 to clear fixed navbar */}
+        <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-28 sm:px-7 sm:pt-32 md:px-10 lg:px-18">
           <div className="max-w-3xl">
             <div className="mb-3 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b8f58b] sm:text-xs sm:tracking-[0.22em]">
               <span className="h-px w-6 bg-[#b8f58b] sm:w-8" />
