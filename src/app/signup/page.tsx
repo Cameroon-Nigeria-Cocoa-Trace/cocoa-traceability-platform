@@ -15,8 +15,6 @@ import {
   UserCheck,
   Layers,
   Truck,
-  Search,
-  Eye,
   X,
   FileCheck2,
   ChevronRight,
@@ -68,7 +66,6 @@ function SignupContent() {
     logout,
     registerFarm,
     updateFarm,
-    farms,
   } = useFirebase();
 
   // Page View Mode: "farm" (Farm Registration) | "account" (User Account Creation)
@@ -134,8 +131,6 @@ function SignupContent() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterRegion, setFilterRegion] = useState("ALL");
   const [selectedFarmModal, setSelectedFarmModal] = useState<FarmRecord | null>(null);
   const [newBatchFarmModal, setNewBatchFarmModal] = useState<FarmRecord | null>(null);
   const [batchAddQty, setBatchAddQty] = useState("");
@@ -344,24 +339,6 @@ function SignupContent() {
       setUpdatingBatch(false);
     }
   };
-
-  // Filter farms
-  const userFarms = user ? farms.filter((f) => f.farmerId === user.uid) : farms;
-  const filteredFarms = userFarms.filter((f) => {
-    const matchesSearch =
-      f.farmName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (f.farmerName && f.farmerName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (f.village && f.village.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (f.lga && f.lga.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (f.id && f.id.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    const matchesRegion =
-      filterRegion === "ALL" ||
-      f.region.toLowerCase().includes(filterRegion.toLowerCase()) ||
-      (f.state && f.state.toLowerCase().includes(filterRegion.toLowerCase()));
-
-    return matchesSearch && matchesRegion;
-  });
 
   return (
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
@@ -606,8 +583,8 @@ function SignupContent() {
           </div>
         ) : (
           /* View B: Full Farm Onboarding Form (Always Accessible) */
-          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
-            {/* Left Column: Comprehensive Onboarding Form */}
+          <div className="mx-auto max-w-4xl">
+            {/* Comprehensive Onboarding Form */}
             <section className="rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-[0_18px_35px_rgba(16,37,29,0.06)] sm:p-8">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -1079,153 +1056,6 @@ function SignupContent() {
                 </div>
               </form>
             </section>
-
-            {/* Right Column: Onboarded Farms Directory & Explorer */}
-            <aside className="space-y-6">
-              <div className="rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold text-[#10251d]">
-                      Registered Plots Directory
-                    </h3>
-                    <p className="text-xs text-[#57655d]">
-                      Active plots ({filteredFarms.length} of {farms.length})
-                    </p>
-                  </div>
-                  <span className="flex items-center gap-1 rounded-full bg-[#edf7e8] px-3 py-1 text-xs font-bold text-[#2d6130]">
-                    <ShieldCheck size={14} />
-                    EUDR Compliant
-                  </span>
-                </div>
-
-                {/* Search & Filters */}
-                <div className="mt-4 space-y-2">
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3.5 top-3.5 text-[#57655d]" />
-                    <input
-                      type="text"
-                      placeholder="Search by farm, farmer, village, or division..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] py-2.5 pl-9 pr-3 text-xs text-[#10251d] outline-none transition focus:bg-white focus:border-[#2d6130]"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    {["ALL", "Southwest", "Centre", "Littoral", "South", "Northwest"].map((region) => (
-                      <button
-                        key={region}
-                        type="button"
-                        onClick={() => setFilterRegion(region)}
-                        className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold transition cursor-pointer ${
-                          filterRegion === region
-                            ? "bg-[#0b3528] text-white"
-                            : "bg-[#edf1ea] text-[#57655d] hover:bg-[#dfe7d8]"
-                        }`}
-                      >
-                        {region}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* List of Farms */}
-                <div className="mt-4 max-h-[620px] space-y-3.5 overflow-y-auto pr-1">
-                  {filteredFarms.length > 0 ? (
-                    filteredFarms.map((farm) => (
-                      <div
-                        key={farm.id}
-                        className="group rounded-2xl border border-[#dfe7d8] bg-[#f9fbf7] p-4 text-xs transition hover:border-[#2d6130] hover:shadow-md"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <strong className="text-sm font-semibold text-[#10251d]">
-                              {farm.farmName}
-                            </strong>
-                            <p className="text-[0.72rem] text-[#57655d]">
-                              {farm.village ? `${farm.village}, ` : ""}{farm.lga || farm.region}
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-[#edf7e8] px-2 py-0.5 text-[0.62rem] font-bold text-[#2d6130]">
-                            {farm.eudrCompliant ? "EUDR Verified" : "Pending"}
-                          </span>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#edf1ea] pt-2 text-[0.72rem] text-[#4b594f]">
-                          <div>
-                            <span className="block text-[0.62rem] uppercase tracking-wider text-[#6f7e73]">Farmer</span>
-                            <span className="font-medium text-[#10251d]">{farm.farmerName || "Registered Farmer"}</span>
-                          </div>
-                          <div>
-                            <span className="block text-[0.62rem] uppercase tracking-wider text-[#6f7e73]">Farm Size</span>
-                            <span className="font-medium text-[#10251d]">{farm.sizeHectares || 2.5} Hectares</span>
-                          </div>
-                          <div>
-                            <span className="block text-[0.62rem] uppercase tracking-wider text-[#6f7e73]">Current Batch</span>
-                            <span className="font-mono text-[#2d6130]">{farm.batchNumber || "BATCH-DEFAULT"}</span>
-                          </div>
-                          <div>
-                            <span className="block text-[0.62rem] uppercase tracking-wider text-[#6f7e73]">Harvested</span>
-                            <span className="font-medium text-[#10251d]">{farm.quantityHarvestedKg || 0} kg</span>
-                          </div>
-                        </div>
-
-                        <div className="mt-2.5 flex items-center justify-between gap-1 border-t border-[#edf1ea] pt-2">
-                          <div className="flex items-center gap-1 font-mono text-[0.68rem] text-[#2d6130] truncate">
-                            <MapPin size={11} className="shrink-0" />
-                            <span className="truncate">{farm.geolocation}</span>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewBatchFarmModal(farm);
-                                setBatchAddCode(`BATCH-CR-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
-                              }}
-                              className="rounded-full bg-white px-2.5 py-1 text-[0.68rem] font-bold text-[#0b3528] border border-[#dfe7d8] hover:bg-[#edf7e8] transition cursor-pointer"
-                            >
-                              + Batch
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFarmModal(farm)}
-                              className="inline-flex items-center gap-1 rounded-full bg-[#0b3528] px-2.5 py-1 text-[0.68rem] font-bold text-white hover:bg-[#07241b] transition cursor-pointer"
-                            >
-                              <Eye size={11} /> Dossier
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-[#dfe7d8] p-8 text-center text-xs text-[#57655d]">
-                      <ShieldCheck size={28} className="mx-auto text-[#2d6130]/60 mb-2" />
-                      No registered farm plots match your search.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Information Card on Traceability Integrity */}
-              <div className="rounded-[28px] border border-[#dfe7d8] bg-[#063325] p-6 text-white shadow-sm">
-                <span className="text-[10px] font-bold tracking-widest text-[#b8f58b] uppercase">
-                  Supply Chain Traceability
-                </span>
-                <h4 className="mt-2 text-base font-semibold">
-                  Custody & Origin Integrity
-                </h4>
-                <p className="mt-2 text-xs leading-5 text-white/75">
-                  Every registered plot is georeferenced to preserve origin and chain-of-custody data as cocoa moves from farm gate through aggregation hubs to international export channels, in full accordance with EUDR requirements.
-                </p>
-                <Link
-                  href="/marketplace"
-                  className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-[#b8f58b] hover:underline"
-                >
-                  Browse Marketplace Lots <ArrowRight size={14} />
-                </Link>
-              </div>
-            </aside>
           </div>
         )}
       </main>
