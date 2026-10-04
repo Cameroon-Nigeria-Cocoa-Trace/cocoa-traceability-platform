@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase, FarmRecord } from "@/context/FirebaseContext";
 import {
@@ -13,10 +14,7 @@ import {
   ArrowRight,
   UserCheck,
   Layers,
-  FileText,
   Truck,
-  Coins,
-  Sparkles,
   Search,
   Eye,
   X,
@@ -26,15 +24,27 @@ import {
   User,
   Mail,
   Lock,
+  Compass,
 } from "lucide-react";
+
+// Dynamic import of CocoaTracker for SSR safety
+const CocoaTracker = dynamic(() => import("@/components/CocoaTracker"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-64 items-center justify-center rounded-3xl bg-[#062d22] text-white">
+      <div className="flex items-center gap-2 text-xs text-[#b8f58b]">
+        <Compass className="animate-spin" size={18} /> Loading Offline Canopy Geofence Module...
+      </div>
+    </div>
+  ),
+});
 
 const ONBOARDING_TABS = [
   { id: "farmer", label: "Farmer & Co-op", icon: UserCheck },
   { id: "location", label: "Farm & Location", icon: MapPin },
   { id: "production", label: "Harvest & Batches", icon: Layers },
   { id: "supplychain", label: "Trade Route", icon: Truck },
-  { id: "compliance", label: "Legal & Audit", icon: FileText },
-  { id: "finance", label: "Digital History", icon: Coins },
+  { id: "geofence", label: "Canopy Geofence", icon: Compass },
 ];
 
 export default function SignupPage() {
@@ -46,6 +56,7 @@ export default function SignupPage() {
 }
 
 function SignupContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialView = searchParams.get("view") === "account" ? "account" : "farm";
 
@@ -54,7 +65,7 @@ function SignupContent() {
     loginWithGoogle,
     loginWithEmail,
     signUpWithEmail,
-    loginAsDemo,
+    logout,
     registerFarm,
     updateFarm,
     farms,
@@ -86,49 +97,38 @@ function SignupContent() {
 
   // Section 1: Farmer & Cooperative Details
   const [farmerName, setFarmerName] = useState("");
-  const [farmerPhone, setFarmerPhone] = useState("+237 671 234 567");
+  const [farmerPhone, setFarmerPhone] = useState("");
   const [farmerEmail, setFarmerEmail] = useState("");
-  const [cooperative, setCooperative] = useState("SOWESCOP Cooperative Union");
+  const [cooperative, setCooperative] = useState("");
 
   // Section 2: Farm Identity & Location
   const [farmName, setFarmName] = useState("");
-  const [village, setVillage] = useState("Ekondo-Titi Central");
-  const [lga, setLga] = useState("Ndian Division");
+  const [village, setVillage] = useState("");
+  const [lga, setLga] = useState("");
   const [stateRegion, setStateRegion] = useState("Southwest Region");
-  const [geolocation, setGeolocation] = useState("4.5821° N, 9.0432° E");
-  const [sizeHectares, setSizeHectares] = useState("4.2");
+  const [geolocation, setGeolocation] = useState("");
+  const [sizeHectares, setSizeHectares] = useState("");
   const [registrationDate, setRegistrationDate] = useState(
     new Date().toISOString().split("T")[0]
   );
 
   // Section 3: Production & Harvest Information
-  const [cocoaVariety, setCocoaVariety] = useState("High-Yield F1 Hybrid (Trinitario × Forastero)");
-  const [harvestSeason, setHarvestSeason] = useState("Main Crop 2026/2027");
-  const [estimatedAnnualYieldKg, setEstimatedAnnualYieldKg] = useState("5800");
-  const [quantityHarvestedKg, setQuantityHarvestedKg] = useState("1850");
-  const [batchNumber, setBatchNumber] = useState(`BATCH-CR-${new Date().getFullYear()}-019`);
+  const [cocoaVariety, setCocoaVariety] = useState("");
+  const [harvestSeason, setHarvestSeason] = useState("");
+  const [estimatedAnnualYieldKg, setEstimatedAnnualYieldKg] = useState("");
+  const [quantityHarvestedKg, setQuantityHarvestedKg] = useState("");
+  const [batchNumber, setBatchNumber] = useState("");
 
   // Section 4: Supply Chain, Aggregation & Trade Route
-  const [aggregatorCenter, setAggregatorCenter] = useState("Kumba Central Buying Station");
-  const [batchMovementRoute, setBatchMovementRoute] = useState(
-    "Ekondo-Titi Farm Gate → Kumba Central Buying Station → Douala Port / Cross-Border Channel"
-  );
-  const [processorExporter, setProcessorExporter] = useState("Telcar Cocoa Ltd / SIC CACAOS");
-  const [designatedBuyer, setDesignatedBuyer] = useState("European Union Certified Off-taker");
+  const [aggregatorCenter, setAggregatorCenter] = useState("");
+  const [batchMovementRoute, setBatchMovementRoute] = useState("");
+  const [processorExporter, setProcessorExporter] = useState("");
+  const [designatedBuyer, setDesignatedBuyer] = useState("");
 
-  // Section 5: Supporting Land & Deforestation Assessment & Audit
-  const [landDocType, setLandDocType] = useState("Customary Land Attestation (Chefferie)");
-  const [landDocReference, setLandDocReference] = useState("AVPC-NDIAN-2024-REF-098");
-  const [deforestationRisk, setDeforestationRisk] = useState("Zero Deforestation Verified - Post-2020 Baseline Compliant");
-  const [auditStatus, setAuditStatus] = useState("EUDR Due-Diligence Cleared");
-  const [auditCertificateNumber, setAuditCertificateNumber] = useState("AUD-EUDR-2026-0814");
-  const [auditorName, setAuditorName] = useState("SGS Agri-Trace & Rainforest Alliance");
-  const [auditDate, setAuditDate] = useState("2026-03-15");
-
-  // Section 6: Digital Transaction History
-  const [paymentMethod, setPaymentMethod] = useState("MTN Mobile Money (MoMo)");
-  const [transactionReference, setTransactionReference] = useState("MOMO-TX-984210984");
-  const [transactionAmount, setTransactionAmount] = useState("FCFA 3,250,000 (~$5,300)");
+  // Section 5: Canopy Geofence
+  const [geofencePolygon, setGeofencePolygon] = useState<[number, number][]>([]);
+  const [geofenceAreaHa, setGeofenceAreaHa] = useState<number | undefined>(undefined);
+  const [geofencePointCount, setGeofencePointCount] = useState<number>(0);
 
   // State management
   const [submitting, setSubmitting] = useState(false);
@@ -141,39 +141,6 @@ function SignupContent() {
   const [batchAddQty, setBatchAddQty] = useState("");
   const [batchAddCode, setBatchAddCode] = useState("");
   const [updatingBatch, setUpdatingBatch] = useState(false);
-
-  // Discreet sample auto-filler for testing
-  const handleLoadSampleData = () => {
-    setFarmName("Rainforest Cocoa Plot #4");
-    setFarmerName("Alain Nkweta");
-    setFarmerPhone("+237 677 889 123");
-    setFarmerEmail("alain.nkweta@cocoatrace.cm");
-    setCooperative("SOWESCOP Cooperative Union");
-    setVillage("Ekondo-Titi Central");
-    setLga("Ndian Division");
-    setStateRegion("Southwest Region");
-    setGeolocation("4.5912° N, 9.1245° E");
-    setSizeHectares("5.8");
-    setCocoaVariety("Trinitario × Forastero F1 Hybrid");
-    setHarvestSeason("Main Crop 2026/2027");
-    setEstimatedAnnualYieldKg("7200");
-    setQuantityHarvestedKg("2450");
-    setBatchNumber(`BATCH-CR-${Date.now().toString().slice(-4)}`);
-    setAggregatorCenter("Kumba Central Buying Station");
-    setBatchMovementRoute("Ekondo-Titi Farm Gate → Kumba Aggregator → Douala Export Channel");
-    setProcessorExporter("Telcar Cocoa Ltd / SIC CACAOS");
-    setDesignatedBuyer("Cargill European Supply Chain");
-    setLandDocType("Customary Land Attestation (Chefferie)");
-    setLandDocReference("AVPC-MBO-2023-882");
-    setDeforestationRisk("Zero Deforestation Verified - Post-2020 Baseline Compliant");
-    setAuditStatus("EUDR Due-Diligence Cleared");
-    setAuditCertificateNumber("AUD-RA-2026-9921");
-    setAuditorName("SGS Agri-Trace Inspectorate");
-    setAuditDate("2026-02-28");
-    setPaymentMethod("MTN Mobile Money (MoMo)");
-    setTransactionReference(`MOMO-${Date.now().toString().slice(-6)}`);
-    setTransactionAmount("FCFA 3,920,000 (~$6,400)");
-  };
 
   const handleUseCurrentLocation = () => {
     if ("geolocation" in navigator) {
@@ -223,23 +190,18 @@ function SignupContent() {
         batchMovementRoute: batchMovementRoute.trim(),
         processorExporter: processorExporter.trim(),
         designatedBuyer: designatedBuyer.trim(),
-        landDocType: landDocType.trim(),
-        landDocReference: landDocReference.trim(),
-        deforestationRisk: deforestationRisk.trim(),
-        auditStatus: auditStatus.trim(),
-        auditCertificateNumber: auditCertificateNumber.trim(),
-        auditorName: auditorName.trim(),
-        auditDate: auditDate.trim(),
-        paymentMethod: paymentMethod.trim(),
-        transactionReference: transactionReference.trim(),
-        transactionAmount: transactionAmount.trim(),
         eudrCompliant: true,
+        geofencePolygon: geofencePolygon.length >= 3 ? geofencePolygon : undefined,
+        geofenceAreaHa: geofenceAreaHa || parseFloat(sizeHectares) || 2.5,
+        geofencePointCount: geofencePointCount || geofencePolygon.length,
       });
 
-      setSuccess(`Farm "${registered.farmName}" successfully onboarded with ID ${registered.id}! Record saved to registry.`);
+      setSuccess(`Farm "${registered.farmName}" successfully onboarded with ID ${registered.id}! Taking you to your dashboard...`);
       setFarmName("");
-      setBatchNumber(`BATCH-CR-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
       setShowAuthModal(false);
+      setTimeout(() => {
+        router.push(`/dashboard?onboarded=true&newFarm=${encodeURIComponent(registered.farmName)}`);
+      }, 900);
     } catch (err: unknown) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to register farm.");
@@ -450,17 +412,6 @@ function SignupContent() {
                 Create Account
               </button>
             </div>
-
-            {signupView === "farm" && (
-              <button
-                type="button"
-                onClick={handleLoadSampleData}
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-3.5 py-2 text-xs font-semibold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] cursor-pointer"
-              >
-                <Sparkles size={13} className="text-[#2d6130]" />
-                Auto-fill sample data
-              </button>
-            )}
           </div>
         </div>
 
@@ -498,13 +449,24 @@ function SignupContent() {
                   <p className="mt-1">
                     Connected as: <strong>{user.displayName || user.email}</strong>
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setSignupView("farm")}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#07241b] cursor-pointer"
-                  >
-                    Proceed to Farm Onboarding <ArrowRight size={14} />
-                  </button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSignupView("farm")}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white transition hover:bg-[#07241b] cursor-pointer"
+                    >
+                      Proceed to Farm Onboarding <ArrowRight size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await logout();
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 hover:bg-red-100 cursor-pointer"
+                    >
+                      Sign Out & Register New Account
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="mt-6 space-y-4">
@@ -670,20 +632,6 @@ function SignupContent() {
                 )}
               </div>
 
-              {/* Informational banner when not logged in */}
-              {!user && (
-                <div className="mt-3 flex items-center justify-between rounded-2xl bg-[#f0f6eb] p-3 text-xs text-[#2a5933]">
-                  <span>Fill out your farm details freely. You can link your account at completion.</span>
-                  <button
-                    type="button"
-                    onClick={() => loginWithGoogle()}
-                    className="shrink-0 font-bold text-[#0b3528] hover:underline cursor-pointer ml-2"
-                  >
-                    Quick Google Sign-in
-                  </button>
-                </div>
-              )}
-
               {error && (
                 <div className="mt-4 flex items-center gap-2 rounded-2xl bg-red-50 p-4 text-sm text-red-700">
                   <AlertCircle size={18} className="shrink-0" />
@@ -767,7 +715,7 @@ function SignupContent() {
                           type="text"
                           value={farmerPhone}
                           onChange={(e) => setFarmerPhone(e.target.value)}
-                          placeholder="+237 671 234 567"
+                          placeholder="e.g. +237 671 234 567"
                           className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                         />
                       </label>
@@ -778,7 +726,7 @@ function SignupContent() {
                           type="email"
                           value={farmerEmail}
                           onChange={(e) => setFarmerEmail(e.target.value)}
-                          placeholder="farmer@cocoatrace.cm"
+                          placeholder="e.g. farmer@cocoatrace.cm"
                           className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                         />
                       </label>
@@ -853,7 +801,7 @@ function SignupContent() {
                           required
                           value={sizeHectares}
                           onChange={(e) => setSizeHectares(e.target.value)}
-                          placeholder="4.2"
+                          placeholder="e.g. 4.2"
                           className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                         />
                       </label>
@@ -955,7 +903,7 @@ function SignupContent() {
                           type="number"
                           value={estimatedAnnualYieldKg}
                           onChange={(e) => setEstimatedAnnualYieldKg(e.target.value)}
-                          placeholder="5800"
+                          placeholder="e.g. 5800"
                           className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                         />
                       </label>
@@ -967,7 +915,7 @@ function SignupContent() {
                           required
                           value={quantityHarvestedKg}
                           onChange={(e) => setQuantityHarvestedKg(e.target.value)}
-                          placeholder="1850"
+                          placeholder="e.g. 1850"
                           className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                         />
                       </label>
@@ -979,7 +927,7 @@ function SignupContent() {
                           required
                           value={batchNumber}
                           onChange={(e) => setBatchNumber(e.target.value)}
-                          placeholder="BATCH-CR-2026-001"
+                          placeholder="e.g. BATCH-CR-2026-001"
                           className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 font-mono text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                         />
                       </label>
@@ -1040,190 +988,53 @@ function SignupContent() {
                         rows={2}
                         value={batchMovementRoute}
                         onChange={(e) => setBatchMovementRoute(e.target.value)}
-                        placeholder="Farm Gate → Village Collection Point → Export Channel"
+                        placeholder="e.g. Ekondo-Titi Farm Gate → Kumba Central Buying Station → Douala Port"
                         className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
                       />
                     </label>
                   </div>
                 )}
 
-                {/* Tab 5: Supporting Land, Legal & Audit */}
-                {activeTab === "compliance" && (
-                  <div className="space-y-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-5">
-                    <div className="border-b border-[#edf1ea] pb-2">
-                      <h3 className="font-semibold text-[#10251d]">
-                        5. Land Documentation & Audit Verification
-                      </h3>
-                      <p className="text-xs text-[#57655d]">
-                        Documents customary/statutory land titles, EUDR deforestation-risk rating, and inspection audits.
-                      </p>
-                    </div>
+                {/* Tab 5: Canopy Geofence Mapping (Final Step of Onboarding) */}
+                {activeTab === "geofence" && (
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-5">
+                      <div className="border-b border-[#edf1ea] pb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#2d6130] uppercase tracking-wider">
+                            Step 5 of 5 • Final Geodetic Verification
+                          </span>
+                          <span className="flex items-center gap-1 text-[0.7rem] font-semibold text-[#2a7a33]">
+                            <ShieldCheck size={13} /> EUDR Article 9 Requirement
+                          </span>
+                        </div>
+                        <h3 className="mt-1 text-lg font-bold text-[#10251d]">
+                          5. Tree Canopy Geofence & Perimeter Walk
+                        </h3>
+                        <p className="text-xs text-[#57655d]">
+                          Map the real-world perimeter of <strong className="text-[#10251d]">{farmName || "your farm plot"}</strong>. Multipath signals under dense tree canopy are filtered (&lt;10m threshold), logged into offline IndexedDB, and converted to an EUDR polygon with Turf.js.
+                        </p>
+                      </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Land Document Type</span>
-                        <select
-                          value={landDocType}
-                          onChange={(e) => setLandDocType(e.target.value)}
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        >
-                          <option value="Customary Land Attestation (Chefferie)">
-                            Customary Land Attestation (Chefferie)
-                          </option>
-                          <option value="Rural Concession Certificate">
-                            Rural Concession Certificate
-                          </option>
-                          <option value="Statutory Land Title">
-                            Statutory Land Title
-                          </option>
-                          <option value="Community Agricultural Allocation">
-                            Community Agricultural Allocation
-                          </option>
-                        </select>
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Document Reference / ID</span>
-                        <input
-                          type="text"
-                          value={landDocReference}
-                          onChange={(e) => setLandDocReference(e.target.value)}
-                          placeholder="e.g. AVPC-NDIAN-2024-REF-098"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
+                      <div className="mt-4">
+                        <CocoaTracker
+                          farmId={farmName ? `farm_${farmName.toLowerCase().replace(/\s+/g, "_")}` : "farm_canopy_temp"}
+                          farmName={farmName || "Cocoa Farm Plot"}
+                          initialPolygon={geofencePolygon}
+                          onGeofenceComplete={({ polygon, areaHectares, pointCount }) => {
+                            setGeofencePolygon(polygon);
+                            setGeofenceAreaHa(areaHectares);
+                            setGeofencePointCount(pointCount);
+                            if (areaHectares && (!sizeHectares || sizeHectares === "2.5")) {
+                              setSizeHectares(areaHectares.toString());
+                            }
+                            if (polygon.length > 0 && !geolocation) {
+                              setGeolocation(`${polygon[0][1].toFixed(5)}° N, ${polygon[0][0].toFixed(5)}° E`);
+                            }
+                          }}
                         />
-                      </label>
+                      </div>
                     </div>
-
-                    <label className="block text-sm font-medium text-[#10251d]">
-                      <span className="mb-1 block text-xs font-semibold text-[#48574c]">Deforestation-Risk Assessment</span>
-                      <select
-                        value={deforestationRisk}
-                        onChange={(e) => setDeforestationRisk(e.target.value)}
-                        className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                      >
-                        <option value="Zero Deforestation Verified - Post-2020 Baseline Compliant">
-                          Zero Deforestation Verified - Post-2020 Baseline Compliant (Low Risk)
-                        </option>
-                        <option value="Low Risk - Ancient Plantation Grove Established pre-2015">
-                          Low Risk - Ancient Plantation Grove Established pre-2015
-                        </option>
-                        <option value="Under Remote-Sensing Due Diligence Review">
-                          Under Remote-Sensing Due Diligence Review
-                        </option>
-                        <option value="Agroforestry Buffer Zone - Zero Encroachment">
-                          Agroforestry Buffer Zone - Zero Encroachment
-                        </option>
-                      </select>
-                    </label>
-
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Audit Status</span>
-                        <select
-                          value={auditStatus}
-                          onChange={(e) => setAuditStatus(e.target.value)}
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        >
-                          <option value="EUDR Due-Diligence Cleared">EUDR Due-Diligence Cleared</option>
-                          <option value="Rainforest Alliance Certified">Rainforest Alliance Certified</option>
-                          <option value="Third-Party Audit Passed">Third-Party Audit Passed</option>
-                          <option value="Cooperative Inspection Validated">Cooperative Inspection Validated</option>
-                          <option value="Audit Scheduled">Audit Scheduled</option>
-                        </select>
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Audit Certificate #</span>
-                        <input
-                          type="text"
-                          value={auditCertificateNumber}
-                          onChange={(e) => setAuditCertificateNumber(e.target.value)}
-                          placeholder="AUD-EUDR-2026-0814"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Auditor / Agency</span>
-                        <input
-                          type="text"
-                          value={auditorName}
-                          onChange={(e) => setAuditorName(e.target.value)}
-                          placeholder="SGS Agri-Trace / Rainforest Alliance"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="block text-sm font-medium text-[#10251d]">
-                      <span className="mb-1 block text-xs font-semibold text-[#48574c]">Inspection Date</span>
-                      <input
-                        type="date"
-                        value={auditDate}
-                        onChange={(e) => setAuditDate(e.target.value)}
-                        className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {/* Tab 6: Digital Transaction History */}
-                {activeTab === "finance" && (
-                  <div className="space-y-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-5">
-                    <div className="border-b border-[#edf1ea] pb-2">
-                      <h3 className="font-semibold text-[#10251d]">
-                        6. Digital Transactions & Settlements
-                      </h3>
-                      <p className="text-xs text-[#57655d]">
-                        Verifies cashless digital payment records (MoMo, Bank Transfer, Escrow) for due diligence.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Payment Settlement Method</span>
-                        <select
-                          value={paymentMethod}
-                          onChange={(e) => setPaymentMethod(e.target.value)}
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        >
-                          <option value="MTN Mobile Money (MoMo)">
-                            MTN Mobile Money (MoMo)
-                          </option>
-                          <option value="Orange Money">
-                            Orange Money
-                          </option>
-                          <option value="Direct Bank Transfer">
-                            Direct Bank Transfer
-                          </option>
-                          <option value="Cashless Cocoa Escrow">
-                            Cashless Cocoa Escrow
-                          </option>
-                        </select>
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Transaction Reference #</span>
-                        <input
-                          type="text"
-                          value={transactionReference}
-                          onChange={(e) => setTransactionReference(e.target.value)}
-                          placeholder="MOMO-TX-984210984"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 font-mono text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-                    </div>
-
-                    <label className="block text-sm font-medium text-[#10251d]">
-                      <span className="mb-1 block text-xs font-semibold text-[#48574c]">Payment Value</span>
-                      <input
-                        type="text"
-                        value={transactionAmount}
-                        onChange={(e) => setTransactionAmount(e.target.value)}
-                        placeholder="FCFA 3,250,000 (~$5,300)"
-                        className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                      />
-                    </label>
                   </div>
                 )}
 
@@ -1243,7 +1054,7 @@ function SignupContent() {
                       </button>
                     )}
 
-                    {activeTab !== "finance" && (
+                    {activeTab !== ONBOARDING_TABS[ONBOARDING_TABS.length - 1].id && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1563,25 +1374,6 @@ function SignupContent() {
                   </button>
                 </div>
               </form>
-
-              <div className="mt-3 border-t border-[#edf1ea] pt-2.5 text-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    loginAsDemo({
-                      displayName: farmerName || "Alain Nkweta (Verified Producer)",
-                      email: farmerEmail || "farmer@cocoatrace.cm",
-                    });
-                    setShowAuthModal(false);
-                    setTimeout(() => {
-                      executeFarmRegistration();
-                    }, 200);
-                  }}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#2d6130] hover:underline cursor-pointer"
-                >
-                  <Sparkles size={12} /> Instant Preview Save (Demo Producer)
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -1714,38 +1506,52 @@ function SignupContent() {
                 </div>
               </div>
 
-              {/* Audit & Financial History */}
-              <div className="rounded-2xl bg-[#f9fbf7] p-4 border border-[#edf1ea]">
-                <h4 className="font-bold text-[#10251d] uppercase tracking-wider text-[0.68rem] mb-2 flex items-center gap-1.5">
-                  <FileCheck2 size={14} className="text-[#2d6130]" /> Audit Verification & Payment Records
-                </h4>
-                <div className="grid grid-cols-2 gap-3 text-[#394a41]">
-                  <div>
-                    <span className="text-[#6f7e73] block text-[0.65rem]">Audit Status</span>
-                    <span className="font-semibold text-[#1a4936]">{selectedFarmModal.auditStatus || "Verified"}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#6f7e73] block text-[0.65rem]">Audit Certificate #</span>
-                    <span className="font-mono text-[#10251d]">{selectedFarmModal.auditCertificateNumber || "AUD-REF"}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#6f7e73] block text-[0.65rem]">Auditor Agency</span>
-                    <span className="text-[#10251d]">{selectedFarmModal.auditorName || "SGS Agri-Trace"}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#6f7e73] block text-[0.65rem]">Payment Method</span>
-                    <span className="text-[#10251d]">{selectedFarmModal.paymentMethod || "Mobile Money"}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#6f7e73] block text-[0.65rem]">Transaction Reference</span>
-                    <span className="font-mono text-[#10251d]">{selectedFarmModal.transactionReference || "TX-VERIFIED"}</span>
-                  </div>
-                  <div>
-                    <span className="text-[#6f7e73] block text-[0.65rem]">Settlement Value</span>
-                    <strong className="text-[#10251d]">{selectedFarmModal.transactionAmount || "Settled"}</strong>
+              {/* Audit & Financial History (if present) */}
+              {(selectedFarmModal.auditStatus || selectedFarmModal.paymentMethod) && (
+                <div className="rounded-2xl bg-[#f9fbf7] p-4 border border-[#edf1ea]">
+                  <h4 className="font-bold text-[#10251d] uppercase tracking-wider text-[0.68rem] mb-2 flex items-center gap-1.5">
+                    <FileCheck2 size={14} className="text-[#2d6130]" /> Audit Verification & Payment Records
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-[#394a41]">
+                    {selectedFarmModal.auditStatus && (
+                      <div>
+                        <span className="text-[#6f7e73] block text-[0.65rem]">Audit Status</span>
+                        <span className="font-semibold text-[#1a4936]">{selectedFarmModal.auditStatus}</span>
+                      </div>
+                    )}
+                    {selectedFarmModal.auditCertificateNumber && (
+                      <div>
+                        <span className="text-[#6f7e73] block text-[0.65rem]">Audit Certificate #</span>
+                        <span className="font-mono text-[#10251d]">{selectedFarmModal.auditCertificateNumber}</span>
+                      </div>
+                    )}
+                    {selectedFarmModal.auditorName && (
+                      <div>
+                        <span className="text-[#6f7e73] block text-[0.65rem]">Auditor Agency</span>
+                        <span className="text-[#10251d]">{selectedFarmModal.auditorName}</span>
+                      </div>
+                    )}
+                    {selectedFarmModal.paymentMethod && (
+                      <div>
+                        <span className="text-[#6f7e73] block text-[0.65rem]">Payment Method</span>
+                        <span className="text-[#10251d]">{selectedFarmModal.paymentMethod}</span>
+                      </div>
+                    )}
+                    {selectedFarmModal.transactionReference && (
+                      <div>
+                        <span className="text-[#6f7e73] block text-[0.65rem]">Transaction Reference</span>
+                        <span className="font-mono text-[#10251d]">{selectedFarmModal.transactionReference}</span>
+                      </div>
+                    )}
+                    {selectedFarmModal.transactionAmount && (
+                      <div>
+                        <span className="text-[#6f7e73] block text-[0.65rem]">Settlement Value</span>
+                        <strong className="text-[#10251d]">{selectedFarmModal.transactionAmount}</strong>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end">

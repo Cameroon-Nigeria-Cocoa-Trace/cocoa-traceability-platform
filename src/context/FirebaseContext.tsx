@@ -58,6 +58,9 @@ export interface FarmRecord {
   transactionReference?: string;
   transactionAmount?: string;
   eudrCompliant?: boolean;
+  geofencePolygon?: [number, number][];
+  geofenceAreaHa?: number;
+  geofencePointCount?: number;
   createdAt: string;
 }
 
@@ -96,17 +99,7 @@ const FirebaseContext = createContext<FirebaseContextType>({
 });
 
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const savedDemo = localStorage.getItem("cocoatrace_auth_user");
-        if (savedDemo) return JSON.parse(savedDemo);
-      } catch (e) {
-        console.warn("Could not parse saved auth session:", e);
-      }
-    }
-    return null;
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [lots, setLots] = useState<Product[]>(defaultProducts);
   const [farms, setFarms] = useState<FarmRecord[]>([]);
@@ -228,7 +221,20 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
-      await authLoginWithGoogle();
+      const cred = await authLoginWithGoogle();
+      if (cred?.user) {
+        setUser(cred.user as unknown as User);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "cocoatrace_auth_user",
+            JSON.stringify({
+              uid: cred.user.uid,
+              displayName: cred.user.displayName,
+              email: cred.user.email,
+            })
+          );
+        }
+      }
     } catch (error) {
       console.error("Google login failed:", error);
       throw error;
@@ -237,7 +243,20 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithEmail = async (email: string, pass: string) => {
     try {
-      await authLoginWithEmail(email, pass);
+      const cred = await authLoginWithEmail(email, pass);
+      if (cred?.user) {
+        setUser(cred.user as unknown as User);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "cocoatrace_auth_user",
+            JSON.stringify({
+              uid: cred.user.uid,
+              displayName: cred.user.displayName,
+              email: cred.user.email,
+            })
+          );
+        }
+      }
     } catch (error) {
       console.error("Email login failed:", error);
       throw error;
@@ -246,7 +265,20 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
   const signUpWithEmail = async (email: string, pass: string, displayName?: string) => {
     try {
-      await authSignUpWithEmail(email, pass, displayName);
+      const cred = await authSignUpWithEmail(email, pass, displayName);
+      if (cred?.user) {
+        setUser(cred.user as unknown as User);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            "cocoatrace_auth_user",
+            JSON.stringify({
+              uid: cred.user.uid,
+              displayName: displayName || cred.user.displayName,
+              email: cred.user.email,
+            })
+          );
+        }
+      }
     } catch (error) {
       console.error("Email sign up failed:", error);
       throw error;
@@ -334,6 +366,13 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     if (data.paymentMethod) newFarm.paymentMethod = data.paymentMethod;
     if (data.transactionReference) newFarm.transactionReference = data.transactionReference;
     if (data.transactionAmount) newFarm.transactionAmount = data.transactionAmount;
+    if (data.geofencePolygon && data.geofencePolygon.length > 0) {
+      newFarm.geofencePolygon = data.geofencePolygon;
+      newFarm.geofencePointCount = data.geofencePointCount || data.geofencePolygon.length;
+    }
+    if (data.geofenceAreaHa !== undefined) {
+      newFarm.geofenceAreaHa = Number(data.geofenceAreaHa);
+    }
 
     try {
       if (user && !user.uid.startsWith("demo_producer_")) {

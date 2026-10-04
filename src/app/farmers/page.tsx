@@ -1,5 +1,5 @@
-import SignupPage from "../signup/page";
+import DashboardPage from "../dashboard/page";
 
 export default function FarmersPage() {
-  return <SignupPage />;
+  return <DashboardPage />;
 }

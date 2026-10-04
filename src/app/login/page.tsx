@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase } from "@/context/FirebaseContext";
@@ -13,7 +12,7 @@ import {
   Lock,
   User,
   ArrowRight,
-  Sparkles,
+  Plus,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -22,11 +21,9 @@ export default function LoginPage() {
     loginWithGoogle,
     loginWithEmail,
     signUpWithEmail,
-    loginAsDemo,
     logout,
     farms,
   } = useFirebase();
-  const router = useRouter();
 
   // Auth Mode: "signin" | "signup"
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -68,7 +65,7 @@ export default function LoginPage() {
     if (msg.includes("auth/popup-blocked")) {
       return {
         title: "Sign-in popup was blocked by your browser or iframe.",
-        detail: "Please allow popups for this site, or use the Demo Producer session below.",
+        detail: "Please allow popups for this site, or use the Email/Password sign-in below.",
       };
     }
     if (msg.includes("auth/email-already-in-use")) {
@@ -117,7 +114,7 @@ export default function LoginPage() {
       setError(null);
       setErrorDetails(null);
       await loginWithGoogle();
-      router.push("/signup");
+      setSuccess("Connected with Google successfully!");
     } catch (err: unknown) {
       console.error("Google Auth Error:", err);
       const parsed = parseAuthError(err);
@@ -155,12 +152,10 @@ export default function LoginPage() {
       setLoading(true);
       if (mode === "signup") {
         await signUpWithEmail(cleanEmail, password, displayName.trim() || undefined);
-        setSuccess("Account created successfully!");
-        router.push("/signup");
+        setSuccess("Account created successfully! You are now signed in.");
       } else {
         await loginWithEmail(cleanEmail, password);
         setSuccess("Signed in successfully!");
-        router.push("/signup");
       }
     } catch (err: unknown) {
       console.error("Email Auth Error:", err);
@@ -170,17 +165,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleDemoLogin = () => {
-    setError(null);
-    setErrorDetails(null);
-    loginAsDemo({
-      displayName: displayName.trim() || "Alain Nkweta (Verified Producer)",
-      email: email.trim() || "alain.nkweta@cocoatrace.cm",
-    });
-    setSuccess("Connected as Verified Producer!");
-    router.push("/signup");
   };
 
   const userFarmsCount = user ? farms.filter((f) => f.farmerId === user.uid).length : 0;
@@ -216,18 +200,6 @@ export default function LoginPage() {
                   <p className="font-semibold">{error}</p>
                   {errorDetails && <p className="text-[0.72rem] text-red-700 leading-relaxed">{errorDetails}</p>}
                 </div>
-              </div>
-
-              {/* Instant Dev / Demo bypass when Firebase cloud provider is disabled */}
-              <div className="mt-3 border-t border-red-200/80 pt-3 flex items-center justify-between">
-                <span className="text-[0.7rem] text-red-900 font-medium">Testing in preview?</span>
-                <button
-                  type="button"
-                  onClick={handleDemoLogin}
-                  className="inline-flex items-center gap-1 rounded-full bg-[#0b3528] px-3 py-1.5 text-[0.7rem] font-bold text-white shadow-sm hover:bg-[#07241b] cursor-pointer"
-                >
-                  <Sparkles size={12} className="text-[#b8f58b]" /> Use Demo Producer
-                </button>
               </div>
             </div>
           )}
@@ -269,10 +241,16 @@ export default function LoginPage() {
 
               <div className="flex flex-col gap-2.5 pt-2">
                 <Link
+                  href="/dashboard"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b3528] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#07241b]"
+                >
+                  Open Farmer Dashboard <ArrowRight size={16} />
+                </Link>
+                <Link
                   href="/signup"
                   className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-sm font-bold text-[#073b2b] shadow-sm transition hover:bg-[#d0ffb0]"
                 >
-                  Go to Farm Onboarding <ArrowRight size={16} />
+                  Register New Farm Plot <Plus size={16} />
                 </Link>
                 <Link
                   href="/marketplace"
@@ -280,6 +258,18 @@ export default function LoginPage() {
                 >
                   Explore Marketplace Lots
                 </Link>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await logout();
+                    setMode("signup");
+                    setError(null);
+                    setErrorDetails(null);
+                  }}
+                  className="w-full rounded-full border border-[#dfe7d8] bg-white px-5 py-2.5 text-xs font-semibold text-[#10251d] transition hover:bg-[#f7f8f3] cursor-pointer"
+                >
+                  + Sign Out & Register New Account
+                </button>
                 <button
                   type="button"
                   onClick={() => logout()}
@@ -293,36 +283,38 @@ export default function LoginPage() {
             /* Auth Form (Sign In / Sign Up) */
             <div className="mt-5 space-y-4">
               {/* Tab Selector */}
-              <div className="flex rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-1">
+              <div className="flex rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-1.5 shadow-inner">
                 <button
                   type="button"
+                  id="tab-btn-signin"
                   onClick={() => {
                     setMode("signin");
                     setError(null);
                     setErrorDetails(null);
                   }}
-                  className={`flex-1 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
+                  className={`flex-1 rounded-xl py-2.5 text-xs font-bold transition-all cursor-pointer ${
                     mode === "signin"
-                      ? "bg-white text-[#10251d] shadow-sm"
-                      : "text-[#57655d] hover:text-[#10251d]"
+                      ? "bg-white text-[#10251d] shadow-sm ring-1 ring-black/5"
+                      : "text-[#57655d] hover:text-[#10251d] hover:bg-white/50"
                   }`}
                 >
                   Sign In
                 </button>
                 <button
                   type="button"
+                  id="tab-btn-signup"
                   onClick={() => {
                     setMode("signup");
                     setError(null);
                     setErrorDetails(null);
                   }}
-                  className={`flex-1 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
+                  className={`flex-1 rounded-xl py-2.5 text-xs font-bold transition-all cursor-pointer ${
                     mode === "signup"
-                      ? "bg-white text-[#10251d] shadow-sm"
-                      : "text-[#57655d] hover:text-[#10251d]"
+                      ? "bg-white text-[#10251d] shadow-sm ring-1 ring-black/5"
+                      : "text-[#57655d] hover:text-[#10251d] hover:bg-white/50"
                   }`}
                 >
-                  Sign Up
+                  Sign Up (New Account)
                 </button>
               </div>
 
@@ -448,19 +440,7 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              {/* Instant Producer Test Session Option */}
-              <div className="mt-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-3 text-center">
-                <span className="block text-[0.68rem] text-[#6f7e73] font-medium">Quick Preview Access</span>
-                <button
-                  type="button"
-                  onClick={handleDemoLogin}
-                  className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-bold text-[#2d6130] hover:underline cursor-pointer"
-                >
-                  <Sparkles size={13} /> Continue as Verified Demo Producer
-                </button>
-              </div>
-
-              <p className="mt-3 text-center text-xs text-[#57655d]">
+              <p className="mt-4 text-center text-xs text-[#57655d]">
                 {mode === "signin" ? (
                   <>
                     Don&apos;t have an account?{" "}

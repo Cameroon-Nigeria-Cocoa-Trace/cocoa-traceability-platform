@@ -14,9 +14,10 @@ export function Navbar() {
   const links = [
     ["Home", "/"],
     ["Marketplace", "/marketplace"],
-    ["For Farmers", "/signup"],
+    ...(user ? [["Dashboard", "/dashboard"]] : []),
+    ["For Farmers", user ? "/dashboard" : "/signup"],
     ["Traceability", "/marketplace"],
-    ["Resources", "/login"],
+    ["Portal", "/login"],
   ];
 
   return (
