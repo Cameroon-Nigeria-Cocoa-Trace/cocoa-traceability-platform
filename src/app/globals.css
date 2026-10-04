@@ -39,6 +39,19 @@ body {
   line-height: 1.5;
 }
 
+/* Hide Mapbox Logo, Attribution & Watermarks */
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-attrib,
+.mapboxgl-ctrl-attrib-inner,
+.mapboxgl-ctrl-attrib-button,
+.mapbox-improve-map,
+.mapboxgl-compact {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 /* FIXED: Removed the broad * padding reset which broke Tailwind utility classes */
 button,
 input,

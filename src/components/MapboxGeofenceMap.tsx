@@ -72,7 +72,7 @@ export default function MapboxGeofenceMap({
       center: startCenter,
       zoom: initialZoom,
       pitch: 30,
-      attributionControl: false,
+      attributionControl: false, // Disables Mapbox default attribution control
     });
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), "top-right");
@@ -100,6 +100,12 @@ export default function MapboxGeofenceMap({
 
     return () => {
       resizeObserver.disconnect();
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+      if (userMarkerRef.current) {
+        userMarkerRef.current.remove();
+        userMarkerRef.current = null;
+      }
       map.remove();
       mapRef.current = null;
     };
@@ -148,7 +154,7 @@ export default function MapboxGeofenceMap({
     };
   }, [mapLoaded, clickToAddEnabled, activePolygon, isWalking, onPolygonChange]);
 
-  // Update Layers & Sources for Active Polygon, Existing Plots, and Breadcrumbs
+  // Update Layers, Polygons, and Markers
   const updateMapLayers = useCallback(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
@@ -336,7 +342,7 @@ export default function MapboxGeofenceMap({
     activePolygon.forEach((coord, idx) => {
       const el = document.createElement("div");
       el.className =
-        "flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-[#0b3528] text-[10px] font-bold text-[#b8f58b] shadow-md";
+        "flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-[#0b3528] text-[10px] font-bold text-[#b8f58b] shadow-md cursor-grab active:cursor-grabbing hover:scale-110 transition-transform";
       el.innerText = `${idx + 1}`;
 
       const marker = new mapboxgl.Marker({ element: el, draggable: !isWalking })
@@ -353,11 +359,11 @@ export default function MapboxGeofenceMap({
       markersRef.current.push(marker);
     });
 
-    // 5. User Current Position Marker (Animated Pulse Radar Beacon)
+    // 5. User Current Position Marker (Pulsating Live GPS Radar Marker)
     if (currentPosition) {
       if (!userMarkerRef.current) {
         const userEl = document.createElement("div");
-        userEl.className = "relative flex h-6 w-6 items-center justify-center";
+        userEl.className = "relative flex h-6 w-6 items-center justify-center pointer-events-none";
         userEl.innerHTML = `
           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-75"></span>
           <span class="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-sky-500 shadow-lg"></span>
