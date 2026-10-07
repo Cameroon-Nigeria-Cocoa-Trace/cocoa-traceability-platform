@@ -9,6 +9,7 @@ import {
   Play,
   Square,
   ShieldCheck,
+  Trees,
   AlertTriangle,
   CheckCircle2,
   Trash2,
@@ -22,6 +23,7 @@ import {
   Navigation,
   Activity,
 } from "lucide-react";
+import { checkForestOverlap } from "@/lib/protectedForests";
 
 // Dynamic import of Mapbox to prevent SSR window reference errors
 const MapboxGeofenceMap = dynamic(() => import("@/components/MapboxGeofenceMap"), {
@@ -66,6 +68,8 @@ export default function CocoaTracker({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
 
+  const forestCheck = checkForestOverlap(activePolygon);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastSavedPointRef = useRef<[number, number] | null>(null);
@@ -73,15 +77,45 @@ export default function CocoaTracker({
   // Area calculation helper using Turf.js
   const calculatePolygonArea = useCallback(
     (points: [number, number][]): number => {
-      if (points.length < 3) return 0;
-      try {
-        const closed = [...points];
+      if (!points || points.length < 3) {
+        setCalculatedArea(null);
+        return 0;
+      }
+
+      // Filter out duplicate consecutive points
+      const uniquePoints: [number, number][] = [];
+      for (let i = 0; i < points.length; i++) {
+        const pt = points[i];
         if (
-          closed[0][0] !== closed[closed.length - 1][0] ||
-          closed[0][1] !== closed[closed.length - 1][1]
+          i === 0 ||
+          pt[0] !== points[i - 1][0] ||
+          pt[1] !== points[i - 1][1]
         ) {
-          closed.push(closed[0]);
+          uniquePoints.push(pt);
         }
+      }
+
+      if (uniquePoints.length < 3) {
+        setCalculatedArea(null);
+        return 0;
+      }
+
+      try {
+        const closed = [...uniquePoints];
+        const first = closed[0];
+        const last = closed[closed.length - 1];
+
+        // Ensure closed ring
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          closed.push([first[0], first[1]]);
+        }
+
+        // A valid GeoJSON LinearRing must have at least 4 positions (3 distinct vertices + 1 closing vertex)
+        if (closed.length < 4) {
+          setCalculatedArea(null);
+          return 0;
+        }
+
         const poly = turf.polygon([closed]);
         const areaSqM = turf.area(poly);
         const areaHa = parseFloat((areaSqM / 10000).toFixed(2));
@@ -89,14 +123,14 @@ export default function CocoaTracker({
 
         if (onGeofenceComplete) {
           onGeofenceComplete({
-            polygon: points,
+            polygon: uniquePoints,
             areaHectares: areaHa,
-            pointCount: points.length,
+            pointCount: uniquePoints.length,
           });
         }
         return areaHa;
-      } catch (e) {
-        console.error("Turf area calculation error:", e);
+      } catch (e: unknown) {
+        console.warn("Polygon area calculation notice:", e instanceof Error ? e.message : e);
         return 0;
       }
     },
@@ -472,6 +506,24 @@ export default function CocoaTracker({
                       : "Canopy GPS Ready"}
                   </span>
                 </div>
+
+                {/* Protected Forest Reserve Proximity / EUDR Status Badge */}
+                <div
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold ${
+                    forestCheck.isOverlapping
+                      ? "bg-red-500/20 text-red-700 border border-red-500/30 font-bold animate-pulse"
+                      : "bg-emerald-500/15 text-emerald-800 border border-emerald-500/30"
+                  }`}
+                >
+                  <Trees size={12} className={forestCheck.isOverlapping ? "text-red-600" : "text-emerald-600"} />
+                  <span>
+                    {forestCheck.isOverlapping
+                      ? `⚠️ Intersects ${forestCheck.breachedForests[0]?.name}`
+                      : forestCheck.nearestForest
+                      ? `Zero Deforestation (${forestCheck.nearestForest.distanceKm}km to ${forestCheck.nearestForest.name})`
+                      : "Protected Forests Geofenced"}
+                  </span>
+                </div>
               </div>
 
               <h3 className="mt-1 text-lg font-bold text-[#10251d] sm:text-2xl">
@@ -556,8 +608,8 @@ export default function CocoaTracker({
         {/* ===================================================================== */}
         <div className={`relative ${isFullScreen ? "flex-1 w-full h-full" : "w-full"}`}>
           <MapboxGeofenceMap
-            initialCenter={activePolygon.length > 0 ? activePolygon[0] : [9.1245, 4.5912]}
-            initialZoom={16}
+            initialCenter={activePolygon.length > 0 ? activePolygon[0] : [11.2, 5.0]}
+            initialZoom={activePolygon.length > 0 ? 15.5 : 6.8}
             activePolygon={activePolygon}
             breadcrumbs={breadcrumbs}
             isWalking={isTracking}

@@ -287,12 +287,15 @@ function DashboardContent() {
             <div className="rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#edf1ea] pb-4">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#2d6130] uppercase tracking-wider">
                       Mapbox Satellite View
                     </span>
                     <span className="flex items-center gap-1 text-[0.68rem] font-semibold text-[#2a7a33]">
                       <ShieldCheck size={13} /> {mapPlots.length} Plots Geofenced
+                    </span>
+                    <span className="flex items-center gap-1 rounded-full bg-[#065f46]/10 px-2 py-0.5 text-[0.68rem] font-bold text-[#065f46]">
+                      🌲 Protected Reserves Active
                     </span>
                   </div>
                   <h2 className="mt-1 text-xl font-bold text-[#10251d]">
@@ -322,8 +325,8 @@ function DashboardContent() {
               {/* Mapbox Satellite Component */}
               <div className="mt-4">
                 <MapboxGeofenceMap
-                  initialCenter={[9.1245, 4.5912]}
-                  initialZoom={15}
+                  initialCenter={[11.2, 5.0]}
+                  initialZoom={7.0}
                   existingPlots={mapPlots}
                   selectedPlotId={highlightedPlotId}
                   heightClass="h-[360px]"
