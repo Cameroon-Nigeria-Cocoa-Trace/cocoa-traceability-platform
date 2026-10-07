@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Trash2,
-  Sparkles,
   ArrowRight,
   Info,
   Maximize2,
@@ -30,7 +29,7 @@ const MapboxGeofenceMap = dynamic(() => import("@/components/MapboxGeofenceMap")
   loading: () => (
     <div className="flex h-[450px] w-full items-center justify-center rounded-3xl bg-[#062d22] text-white">
       <div className="flex items-center gap-2 text-xs text-[#b8f58b]">
-        <Compass className="animate-spin" size={18} /> Initializing Mapbox Satellite View...
+        <Compass className="animate-spin" size={18} /> Loading map...
       </div>
     </div>
   ),
@@ -63,7 +62,6 @@ export default function CocoaTracker({
   const [activePolygon, setActivePolygon] = useState<[number, number][]>(initialPolygon);
   const [breadcrumbs, setBreadcrumbs] = useState<[number, number][]>([]);
   const [currentPos, setCurrentPos] = useState<[number, number] | null>(null);
-  const [isSimulating, setIsSimulating] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
@@ -71,7 +69,6 @@ export default function CocoaTracker({
   const containerRef = useRef<HTMLDivElement>(null);
   const watchIdRef = useRef<number | null>(null);
   const lastSavedPointRef = useRef<[number, number] | null>(null);
-  const simulationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Area calculation helper using Turf.js
   const calculatePolygonArea = useCallback(
@@ -156,96 +153,117 @@ export default function CocoaTracker({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isFullScreen]);
 
-  // Toggle Fullscreen Viewport Mode
+  // Fullscreen Toggle
   const toggleFullScreen = () => {
     setIsFullScreen((prev) => !prev);
   };
 
-  // 1. GPS Core Logic Loop (Hardware watchPosition)
-  const handleNewCoordinate = async (position: GeolocationPosition) => {
-    const { latitude, longitude, accuracy } = position.coords;
-    setAccuracyValue(Math.round(accuracy));
-    setCurrentPos([longitude, latitude]);
-
-    // Reject weak multipath signals reflecting off the dense cocoa tree canopy (> 10m)
-    if (accuracy > 10) {
-      setSignalWarning(true);
-      console.warn("Signal degraded under cocoa canopy (>10m accuracy), discarding point.");
-      return;
-    }
-    setSignalWarning(false);
-
-    const currentPoint: [number, number] = [longitude, latitude];
-    setBreadcrumbs((prev) => [...prev, currentPoint]);
-
-    // First anchor point
-    if (!lastSavedPointRef.current) {
-      lastSavedPointRef.current = currentPoint;
-      await cocoaDb.breadcrumbs.add({
-        farmId,
-        lng: longitude,
-        lat: latitude,
-        accuracy,
-        timestamp: Date.now(),
-      });
-
-      const updated = [currentPoint];
-      setActivePolygon(updated);
-      setPointCount(1);
-      return;
-    }
-
-    // Distance Filter: Only commit to IndexedDB if farmer has walked at least 4 meters
-    const from = turf.point(lastSavedPointRef.current);
-    const to = turf.point(currentPoint);
-    const distanceInMeters = turf.distance(from, to, { units: "meters" });
-
-    if (distanceInMeters >= 4) {
-      lastSavedPointRef.current = currentPoint;
-      await cocoaDb.breadcrumbs.add({
-        farmId,
-        lng: longitude,
-        lat: latitude,
-        accuracy,
-        timestamp: Date.now(),
-      });
-
-      const count = await cocoaDb.breadcrumbs.where("farmId").equals(farmId).count();
-      setPointCount(count);
-
-      setActivePolygon((prev) => {
-        const next = [...prev, currentPoint];
-        if (next.length >= 3) {
-          calculatePolygonArea(next);
-        }
-        return next;
-      });
-    }
+  // 1. Point Distance Helper
+  const getDistanceFromLatLonInMeters = (
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ) => {
+    const R = 6371e3; // Earth radius in meters
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
-  // 2. Start Live Hardware Tracking
+  // 2. Start Live Hardware GPS Perimeter Tracking
   const startTracking = () => {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      alert("Your browser or device does not support GPS hardware tracking.");
+    if (!navigator.geolocation) {
+      setStatusMessage("Geolocation is not supported by your browser or device.");
       return;
     }
 
     setIsTracking(true);
-    setCalculatedArea(null);
-    lastSavedPointRef.current = null;
-    setStatusMessage("Walking canopy perimeter... hold device up and walk along farm boundary.");
+    setStatusMessage("Acquiring high-precision GNSS lock under canopy...");
+
+    const geoOptions: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    };
 
     watchIdRef.current = navigator.geolocation.watchPosition(
-      handleNewCoordinate,
-      (err) => {
-        console.error("GPS Error: ", err.message);
-        setStatusMessage(`GPS Notice: ${err.message}. You can also use Simulation or tap the map to place pins.`);
+      async (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        setAccuracyValue(Math.round(accuracy));
+        setCurrentPos([longitude, latitude]);
+
+        if (accuracy > 10) {
+          setSignalWarning(true);
+          setStatusMessage(`Degraded canopy signal (±${Math.round(accuracy)}m). Pausing automated point log.`);
+          return;
+        }
+
+        setSignalWarning(false);
+        const currentCoord: [number, number] = [longitude, latitude];
+
+        let shouldSave = false;
+        if (!lastSavedPointRef.current) {
+          shouldSave = true;
+        } else {
+          const dist = getDistanceFromLatLonInMeters(
+            lastSavedPointRef.current[1],
+            lastSavedPointRef.current[0],
+            latitude,
+            longitude
+          );
+          if (dist >= 4) {
+            shouldSave = true;
+          }
+        }
+
+        if (shouldSave) {
+          lastSavedPointRef.current = currentCoord;
+
+          setBreadcrumbs((prev) => [...prev, currentCoord]);
+          setActivePolygon((prev) => {
+            const next = [...prev, currentCoord];
+            setPointCount(next.length);
+            if (next.length >= 3) {
+              calculatePolygonArea(next);
+            }
+            return next;
+          });
+
+          await cocoaDb.breadcrumbs.add({
+            farmId,
+            lng: longitude,
+            lat: latitude,
+            accuracy,
+            timestamp: position.timestamp,
+          });
+
+          setStatusMessage(`Logged boundary vertex #${pointCount + 1} (±${Math.round(accuracy)}m).`);
+        }
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 8000,
-        maximumAge: 0,
-      }
+      (error) => {
+        console.warn("GPS Tracking Notice:", error.message);
+        setIsTracking(false);
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+          watchIdRef.current = null;
+        }
+        let msg = "GPS signal unavailable. You can tap on the satellite map directly to mark boundary points.";
+        if (error.code === 1) {
+          msg = "Location permission is not enabled. You can tap directly on the map to place boundary points.";
+        } else if (error.code === 3) {
+          msg = "GPS signal timed out. You can tap directly on the satellite map to add boundary points.";
+        }
+        setStatusMessage(msg);
+      },
+      geoOptions
     );
   };
 
@@ -271,57 +289,7 @@ export default function CocoaTracker({
     setStatusMessage("Perimeter closed! EUDR-compliant polygon & acreage calculated.");
   };
 
-  // 4. Simulated Canopy Walk (Ideal for rapid preview and testing)
-  const startSimulation = () => {
-    setIsSimulating(true);
-    setIsTracking(true);
-    setCalculatedArea(null);
-    setActivePolygon([]);
-    setBreadcrumbs([]);
-    setStatusMessage("Simulating farmer walking boundary in Ekondo-Titi cocoa zone, Cameroon...");
-
-    const simRoute: [number, number][] = [
-      [9.124, 4.591],
-      [9.1278, 4.5914],
-      [9.1286, 4.5888],
-      [9.1252, 4.5882],
-      [9.1238, 4.5898],
-    ];
-
-    let step = 0;
-    const currentPoints: [number, number][] = [];
-
-    simulationIntervalRef.current = setInterval(async () => {
-      if (step < simRoute.length) {
-        const pt = simRoute[step];
-        currentPoints.push(pt);
-        setCurrentPos(pt);
-        setBreadcrumbs((prev) => [...prev, pt]);
-        setActivePolygon([...currentPoints]);
-        setPointCount(currentPoints.length);
-
-        await cocoaDb.breadcrumbs.add({
-          farmId,
-          lng: pt[0],
-          lat: pt[1],
-          accuracy: 3.2,
-          timestamp: Date.now(),
-        });
-
-        step++;
-      } else {
-        if (simulationIntervalRef.current) {
-          clearInterval(simulationIntervalRef.current);
-        }
-        setIsSimulating(false);
-        setIsTracking(false);
-        calculatePolygonArea(currentPoints);
-        setStatusMessage("Simulation complete! 5-point EUDR cocoa polygon created.");
-      }
-    }, 1000);
-  };
-
-  // 5. Undo Last Point
+  // 4. Undo Last Point
   const handleUndo = async () => {
     if (activePolygon.length === 0) return;
     const updated = activePolygon.slice(0, -1);
@@ -345,17 +313,13 @@ export default function CocoaTracker({
     }
   };
 
-  // 6. Clear All Boundary Points
+  // 5. Clear All Boundary Points
   const handleClear = async () => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-    if (simulationIntervalRef.current) {
-      clearInterval(simulationIntervalRef.current);
-    }
     setIsTracking(false);
-    setIsSimulating(false);
     setActivePolygon([]);
     setBreadcrumbs([]);
     setCalculatedArea(null);
@@ -366,7 +330,7 @@ export default function CocoaTracker({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative w-full">
       {/* ========================================================================= */}
       {/* 1. HOW-TO-GEOFENCE FIELD GUIDE MODAL                                       */}
       {/* ========================================================================= */}
@@ -383,11 +347,11 @@ export default function CocoaTracker({
                     <ShieldCheck size={14} className="text-[#2a7a33]" /> Official Standard
                   </span>
                 </div>
-                <h3 className="mt-2 text-2xl font-bold text-[#10251d]">
+                <h3 className="mt-2 text-xl sm:text-2xl font-bold text-[#10251d]">
                   How to Geofence Your Cocoa Plot Accurately
                 </h3>
                 <p className="mt-1 text-xs text-[#57655d]">
-                  Follow these 4 field steps to ensure your boundary polygon complies with EU Deforestation Regulation audits.
+                  Follow these field steps to ensure your boundary polygon complies with EU Deforestation Regulation audits.
                 </p>
               </div>
               <button
@@ -400,72 +364,60 @@ export default function CocoaTracker({
             </div>
 
             <div className="mt-6 space-y-4">
-              {/* Step 1 */}
               <div className="flex gap-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0b3528] text-sm font-bold text-white">
                   1
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-[#10251d]">
-                    Stand at Corner 1 (Starting Boundary Post)
+                    Stand at Starting Boundary Corner
                   </h4>
                   <p className="mt-1 text-xs text-[#57655d] leading-relaxed">
-                    Walk to the corner of your cocoa plot where tree canopy is relatively clear. Hold your smartphone or tablet chest-high facing slightly upward to establish a strong dual-frequency GNSS lock.
+                    Walk to the starting corner of your cocoa plot. Hold your device chest-high to establish a strong dual-frequency GNSS lock.
                   </p>
                 </div>
               </div>
 
-              {/* Step 2 */}
               <div className="flex gap-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#2d6130] text-sm font-bold text-white">
                   2
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-[#10251d]">
-                    Tap &quot;Start Walking&quot; &amp; Walk the Tree Line
+                    Tap &quot;Start Walking&quot; &amp; Walk the Boundary
                   </h4>
                   <p className="mt-1 text-xs text-[#57655d] leading-relaxed">
-                    Walk clockwise or counter-clockwise along the true perimeter boundary of the farm. The app automatically filters multipath interference (&lt;10m threshold) and drops a geodetic vertex every 4 meters.
+                    Walk clockwise or counter-clockwise along the true perimeter boundary of the farm. The app drops a vertex every 4 meters.
                   </p>
                 </div>
               </div>
 
-              {/* Step 3 */}
               <div className="flex gap-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#2d6130] text-sm font-bold text-white">
                   3
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-[#10251d]">
-                    Pause 3–5 Seconds at Major Turning Corners
+                    Pause 3–5 Seconds at Major Turning Points
                   </h4>
                   <p className="mt-1 text-xs text-[#57655d] leading-relaxed">
-                    Whenever you reach a sharp corner or turning boundary edge, pause for 3 seconds. This allows high-precision GPS positioning to settle before following the next tree row.
+                    Whenever you reach a sharp corner, pause briefly to let GPS position settle accurately before moving along the next edge.
                   </p>
                 </div>
               </div>
 
-              {/* Step 4 */}
               <div className="flex gap-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#073b2b] text-sm font-bold text-[#b8f58b]">
                   4
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-[#10251d]">
-                    Return to Start &amp; Tap &quot;Finish &amp; Close Polygon&quot;
+                    Close Perimeter &amp; Generate Polygon
                   </h4>
                   <p className="mt-1 text-xs text-[#57655d] leading-relaxed">
-                    Once you complete the perimeter circuit and return to your starting post, tap &quot;Finish &amp; Close Polygon&quot;. The polygon loop will close, calculate total acreage in Hectares &amp; Acres, and store the coordinates safely in offline storage.
+                    When you return to your starting post, tap &quot;Finish &amp; Close Polygon&quot; to calculate certified acreage and save the record.
                   </p>
                 </div>
-              </div>
-
-              {/* Canopy Tip Callout */}
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900">
-                <strong className="flex items-center gap-1.5 font-bold text-amber-950 mb-1">
-                  <AlertTriangle size={15} className="text-amber-700" /> Dense Canopy Recommendation:
-                </strong>
-                If under very dense shade trees (e.g., Terminalia ivorensis / Iroko), you can also tap directly on the high-resolution satellite map to pin precise boundary vertices manually.
               </div>
             </div>
 
@@ -473,9 +425,9 @@ export default function CocoaTracker({
               <button
                 type="button"
                 onClick={() => setShowGuideModal(false)}
-                className="rounded-full bg-[#0b3528] px-6 py-3 text-xs font-bold text-white hover:bg-[#07241b] cursor-pointer"
+                className="rounded-full bg-[#0b3528] px-6 py-2.5 text-xs font-bold text-white transition hover:bg-[#07241b] cursor-pointer"
               >
-                Got It, Let&apos;s Geofence
+                Understood, Let&apos;s Map
               </button>
             </div>
           </div>
@@ -489,145 +441,111 @@ export default function CocoaTracker({
         className={
           isFullScreen
             ? "fixed inset-0 z-[100] flex flex-col bg-[#051c14] text-white"
-            : "space-y-4 rounded-[32px] border border-[#dfe7d8] bg-white p-5 shadow-sm sm:p-6"
+            : "space-y-4 rounded-[32px] border border-[#dfe7d8] bg-white p-4 sm:p-6 shadow-sm"
         }
       >
-        {/* Top Header / HUD Bar */}
-        <div
-          className={
-            isFullScreen
-              ? "flex flex-wrap items-center justify-between border-b border-white/10 bg-[#07241b]/95 px-6 py-3.5 backdrop-blur-md"
-              : "flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-          }
-        >
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-bold uppercase tracking-wider ${
-                  isFullScreen
-                    ? "bg-[#b8f58b]/20 text-[#b8f58b] border border-[#b8f58b]/30"
-                    : "bg-[#edf7e8] text-[#2d6130]"
-                }`}
-              >
-                {isFullScreen ? "Fullscreen Geofence HUD" : "EUDR Polygon Geofencing"}
-              </span>
-
-              {/* Accuracy Status Badge */}
-              <div
-                className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold ${
-                  accuracyValue && accuracyValue <= 5
-                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                    : accuracyValue && accuracyValue <= 10
-                    ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                    : signalWarning
-                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse"
-                    : isFullScreen
-                    ? "bg-white/10 text-white/80"
-                    : "bg-[#edf1ea] text-[#57655d]"
-                }`}
-              >
-                <Activity size={12} />
-                <span>
-                  {accuracyValue !== null
-                    ? `GPS Accuracy: ±${accuracyValue}m`
-                    : "Offline Canopy Filter Ready"}
+        {/* Top Header Bar (ONLY SHOWN IN EMBEDDED MODE - HIDDEN IN FULLSCREEN) */}
+        {!isFullScreen && (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.68rem] font-bold uppercase tracking-wider text-[#2d6130]">
+                  EUDR Polygon Geofencing
                 </span>
-              </div>
-            </div>
 
-            <h3
-              className={`mt-1 font-bold ${
-                isFullScreen ? "text-xl text-white" : "text-xl text-[#10251d] sm:text-2xl"
-              }`}
-            >
-              {farmName} Boundary Mapping
-            </h3>
-
-            {!isFullScreen && (
-              <p className="mt-1 text-xs text-[#57655d]">
-                Walk the real boundary or tap satellite imagery to map coordinates with automatic canopy jitter filtering (&lt;10m).
-              </p>
-            )}
-          </div>
-
-          {/* Top Right Controls (Guide, Fullscreen, Area badge) */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Computed Area Pill */}
-            {calculatedArea && (
-              <div
-                className={`flex items-center gap-2 rounded-2xl px-3.5 py-2 ${
-                  isFullScreen
-                    ? "border border-[#b8f58b]/40 bg-[#0b3b2c] text-white"
-                    : "border border-[#c4ebb0] bg-[#eefae6] text-[#0c392b]"
-                }`}
-              >
-                <CheckCircle2 size={16} className="text-[#2a7a33]" />
-                <div>
-                  <span className="block text-[0.6rem] font-bold uppercase tracking-wider opacity-80">
-                    Calculated Size
-                  </span>
-                  <span className="font-extrabold text-sm sm:text-base">
-                    {calculatedArea} Ha ({(parseFloat(calculatedArea) * 2.471).toFixed(2)} Ac)
+                {/* Accuracy Status Badge */}
+                <div
+                  className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold ${
+                    accuracyValue && accuracyValue <= 5
+                      ? "bg-emerald-500/20 text-emerald-700 border border-emerald-500/30"
+                      : accuracyValue && accuracyValue <= 10
+                      ? "bg-blue-500/10 text-blue-700 border border-blue-500/30"
+                      : signalWarning
+                      ? "bg-amber-500/20 text-amber-800 border border-amber-500/30 animate-pulse"
+                      : "bg-[#edf1ea] text-[#57655d]"
+                  }`}
+                >
+                  <Activity size={12} />
+                  <span>
+                    {accuracyValue !== null
+                      ? `GPS Accuracy: ±${accuracyValue}m`
+                      : "Canopy GPS Ready"}
                   </span>
                 </div>
               </div>
-            )}
 
-            {/* How-To Field Guide Button */}
-            <button
-              type="button"
-              onClick={() => setShowGuideModal(true)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold transition cursor-pointer ${
-                isFullScreen
-                  ? "bg-white/10 text-white hover:bg-white/20 border border-white/20"
-                  : "bg-[#edf7e8] text-[#2d6130] hover:bg-[#dfe7d8]"
-              }`}
-            >
-              <HelpCircle size={14} /> Field Walk Guide
-            </button>
+              <h3 className="mt-1 text-lg font-bold text-[#10251d] sm:text-2xl">
+                {farmName} Boundary Mapping
+              </h3>
 
-            {/* Fullscreen Toggle Button */}
-            <button
-              type="button"
-              onClick={toggleFullScreen}
-              className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold shadow-sm transition cursor-pointer ${
-                isFullScreen
-                  ? "bg-[#b8f58b] text-[#073b2b] hover:bg-[#9de46c]"
-                  : "bg-[#0b3528] text-white hover:bg-[#07241b]"
-              }`}
-            >
-              {isFullScreen ? (
-                <>
-                  <Minimize2 size={14} /> Exit Fullscreen
-                </>
-              ) : (
-                <>
-                  <Maximize2 size={14} /> Fullscreen Geofencing Mode
-                </>
+              <p className="mt-1 text-xs text-[#57655d]">
+                Walk the boundary or tap the satellite map to log coordinates with automatic canopy jitter filtering.
+              </p>
+            </div>
+
+            {/* Top Right Controls (Guide, Fullscreen, Area badge) */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Computed Area Pill */}
+              {calculatedArea && (
+                <div className="flex items-center gap-2 rounded-2xl border border-[#c4ebb0] bg-[#eefae6] px-3.5 py-2 text-[#0c392b]">
+                  <CheckCircle2 size={16} className="text-[#2a7a33]" />
+                  <div>
+                    <span className="block text-[0.6rem] font-bold uppercase tracking-wider opacity-80">
+                      Calculated Size
+                    </span>
+                    <span className="font-extrabold text-sm sm:text-base">
+                      {calculatedArea} Ha ({(parseFloat(calculatedArea) * 2.471).toFixed(2)} Ac)
+                    </span>
+                  </div>
+                </div>
               )}
-            </button>
+
+              {/* How-To Field Guide Button */}
+              <button
+                type="button"
+                onClick={() => setShowGuideModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#edf7e8] px-3.5 py-2 text-xs font-bold text-[#2d6130] transition hover:bg-[#dfe7d8] cursor-pointer"
+              >
+                <HelpCircle size={14} /> Field Guide
+              </button>
+
+              {/* Fullscreen Toggle Button */}
+              <button
+                type="button"
+                onClick={toggleFullScreen}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#07241b] cursor-pointer"
+              >
+                <Maximize2 size={14} /> Fullscreen
+              </button>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Floating Glassmorphic Exit Fullscreen Button (ONLY in Fullscreen Mode) */}
+        {isFullScreen && (
+          <button
+            type="button"
+            onClick={toggleFullScreen}
+            className="absolute top-4 right-4 z-40 inline-flex items-center gap-2 rounded-full border border-white/25 bg-[#062d22]/80 px-4 py-2 text-xs font-bold text-white shadow-2xl backdrop-blur-xl transition hover:bg-[#062d22] hover:border-[#b8f58b]/60 cursor-pointer"
+          >
+            <Minimize2 size={15} className="text-[#b8f58b]" />
+            <span>Exit Fullscreen</span>
+          </button>
+        )}
 
         {/* Canopy Warning Alert */}
-        {signalWarning && (
-          <div className="flex items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 mx-2">
+        {signalWarning && !isFullScreen && (
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
             <AlertTriangle size={16} className="shrink-0 text-amber-600 animate-pulse" />
             <span>
-              <strong>Degraded Canopy GPS Signal:</strong> Accuracy is currently ±{accuracyValue}m (&gt;10m threshold). Move slightly towards canopy openings or tap map manually.
+              <strong>Degraded Canopy GPS Signal:</strong> Accuracy is ±{accuracyValue}m (&gt;10m threshold). Move towards canopy openings or tap map manually.
             </span>
           </div>
         )}
 
         {/* Status Message */}
-        {statusMessage && (
-          <div
-            className={`flex items-center gap-2 rounded-2xl p-2.5 text-xs mx-2 ${
-              isFullScreen
-                ? "bg-white/10 text-[#b8f58b] border border-white/15"
-                : "bg-[#fafcf9] text-[#394a41] border border-[#edf1ea]"
-            }`}
-          >
+        {statusMessage && !isFullScreen && (
+          <div className="flex items-center gap-2 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-2.5 text-xs text-[#394a41]">
             <Info size={14} className="shrink-0 text-[#2d6130]" />
             <span>{statusMessage}</span>
           </div>
@@ -645,7 +563,7 @@ export default function CocoaTracker({
             isWalking={isTracking}
             currentPosition={currentPos}
             interactiveDrawing={!isTracking}
-            heightClass={isFullScreen ? "h-full min-h-[500px]" : "h-[450px]"}
+            heightClass={isFullScreen ? "h-full min-h-[500px]" : "h-[380px] sm:h-[450px]"}
             onPolygonChange={(updated) => {
               setActivePolygon(updated);
               setPointCount(updated.length);
@@ -655,10 +573,10 @@ export default function CocoaTracker({
             }}
           />
 
-          {/* Quick Guidance Overlay Pill on Top-Left of Map */}
+          {/* Guidance Overlay Pill */}
           <div className="pointer-events-none absolute left-3 top-3 z-10 hidden sm:flex items-center gap-2 rounded-2xl border border-black/40 bg-black/75 px-3 py-1.5 backdrop-blur-md text-[11px] text-white">
             <Navigation size={13} className="text-[#b8f58b]" />
-            <span>Tap map or walk perimeter to log vertices</span>
+            <span>Tap map or walk perimeter to log boundary</span>
           </div>
         </div>
 
@@ -668,40 +586,25 @@ export default function CocoaTracker({
         <div
           className={
             isFullScreen
-              ? "flex flex-wrap items-center justify-between border-t border-white/10 bg-[#07241b]/95 p-4 backdrop-blur-md"
-              : "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-2"
+              ? "flex flex-wrap items-center justify-between border-t border-white/10 bg-[#07241b]/95 p-4 backdrop-blur-md gap-3"
+              : "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pt-1"
           }
         >
           {/* Tracking Actions */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             {!isTracking ? (
-              <>
-                <button
-                  type="button"
-                  onClick={startTracking}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-[#2d6130] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#234d26] cursor-pointer"
-                >
-                  <Play size={14} /> Start Walking Canopy Perimeter
-                </button>
-
-                <button
-                  type="button"
-                  onClick={startSimulation}
-                  disabled={isSimulating}
-                  className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-xs font-bold shadow-sm transition cursor-pointer ${
-                    isFullScreen
-                      ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
-                      : "border-[#dfe7d8] bg-[#f7f8f3] text-[#10251d] hover:bg-[#edf3ea]"
-                  }`}
-                >
-                  <Sparkles size={14} className="text-[#b8f58b]" /> Simulate Cameroon Plot Walk
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={startTracking}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-[#2d6130] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#234d26] cursor-pointer"
+              >
+                <Play size={14} /> Start Walking Canopy Perimeter
+              </button>
             ) : (
               <button
                 type="button"
                 onClick={stopTracking}
-                className="inline-flex items-center gap-2 rounded-2xl bg-red-600 px-6 py-3 text-xs font-bold text-white shadow-lg transition hover:bg-red-700 cursor-pointer animate-pulse"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl bg-red-600 px-6 py-3 text-xs font-bold text-white shadow-lg transition hover:bg-red-700 cursor-pointer animate-pulse"
               >
                 <Square size={14} /> Finish &amp; Close Polygon ({pointCount} pts)
               </button>
@@ -728,7 +631,7 @@ export default function CocoaTracker({
               <button
                 type="button"
                 onClick={handleClear}
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-red-300 bg-red-500/10 px-3.5 py-3 text-xs font-semibold text-red-400 hover:bg-red-500/20 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-2xl border border-red-300 bg-red-500/10 px-3.5 py-3 text-xs font-semibold text-red-500 hover:bg-red-500/20 cursor-pointer"
               >
                 <Trash2 size={13} /> Reset
               </button>
@@ -736,7 +639,7 @@ export default function CocoaTracker({
           </div>
 
           {/* Right Status / Completion Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
             <div
               className={`rounded-xl px-3 py-1.5 text-xs font-semibold ${
                 isFullScreen ? "bg-white/10 text-white/90" : "bg-[#f7f8f3] text-[#57655d]"
@@ -759,9 +662,9 @@ export default function CocoaTracker({
               <button
                 type="button"
                 onClick={onContinue}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b3528] px-6 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#07241b] cursor-pointer"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b3528] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#07241b] cursor-pointer"
               >
-                Save Boundary &amp; Continue <ArrowRight size={15} />
+                Save &amp; Continue <ArrowRight size={15} />
               </button>
             )}
           </div>

@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase, FarmRecord } from "@/context/FirebaseContext";
+import FarmCertificateModal from "@/components/FarmCertificateModal";
 import {
   MapPin,
   ShieldCheck,
@@ -31,7 +32,7 @@ const CocoaTracker = dynamic(() => import("@/components/CocoaTracker"), {
   loading: () => (
     <div className="flex h-64 items-center justify-center rounded-3xl bg-[#062d22] text-white">
       <div className="flex items-center gap-2 text-xs text-[#b8f58b]">
-        <Compass className="animate-spin" size={18} /> Loading Offline Canopy Geofence Module...
+        <Compass className="animate-spin" size={18} /> Loading map...
       </div>
     </div>
   ),
@@ -136,6 +137,8 @@ function SignupContent() {
   const [batchAddQty, setBatchAddQty] = useState("");
   const [batchAddCode, setBatchAddCode] = useState("");
   const [updatingBatch, setUpdatingBatch] = useState(false);
+  const [registeredCertificateFarm, setRegisteredCertificateFarm] = useState<FarmRecord | null>(null);
+  const [showCertificateModal, setShowCertificateModal] = useState(false);
 
   const handleUseCurrentLocation = () => {
     if ("geolocation" in navigator) {
@@ -191,12 +194,11 @@ function SignupContent() {
         geofencePointCount: geofencePointCount || geofencePolygon.length,
       });
 
-      setSuccess(`Farm "${registered.farmName}" successfully onboarded with ID ${registered.id}! Taking you to your dashboard...`);
+      setSuccess(`Farm "${registered.farmName}" successfully registered with EUDR compliance! Your official Authenticity Certificate is ready.`);
       setFarmName("");
       setShowAuthModal(false);
-      setTimeout(() => {
-        router.push(`/dashboard?onboarded=true&newFarm=${encodeURIComponent(registered.farmName)}`);
-      }, 900);
+      setRegisteredCertificateFarm(registered);
+      setShowCertificateModal(true);
     } catch (err: unknown) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to register farm.");
@@ -356,13 +358,10 @@ function SignupContent() {
 
       {/* Main Content with clean clearance below fixed navbar */}
       <main className="mx-auto max-w-[1400px] px-4 pt-28 pb-14 sm:px-6 sm:pt-32 lg:px-8">
-        {/* Navigation Selector: Farm Onboarding vs Account Creation */}
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Header without Producer Hub badge or mode switcher */}
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-[0.2em] text-[#2d6130]">
-                Producer Hub
-              </span>
               <span className="flex items-center gap-1 rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.65rem] font-bold text-[#2d6130]">
                 <ShieldCheck size={12} />
                 EUDR Traceability
@@ -371,34 +370,6 @@ function SignupContent() {
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#10251d] sm:text-3xl">
               {signupView === "farm" ? "Farm Plot Onboarding" : "Create Producer Account"}
             </h1>
-          </div>
-
-          {/* Mode Switcher Tabs */}
-          <div className="flex items-center gap-2">
-            <div className="flex rounded-full border border-[#dfe7d8] bg-white p-1 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setSignupView("farm")}
-                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  signupView === "farm"
-                    ? "bg-[#0b3528] text-white"
-                    : "text-[#57655d] hover:text-[#10251d]"
-                }`}
-              >
-                Register Farm Plot
-              </button>
-              <button
-                type="button"
-                onClick={() => setSignupView("account")}
-                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  signupView === "account"
-                    ? "bg-[#0b3528] text-white"
-                    : "text-[#57655d] hover:text-[#10251d]"
-                }`}
-              >
-                Create Account
-              </button>
-            </div>
           </div>
         </div>
 
@@ -1480,6 +1451,21 @@ function SignupContent() {
           </div>
         </div>
       )}
+
+      {/* Official Downloadable Farm Authenticity Certificate Modal */}
+      <FarmCertificateModal
+        farm={registeredCertificateFarm}
+        isOpen={showCertificateModal}
+        onClose={() => setShowCertificateModal(false)}
+        onNavigateDashboard={() => {
+          setShowCertificateModal(false);
+          router.push(
+            `/dashboard?onboarded=true&newFarm=${encodeURIComponent(
+              registeredCertificateFarm?.farmName || ""
+            )}`
+          );
+        }}
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase, FarmRecord } from "@/context/FirebaseContext";
+import FarmCertificateModal from "@/components/FarmCertificateModal";
 import {
   MapPin,
   ShieldCheck,
@@ -24,6 +25,7 @@ import {
   BarChart3,
   ExternalLink,
   Compass,
+  QrCode,
 } from "lucide-react";
 
 // Dynamic import of Mapbox map for SSR safety
@@ -32,7 +34,7 @@ const MapboxGeofenceMap = dynamic(() => import("@/components/MapboxGeofenceMap")
   loading: () => (
     <div className="flex h-[380px] w-full items-center justify-center rounded-3xl bg-[#062d22] text-white">
       <div className="flex items-center gap-2 text-xs text-[#b8f58b]">
-        <Compass className="animate-spin" size={18} /> Initializing Mapbox Satellite Geofences...
+        <Compass className="animate-spin" size={18} /> Loading map...
       </div>
     </div>
   ),
@@ -60,6 +62,7 @@ function DashboardContent() {
   const [batchSuccess, setBatchSuccess] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [highlightedPlotId, setHighlightedPlotId] = useState<string | null>(null);
+  const [certificateModalFarm, setCertificateModalFarm] = useState<FarmRecord | null>(null);
 
   // Filter farmer's plots (or display default plots if newly registered)
   const userFarms = farms.filter((f) => !user || f.farmerId === user.uid || farms.length <= 4);
@@ -393,6 +396,13 @@ function DashboardContent() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
+                          onClick={() => setCertificateModalFarm(farm)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-[#2d6130]/30 bg-[#edf7e8] px-3.5 py-1.5 text-xs font-bold text-[#1b4e28] transition hover:bg-[#dff0d8] cursor-pointer"
+                        >
+                          <QrCode size={13} /> Certificate
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setSelectedFarm(farm)}
                           className="inline-flex items-center gap-1 rounded-full border border-[#dfe7d8] bg-[#f7f8f3] px-3.5 py-1.5 text-xs font-semibold text-[#10251d] transition hover:bg-[#edf3ea] cursor-pointer"
                         >
@@ -687,7 +697,17 @@ function DashboardContent() {
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCertificateModalFarm(selectedFarm);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#2d6130]/40 bg-[#edf7e8] px-5 py-2.5 text-xs font-bold text-[#1b4e28] transition hover:bg-[#dff0d8] cursor-pointer"
+              >
+                <QrCode size={14} /> Download Authenticity Certificate
+              </button>
+
               <button
                 type="button"
                 onClick={() => setSelectedFarm(null)}
@@ -699,6 +719,13 @@ function DashboardContent() {
           </div>
         </div>
       )}
+
+      {/* Official Downloadable Farm Authenticity Certificate Modal */}
+      <FarmCertificateModal
+        farm={certificateModalFarm}
+        isOpen={Boolean(certificateModalFarm)}
+        onClose={() => setCertificateModalFarm(null)}
+      />
 
       {/* Modal: Add Batch Intake */}
       {showBatchModal && (

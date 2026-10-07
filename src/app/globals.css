@@ -20,6 +20,31 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Custom Slim Primary Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2d6130;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #0b3528;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2d6130 transparent;
+}
+
 html,
 body {
   max-width: 100vw;

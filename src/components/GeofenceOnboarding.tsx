@@ -253,7 +253,7 @@ export default function GeofenceOnboarding({
 
   const startTracking = () => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
-      alert('Geolocation is not supported by your browser/device.');
+      console.warn('Geolocation is not supported by your browser/device.');
       return;
     }
 
@@ -263,7 +263,10 @@ export default function GeofenceOnboarding({
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       handlePositionUpdate,
-      (err) => console.error('GPS watch error:', err),
+      (err) => {
+        console.warn('GPS watch notice:', err.message);
+        setIsTracking(false);
+      },
       {
         enableHighAccuracy: true,
         timeout: 8000,
@@ -281,7 +284,7 @@ export default function GeofenceOnboarding({
 
     const rawPoints = await db.breadcrumbs.where('farmId').equals(farmId).toArray();
     if (rawPoints.length < 3) {
-      alert('Boundary requires at least 3 points to create a closed polygon.');
+      console.warn('Boundary requires at least 3 points to create a closed polygon.');
       return;
     }
 
