@@ -402,7 +402,7 @@ function DashboardContent() {
                           onClick={() => setCertificateModalFarm(farm)}
                           className="inline-flex items-center gap-1.5 rounded-full border border-[#2d6130]/30 bg-[#edf7e8] px-3.5 py-1.5 text-xs font-bold text-[#1b4e28] transition hover:bg-[#dff0d8] cursor-pointer"
                         >
-                          <QrCode size={13} /> Certificate
+                          <QrCode size={13} /> Trust Pass
                         </button>
                         <button
                           type="button"
@@ -708,7 +708,7 @@ function DashboardContent() {
                 }}
                 className="inline-flex items-center gap-1.5 rounded-full border border-[#2d6130]/40 bg-[#edf7e8] px-5 py-2.5 text-xs font-bold text-[#1b4e28] transition hover:bg-[#dff0d8] cursor-pointer"
               >
-                <QrCode size={14} /> Download Authenticity Certificate
+                <QrCode size={14} /> Download Compliance Trust Pass
               </button>
 
               <button

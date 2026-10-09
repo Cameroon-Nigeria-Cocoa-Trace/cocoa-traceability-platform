@@ -43,6 +43,11 @@
           "description": "Unique farm record ID",
           "maxLength": 128
         },
+        "farmUniqueId": {
+          "type": "string",
+          "description": "Official generated TraceTrade Network Unique Farm ID (e.g. TTN-CM-2026-XXXXXX)",
+          "maxLength": 64
+        },
         "farmerId": {
           "type": "string",
           "description": "UID of the registered farmer",

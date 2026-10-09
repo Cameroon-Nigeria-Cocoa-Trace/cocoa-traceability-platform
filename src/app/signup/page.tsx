@@ -41,7 +41,6 @@ const CocoaTracker = dynamic(() => import("@/components/CocoaTracker"), {
 const ONBOARDING_TABS = [
   { id: "farmer", label: "Farmer & Co-op", icon: UserCheck },
   { id: "location", label: "Farm & Location", icon: MapPin },
-  { id: "production", label: "Harvest & Batches", icon: Layers },
   { id: "supplychain", label: "Trade Route", icon: Truck },
   { id: "geofence", label: "Canopy Geofence", icon: Compass },
 ];
@@ -110,14 +109,7 @@ function SignupContent() {
     new Date().toISOString().split("T")[0]
   );
 
-  // Section 3: Production & Harvest Information
-  const [cocoaVariety, setCocoaVariety] = useState("");
-  const [harvestSeason, setHarvestSeason] = useState("");
-  const [estimatedAnnualYieldKg, setEstimatedAnnualYieldKg] = useState("");
-  const [quantityHarvestedKg, setQuantityHarvestedKg] = useState("");
-  const [batchNumber, setBatchNumber] = useState("");
-
-  // Section 4: Supply Chain, Aggregation & Trade Route
+  // Section 3: Supply Chain, Aggregation & Trade Route
   const [aggregatorCenter, setAggregatorCenter] = useState("");
   const [batchMovementRoute, setBatchMovementRoute] = useState("");
   const [processorExporter, setProcessorExporter] = useState("");
@@ -179,11 +171,10 @@ function SignupContent() {
         geolocation: geolocation.trim(),
         sizeHectares: parseFloat(sizeHectares) || 2.5,
         registrationDate: registrationDate.trim(),
-        cocoaVariety: cocoaVariety.trim(),
-        harvestSeason: harvestSeason.trim(),
-        estimatedAnnualYieldKg: parseFloat(estimatedAnnualYieldKg) || 0,
-        quantityHarvestedKg: parseFloat(quantityHarvestedKg) || 0,
-        batchNumber: batchNumber.trim(),
+        cocoaVariety: "Amelonado / Trinitario Hybrid",
+        harvestSeason: "Main Crop 2026/2027",
+        estimatedAnnualYieldKg: 0,
+        quantityHarvestedKg: 0,
         aggregatorCenter: aggregatorCenter.trim(),
         batchMovementRoute: batchMovementRoute.trim(),
         processorExporter: processorExporter.trim(),
@@ -194,7 +185,7 @@ function SignupContent() {
         geofencePointCount: geofencePointCount || geofencePolygon.length,
       });
 
-      setSuccess(`Farm "${registered.farmName}" successfully registered with EUDR compliance! Your official Authenticity Certificate is ready.`);
+      setSuccess(`Farm "${registered.farmName}" successfully registered! Your official TraceTrade Network Compliance Trust Pass is ready.`);
       setFarmName("");
       setShowAuthModal(false);
       setRegisteredCertificateFarm(registered);
@@ -818,87 +809,12 @@ function SignupContent() {
                   </div>
                 )}
 
-                {/* Tab 3: Production & Harvest Information */}
-                {activeTab === "production" && (
-                  <div className="space-y-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-5">
-                    <div className="border-b border-[#edf1ea] pb-2">
-                      <h3 className="font-semibold text-[#10251d]">
-                        3. Production & Harvest Information
-                      </h3>
-                      <p className="text-xs text-[#57655d]">
-                        Captures cocoa variety, season yield estimate, batch/lot code, and harvested volume.
-                      </p>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Cocoa Variety</span>
-                        <input
-                          type="text"
-                          value={cocoaVariety}
-                          onChange={(e) => setCocoaVariety(e.target.value)}
-                          placeholder="e.g. Trinitario × Forastero F1 Hybrid"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Harvest Season</span>
-                        <input
-                          type="text"
-                          value={harvestSeason}
-                          onChange={(e) => setHarvestSeason(e.target.value)}
-                          placeholder="e.g. Main Crop 2026/2027"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Est. Annual Yield (kg)</span>
-                        <input
-                          type="number"
-                          value={estimatedAnnualYieldKg}
-                          onChange={(e) => setEstimatedAnnualYieldKg(e.target.value)}
-                          placeholder="e.g. 5800"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Quantity Harvested (kg) *</span>
-                        <input
-                          type="number"
-                          required
-                          value={quantityHarvestedKg}
-                          onChange={(e) => setQuantityHarvestedKg(e.target.value)}
-                          placeholder="e.g. 1850"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-
-                      <label className="block text-sm font-medium text-[#10251d]">
-                        <span className="mb-1 block text-xs font-semibold text-[#48574c]">Batch / Lot Number *</span>
-                        <input
-                          type="text"
-                          required
-                          value={batchNumber}
-                          onChange={(e) => setBatchNumber(e.target.value)}
-                          placeholder="e.g. BATCH-CR-2026-001"
-                          className="w-full rounded-2xl border border-[#dfe7d8] bg-white px-4 py-3 font-mono text-sm text-[#10251d] outline-none transition focus:border-[#2d6130]"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {/* Tab 4: Supply Chain & Trade Route */}
+                {/* Tab 3: Supply Chain & Trade Route */}
                 {activeTab === "supplychain" && (
                   <div className="space-y-4 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-5">
                     <div className="border-b border-[#edf1ea] pb-2">
                       <h3 className="font-semibold text-[#10251d]">
-                        4. Supply Chain, Aggregator & Trade Route
+                        3. Supply Chain, Aggregator & Trade Route
                       </h3>
                       <p className="text-xs text-[#57655d]">
                         Tracks physical custody from farm gate to buying stations, processing depots, and export channels.
@@ -953,21 +869,21 @@ function SignupContent() {
                   </div>
                 )}
 
-                {/* Tab 5: Canopy Geofence Mapping (Final Step of Onboarding) */}
+                {/* Tab 4: Canopy Geofence Mapping (Final Step of Onboarding) */}
                 {activeTab === "geofence" && (
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-5">
                       <div className="border-b border-[#edf1ea] pb-3">
                         <div className="flex items-center gap-2">
                           <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#2d6130] uppercase tracking-wider">
-                            Step 5 of 5 • Final Geodetic Verification
+                            Step 4 of 4 • Final Geodetic Verification
                           </span>
                           <span className="flex items-center gap-1 text-[0.7rem] font-semibold text-[#2a7a33]">
                             <ShieldCheck size={13} /> EUDR Article 9 Requirement
                           </span>
                         </div>
                         <h3 className="mt-1 text-lg font-bold text-[#10251d]">
-                          5. Tree Canopy Geofence & Perimeter Walk
+                          4. Tree Canopy Geofence & Perimeter Walk
                         </h3>
                         <p className="text-xs text-[#57655d]">
                           Map the real-world perimeter of <strong className="text-[#10251d]">{farmName || "your farm plot"}</strong>. Multipath signals under dense tree canopy are filtered (&lt;10m threshold), logged into offline IndexedDB, and converted to an EUDR polygon with Turf.js.

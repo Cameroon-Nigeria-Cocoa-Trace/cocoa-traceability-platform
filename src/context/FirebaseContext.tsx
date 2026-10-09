@@ -25,6 +25,7 @@ import { products as defaultProducts, Product } from "@/data/products";
 
 export interface FarmRecord {
   id: string;
+  farmUniqueId?: string;
   farmerId: string;
   farmerName?: string;
   farmerPhone?: string;
@@ -320,12 +321,15 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     data: Omit<FarmRecord, "id" | "farmerId" | "createdAt">
   ): Promise<FarmRecord> => {
     const farmId = `farm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const uniqueSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const generatedUniqueId = `TTN-CM-2026-${uniqueSuffix}`;
     const nowIso = new Date().toISOString();
     const effectiveFarmerId = user?.uid || "demo_producer_local";
     
     // Construct clean farm object
     const newFarm: FarmRecord = {
       id: farmId,
+      farmUniqueId: data.farmUniqueId || generatedUniqueId,
       farmerId: effectiveFarmerId,
       farmerName: data.farmerName || user?.displayName || "Registered Farmer",
       farmName: data.farmName,
