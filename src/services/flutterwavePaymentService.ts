@@ -596,8 +596,7 @@ export async function initiateSellerInfoAccessPayment(
           checkoutUrl: verificationUrl.toString(),
           paymentReference: reservationPhase.paymentReference,
           paymentId: reservationPhase.paymentId,
-          amountCharged:
-            reservationPhase.listing.pendingAccessIntent?.amountCharged ?? 0,
+          amountCharged: reservationPhase.amountCharged,
           currency: "NGN",
           expiresAt: reservationPhase.expiresAt,
           isExistingSession: true,
@@ -1003,7 +1002,8 @@ export async function initiateSellerInfoAccessPayment(
         checkoutUrl: buildVerificationUrl(),
         paymentReference: paymentRecord.paymentReference,
         paymentId: paymentRecord.paymentId,
-        amountCharged: paymentRecord.amountCharged,
+        amountCharged:
+          paymentRecord.amountCharged ?? feeCalculation.amountCharged,
         currency: "NGN",
         expiresAt: paymentRecord.expiresAt!,
         isExistingSession: true,
@@ -1034,7 +1034,8 @@ export async function initiateSellerInfoAccessPayment(
         checkoutUrl: buildVerificationUrl(),
         paymentReference: paymentRecord.paymentReference,
         paymentId: paymentRecord.paymentId,
-        amountCharged: paymentRecord.amountCharged,
+        amountCharged:
+  paymentRecord.amountCharged ?? feeCalculation.amountCharged,
         currency: "NGN",
         expiresAt: paymentRecord.expiresAt!,
         isExistingSession: true,
@@ -1059,7 +1060,7 @@ export async function initiateSellerInfoAccessPayment(
       checkoutUrl: buildVerificationUrl(),
       paymentReference: paymentRecord.paymentReference,
       paymentId: paymentRecord.paymentId,
-      amountCharged: paymentRecord.amountCharged,
+      amountCharged: paymentRecord.amountCharged ?? feeCalculation.amountCharged,
       currency: "NGN",
       expiresAt: paymentRecord.expiresAt!,
       isExistingSession: true,
