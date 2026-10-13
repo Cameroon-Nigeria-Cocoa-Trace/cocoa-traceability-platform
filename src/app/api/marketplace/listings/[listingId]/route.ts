@@ -8,9 +8,11 @@ import {
   getMarketplaceListing,
   updateMarketplaceListing,
   sanitizePublicListing,
+  createMarketplaceListing,
 } from "@/services/marketplaceService";
 import type { CreateMarketplaceListingInput } from "@/services/marketplaceService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
+import { MarketplaceCertificationType, MarketplaceInventoryMode } from "@/types/traceability";
 
 
 export async function POST(req: NextRequest) {
