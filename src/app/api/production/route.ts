@@ -353,7 +353,7 @@ export async function GET(req: NextRequest) {
       .get();
 
     const productionRecords = snapshot.docs
-      .map((document) => ({
+      .map((document): Record<string, unknown> & { productionRecordId: string } => ({
         ...document.data(),
         productionRecordId: document.id,
       }))

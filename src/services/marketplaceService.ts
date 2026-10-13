@@ -37,6 +37,7 @@ import {
   CocoaLotAdjustment,
   PhysicalAdjustmentType,
   NonConsumingAdjustmentType,
+  CocoaLot,
 } from "@/types/traceability";
 import { resolveAuthenticatedUserUid } from "./productionService";
 import { assertActorCanActForHolder } from "@/lib/certificateAuthorization";
