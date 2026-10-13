@@ -571,44 +571,48 @@ export default function ProductDetailPage() {
             <div className="rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
               <h3 className="text-lg font-bold text-[#10251d]">Seller Information</h3>
 
-              {hasSellerAccess && sellerInfo ? (         
-                
-                {sellerInfo.contactName && (
-                  <div>
-                    <span className="text-gray-500">Contact Name:</span>
-                    <strong className="block text-[#10251d]">
-                      {sellerInfo.contactName}
-                    </strong>
+              {hasSellerAccess && sellerInfo ? (
+                <div className="mt-4 space-y-2.5 text-xs">
+                  <div className="rounded-2xl bg-[#eefbf3] p-3 text-[#1d6a45] font-semibold">
+                    ✓ Verified Contact Access Granted
                   </div>
-                )}
 
-                {sellerInfo.phone && (
-                  <div>
-                    <span className="text-gray-500">Phone:</span>
-                    <strong className="block text-[#10251d] font-mono">
-                      {sellerInfo.phone}
-                    </strong>
-                  </div>
-                )}
+                  {sellerInfo.contactName && (
+                    <div>
+                      <span className="text-gray-500">Contact Name:</span>
+                      <strong className="block text-[#10251d]">
+                        {sellerInfo.contactName}
+                      </strong>
+                    </div>
+                  )}
 
-                {sellerInfo.email && (
-                  <div>
-                    <span className="text-gray-500">Email:</span>
-                    <strong className="block text-[#10251d]">
-                      {sellerInfo.email}
-                    </strong>
-                  </div>
-                )}
+                  {sellerInfo.phone && (
+                    <div>
+                      <span className="text-gray-500">Phone:</span>
+                      <strong className="block text-[#10251d] font-mono">
+                        {sellerInfo.phone}
+                      </strong>
+                    </div>
+                  )}
 
-                {sellerInfo.location && (
-                  <div>
-                    <span className="text-gray-500">Location:</span>
-                    <strong className="block text-[#10251d]">
-                      {sellerInfo.location}
-                    </strong>
-                  </div>
-                )}
+                  {sellerInfo.email && (
+                    <div>
+                      <span className="text-gray-500">Email:</span>
+                      <strong className="block text-[#10251d]">
+                        {sellerInfo.email}
+                      </strong>
+                    </div>
+                  )}
 
+                  {sellerInfo.location && (
+                    <div>
+                      <span className="text-gray-500">Location:</span>
+                      <strong className="block text-[#10251d]">
+                        {sellerInfo.location}
+                      </strong>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="mt-4 space-y-3 text-xs text-gray-600">
                   <p>
