@@ -1,36 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Cameroon-Cross River Cocoa Traceability Platform
 
-## Getting Started
+A digital traceability infrastructure and marketplace platform preserving the provenance, ownership chain, and EUDR compliance for Cameroonian cocoa moving through Cross River and Nigerian export corridors.
 
-First, run the development server:
+---
+
+## Collaborator Setup Guide
+
+Welcome to the project! Follow these setup steps carefully to start collaborating in Google AI Studio.
+
+### 1. Permissions & Access
+- You have **already been added** to the project on **Firebase** and the **Google Cloud Console**.
+- You do not need to configure new Firebase projects, databases, or API keys manually.
+
+### 2. Import into Google AI Studio
+To clone and run the project inside AI Studio:
+1. Open [Google AI Studio](https://aistudio.google.com/).
+2. Click on **New App** (or click the **`+`** icon).
+3. Select **Import from GitHub**.
+4. Paste the repository URL:
+   ```text
+   https://github.com/Cameroon-Nigeria-Cocoa-Trace/cocoa-traceability-platform.git
+   ```
+5. Confirm and let AI Studio initialize the environment.
+
+### 3. Always Sync (Pull) Before Starting Work
+Before starting any new task, feature, or bug fix:
+- Always pull/sync the latest commits from `main` to ensure you are working on the most recent codebase and avoid merge conflicts.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git pull origin main
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scoping Agent Instructions (Crucial for AI Studio)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+When working with an AI assistant in AI Studio, **always set system instructions** to scope the agent's work strictly to your assigned area. This prevents accidental overwrites of shared core infrastructure (e.g., Firebase, auth, layout, security rules).
 
-## Learn More
+### Example System Instruction:
+Copy, adapt (replace bracketed folder paths with your assigned area), and paste this into your AI Studio system instructions:
 
-To learn more about Next.js, take a look at the following resources:
+```text
+You are working on a cocoa traceability platform: an app for buying and selling cocoa while tracking previous and present owners.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Scope rules. You will always:
+* Only edit files inside [src/components/marketplace/] and [src/app/dashboard/].
+* Never modify authentication, Firebase configuration, security rules, environment variables, or secrets.
+* Never change database structure or field names for ownership records without asking me first.
+* Not change model strings found in code.
+* Not add, remove, or upgrade dependencies without asking first.
+* Keep the existing design, layout, and styling unless I ask for a change.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Before making changes:
+* List the files you plan to edit and why, then wait for my approval.
+* If a request needs a file outside the allowed folders, stop and tell me instead of editing it.
 
-## Deploy on Vercel
+After making changes:
+* Summarize exactly which files you changed.
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Local Development (Optional)
+
+If running outside AI Studio locally:
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+4. Run linter:
+   ```bash
+   npm run lint
+   ```
+
+5. Build for production:
+   ```bash
+   npm run build
+   ```
+
+---
+
+## Project Structure & Key Technologies
+
+- **Framework**: Next.js 16 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Database & Auth**: Firebase Authentication (Google Auth) & Cloud Firestore (`europe-west2`)
+- **Icons**: Lucide React

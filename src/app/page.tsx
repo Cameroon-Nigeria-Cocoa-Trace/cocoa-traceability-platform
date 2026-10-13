@@ -81,7 +81,8 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-t from-[#062c20] via-transparent to-transparent" />
         </div>
 
-        <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-20 sm:px-7 md:px-10 lg:px-18">
+        {/* FIXED: Applied pt-28 sm:pt-32 to clear fixed navbar */}
+        <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-28 sm:px-7 sm:pt-32 md:px-10 lg:px-18">
           <div className="max-w-3xl">
             <div className="mb-3 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b8f58b] sm:text-xs sm:tracking-[0.22em]">
               <span className="h-px w-6 bg-[#b8f58b] sm:w-8" />
@@ -133,7 +134,7 @@ export default function HomePage() {
 
       <section id="features" className="bg-white">
       <div className="mx-auto grid max-w-[88rem] py-10 sm:grid-cols-2 lg:grid-cols-5">
-        {features.map((item, index) => {
+        {features.map((item) => {
           const Icon = item.icon;
 
           return (
@@ -252,7 +253,7 @@ export default function HomePage() {
 
             {/* Main Heading */}
             <h2 className="mt-2 text-xl font-bold leading-tight text-white sm:text-3xl md:text-4xl">
-              CocoaTrace connects Cameroon's cocoa to the world.
+              CocoaTrace connects Cameroon&apos;s cocoa to the world.
             </h2>
 
             {/* 4-Column Stats Grid */}
@@ -321,7 +322,7 @@ export default function HomePage() {
           </div>
 
           <Link
-            href="/register"
+            href="/signup"
             className="group inline-flex shrink-0 items-center gap-3 rounded-full bg-[#b8f58b] px-5 py-3 text-sm font-semibold text-[#073b2b] sm:px-7 sm:py-4 sm:text-base"
           >
             Get Started

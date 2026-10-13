@@ -1,0 +1,105 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Authentication helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.admin == true;
+    }
+
+    // USER PROFILES
+    match /users/{userId} {
+      // Users can read their own profile.
+      // Administrators require a trusted Firebase custom claim.
+      allow get: if isSignedIn()
+        && (
+          request.auth.uid == userId
+          || isAdmin()
+        );
+
+      // Listing all profiles is restricted to administrators.
+      allow list: if isAdmin();
+
+      // New profiles may only be created by their owner
+      // with the ordinary farmer role.
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.id == userId
+        && request.resource.data.role == "farmer"
+        && request.resource.data.keys().hasOnly([
+          "id",
+          "displayName",
+          "email",
+          "role",
+          "createdAt"
+        ]);
+
+      // A user may update their display name, but cannot
+      // modify their UID, role, or account creation timestamp.
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(["displayName"])
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Profile deletion must go through a trusted server workflow.
+      allow delete: if false;
+    }
+
+    match /admins/{adminId} {
+      // A user may check their own admin record.
+      // Only administrators may list admin records.
+      allow get: if isSignedIn()
+        && (
+          request.auth.uid == adminId
+          || isAdmin()
+        );
+
+      allow list: if isAdmin();
+
+      // Administrator records must be managed by trusted server code.
+      allow create, update, delete: if false;
+    }
+    
+    match /farms/{farmId} {
+      // Farmers can read only their own farms.
+      // Administrator access requires a trusted custom claim.
+      allow read: if isSignedIn()
+        && (
+          resource.data.farmerId == request.auth.uid
+          || isAdmin()
+        );
+
+      // All farm creation, updates and deletion must use
+      // authenticated server API routes with validation.
+      allow create, update, delete: if false;
+    }
+
+    // LEGACY LOTS AND EVENTS
+    // Direct client access is disabled until each required
+    // read/write workflow has been explicitly authorized.
+    match /lots/{lotId} {
+      allow read, write: if false;
+
+      match /events/{eventId} {
+        allow read, write: if false;
+      }
+    }
+
+    // DEFAULT DENY
+    // Collections must receive explicit, reviewed permissions.
+    // Do not grant broad access to unreviewed collections.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

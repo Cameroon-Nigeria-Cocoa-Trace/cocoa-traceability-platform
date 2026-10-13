@@ -1,0 +1,12 @@
+{
+  "projectId": "cocoa-trace",
+  "appId": "1:515593397497:web:6e5783abb72a12c08bee28",
+  "apiKey": "AIzaSyDSxfxaWu2o4jh0kiyyhf-aV03ZXdnS49w",
+  "authDomain": "cocoa-trace.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "cocoa-trace.firebasestorage.app",
+  "messagingSenderId": "515593397497",
+  "measurementId": "G-FGL17GQTDH",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

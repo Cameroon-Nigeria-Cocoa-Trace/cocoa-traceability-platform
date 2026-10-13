@@ -1,0 +1,6 @@
+{
+  "name": "Cameroon-Cross River Cocoa Traceability Platform",
+  "description": "EUDR-oriented Cameroon-origin cocoa traceability system preserving origin through Cross River and Nigerian export channels.",
+  "permissions": [],
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
