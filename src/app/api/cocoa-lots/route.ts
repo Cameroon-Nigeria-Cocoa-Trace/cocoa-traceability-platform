@@ -484,15 +484,41 @@ export async function POST(req: NextRequest) {
         const remainingCapacity =
           harvestQuantity - allocatedQuantity;
 
-        if (body.quantityKg > remainingCapacity) {
+        const pricePerKg = body.pricePerKg;
+
+        if (
+          typeof pricePerKg !== "number" ||
+          !Number.isFinite(pricePerKg) ||
+          pricePerKg <= 0
+        ) {
           throw new ApiError(
-            `Requested quantity (${body.quantityKg} kg) exceeds remaining harvest capacity (${remainingCapacity} kg).`,
+            "The price per kilogram must be a positive, finite number.",
+            400
+          );
+        }
+
+        const quantityKg = body.quantityKg;
+
+        if (
+          typeof quantityKg !== "number" ||
+          !Number.isFinite(quantityKg) ||
+          quantityKg <= 0
+        ) {
+          throw new ApiError(
+            "The cocoa lot quantity must be a positive, finite number.",
+            400
+          );
+        }
+
+        if (quantityKg > remainingCapacity) {
+          throw new ApiError(
+            `Requested quantity (${quantityKg} kg) exceeds remaining harvest capacity (${remainingCapacity} kg).`,
             409
           );
         }
 
         const newAllocatedQuantity =
-          allocatedQuantity + body.quantityKg;
+          allocatedQuantity + quantityKg;
 
         const newAvailableQuantity = Math.max(
           0,
@@ -525,9 +551,9 @@ export async function POST(req: NextRequest) {
             "production.productionPeriod"
           ),
           productionDate: harvest.harvestDate,
-          quantityKg: body.quantityKg,
-          availableQuantityKg: body.quantityKg,
-          pricePerKg: body.pricePerKg,
+          quantityKg,
+          availableQuantityKg: quantityKg,
+          pricePerKg,
           currency,
           qualityGrade:
             qualityGrade ?? harvest.qualityGrade,
