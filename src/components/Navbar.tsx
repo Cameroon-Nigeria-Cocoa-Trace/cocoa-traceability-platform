@@ -33,7 +33,7 @@ export function Navbar() {
               </div>
 
               <div>
-                <div className="text-base font-bold tracking-tight text-white!">CocoaTrace</div>
+                <div className="text-base font-bold tracking-tight text-white!">TraceTradeNetwork</div>
                 <div className="text-[9px] uppercase tracking-[0.18em] text-white/60">From Farm to World</div>
               </div>
             </Link>

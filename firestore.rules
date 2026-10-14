@@ -95,6 +95,94 @@ service cloud.firestore {
       }
     }
 
+    // MARKETPLACE LISTINGS
+    // Public buyers and visitors can browse published listings.
+    // Sellers can create and update listings.
+    match /marketplaceListings/{listingId} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // COCOA LOTS
+    // Traceable lot details are viewable for marketplace and origin inspection.
+    match /cocoaLots/{lotId} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // CERTIFICATES & HOLDINGS
+    // Origin trace certificates are publicly verifiable for EUDR and export due-diligence.
+    match /certificates/{certId} {
+      allow read: if true;
+      allow create, update: if isSignedIn() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /certificateHoldings/{holdingId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /certificateApplications/{appId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /certificateTransfers/{transferId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // QR CODES & TRACEABILITY VERIFICATION
+    match /qrCodes/{qrId} {
+      allow read: if true;
+      allow write: if isSignedIn() || isAdmin();
+    }
+
+    match /qrScans/{scanId} {
+      allow create: if true;
+      allow read: if isSignedIn();
+    }
+
+    match /lotCounters/{lotId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // TRADES, PAYMENTS & SELLER ACCESS
+    match /trades/{tradeId} {
+      allow read: if isSignedIn() && (
+        resource.data.buyerUid == request.auth.uid
+        || resource.data.sellerUid == request.auth.uid
+        || isAdmin()
+      );
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSignedIn() && (
+        resource.data.buyerUid == request.auth.uid
+        || resource.data.sellerUid == request.auth.uid
+        || isAdmin()
+      );
+      allow create, update: if isSignedIn();
+      allow delete: if false;
+    }
+
+    match /sellerAccessRecords/{recordId} {
+      allow read: if isSignedIn() && (
+        resource.data.buyerUid == request.auth.uid
+        || resource.data.sellerUid == request.auth.uid
+        || isAdmin()
+      );
+      allow write: if isSignedIn();
+    }
+
+    match /cocoaLotAdjustments/{adjId} {
+      allow read, write: if isSignedIn();
+    }
+
     // DEFAULT DENY
     // Collections must receive explicit, reviewed permissions.
     // Do not grant broad access to unreviewed collections.

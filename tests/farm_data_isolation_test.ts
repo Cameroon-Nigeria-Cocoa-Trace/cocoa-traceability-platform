@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Cameroon-Cross River Cocoa Traceability Platform
  * Part 1: Farm Data Isolation, Access Control & Privacy Test Suite
@@ -163,7 +164,7 @@ function runIsolationTests(): TestResult[] {
 
   // Test 10: Delayed response from previous user cannot overwrite current user state
   try {
-    let currentActiveUid = "farmer_b";
+    const currentActiveUid = "farmer_b";
     let stateFarms: any[] = [];
     
     const handleAsyncResponse = (responseUid: string, responseFarms: any[]) => {

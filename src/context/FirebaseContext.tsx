@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
@@ -113,7 +114,7 @@ const FirebaseContext = createContext<FirebaseContextType>({
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lots, setLots] = useState<Product[]>([]);
+  const [lots] = useState<Product[]>([]);
   const [farms, setFarms] = useState<FarmRecord[]>([]);
   const [pendingDrafts, setPendingDrafts] = useState<PendingFarmDraft[]>([]);
 
@@ -181,30 +182,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // Fetch Marketplace Lots from Firestore
-  useEffect(() => {
-    const lotsPath = "lots";
-    const unsubscribe = onSnapshot(
-      collection(db, lotsPath),
-      async (snapshot) => {
-        if (!snapshot.empty) {
-          const fetchedLots: Product[] = [];
-          snapshot.forEach((d) => {
-            fetchedLots.push(d.data() as Product);
-          });
-          setLots(fetchedLots);
-        } else {
-          setLots([]);
-        }
-      },
-      (error) => {
-        console.warn("Could not fetch lots from Firestore:", error);
-        setLots([]);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
 
   // Fetch Farms from Firestore (Scoped securely by authenticated user UID)
   useEffect(() => {

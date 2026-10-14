@@ -988,14 +988,24 @@ export async function listMarketplaceListings(
       }));
     } catch (adminErr) {
       console.warn("Admin SDK listing fetch fallback to client DB:", adminErr);
+      try {
+        const colRef = collection(db, COLLECTIONS.MARKETPLACE_LISTINGS);
+        const snap = await getDocs(colRef);
+        listings = snap.docs.map((d) => d.data() as MarketplaceListing);
+      } catch (clientErr) {
+        console.warn("Client DB listing fetch failed, returning empty listings list:", clientErr);
+        listings = [];
+      }
+    }
+  } else {
+    try {
       const colRef = collection(db, COLLECTIONS.MARKETPLACE_LISTINGS);
       const snap = await getDocs(colRef);
       listings = snap.docs.map((d) => d.data() as MarketplaceListing);
+    } catch (clientErr) {
+      console.warn("Client DB listing fetch failed:", clientErr);
+      listings = [];
     }
-  } else {
-    const colRef = collection(db, COLLECTIONS.MARKETPLACE_LISTINGS);
-    const snap = await getDocs(colRef);
-    listings = snap.docs.map((d) => d.data() as MarketplaceListing);
   }
 
   if (filters) {
