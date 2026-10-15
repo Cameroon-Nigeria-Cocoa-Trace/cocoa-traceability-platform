@@ -1,16 +1,14 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
+import React, { useRef, useState } from "react";
 import {
   ShieldCheck,
   Download,
   Printer,
-  Copy,
-  Check,
   X,
-  QrCode,
   BadgeCheck,
+  CheckCircle2,
+  FileCheck,
 } from "lucide-react";
 import { FarmRecord } from "@/context/FirebaseContext";
 
@@ -27,8 +25,6 @@ export default function FarmCertificateModal({
   onClose,
   onNavigateDashboard,
 }: FarmCertificateModalProps) {
-  const [qrDataUrl, setQrDataUrl] = useState<string>("");
-  const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const certificateRef = useRef<HTMLDivElement>(null);
 
@@ -37,48 +33,7 @@ export default function FarmCertificateModal({
     farm?.farmUniqueId ||
     (farm?.id ? `TTN-CM-2026-${farm.id.replace(/^farm_/, "").slice(-6).toUpperCase()}` : "TTN-CM-2026-FARM");
 
-  const verificationUrl =
-    typeof window !== "undefined" && farm
-      ? `${window.location.origin}/farms/${farm.id || "preview"}`
-      : "https://cocoatrace.cm";
-
-  // Generate QR Code with Trust Pass payload
-  useEffect(() => {
-    if (!farm) return;
-    const certPayload = JSON.stringify({
-      pass: "TraceTrade Network Compliance Trust Pass",
-      farmUniqueId: farmUniqueId,
-      farmId: farm.id,
-      farmName: farm.farmName,
-      farmer: farm.farmerName || "Registered Farmer",
-      geo: farm.geolocation,
-      eudrCompliant: true,
-      issuer: "TraceTrade Global Verification Authority",
-      verify: verificationUrl,
-    });
-
-    QRCode.toDataURL(certPayload, {
-      width: 240,
-      margin: 1.5,
-      color: {
-        dark: "#062d22",
-        light: "#ffffff",
-      },
-      errorCorrectionLevel: "H",
-    })
-      .then((url) => setQrDataUrl(url))
-      .catch((err) => console.error("QR Code Error:", err));
-  }, [farm, farmUniqueId, verificationUrl]);
-
   if (!isOpen || !farm) return null;
-
-  const handleCopy = () => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(verificationUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   const handlePrint = () => {
     window.print();
@@ -189,20 +144,55 @@ export default function FarmCertificateModal({
         yPos += 42;
       });
 
-      // QR Code Placement
-      if (qrDataUrl) {
-        const qrImg = new Image();
-        qrImg.crossOrigin = "anonymous";
-        qrImg.src = qrDataUrl;
-        await new Promise((res) => {
-          qrImg.onload = res;
-        });
-        ctx.drawImage(qrImg, 890, 300, 220, 220);
+      // Official Compliance Authority Seal Stamp Placement
+      const sealX = 990;
+      const sealY = 410;
+      const sealRadius = 95;
 
-        ctx.fillStyle = "#062d22";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("SCAN TO VERIFY PROVENANCE", 900, 545);
-      }
+      // Outer seal ring
+      ctx.beginPath();
+      ctx.arc(sealX, sealY, sealRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "#f4f8f2";
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#0b3528";
+      ctx.stroke();
+
+      // Inner dashed security ring
+      ctx.beginPath();
+      ctx.arc(sealX, sealY, sealRadius - 10, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#2d6130";
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Seal Core Badge
+      ctx.beginPath();
+      ctx.arc(sealX, sealY, sealRadius - 26, 0, Math.PI * 2);
+      ctx.fillStyle = "#062d22";
+      ctx.fill();
+
+      // Seal Text
+      ctx.fillStyle = "#b8f58b";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("TRACETRADE", sealX, sealY - 14);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillText("EUDR AUDITED", sealX, sealY + 6);
+      ctx.fillStyle = "#b8f58b";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText("100% COMPLIANT", sealX, sealY + 22);
+
+      // Seal Label Banner underneath
+      ctx.fillStyle = "#062d22";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText("OFFICIAL COMPLIANCE SEAL", sealX, sealY + 125);
+      ctx.fillStyle = "#5f6659";
+      ctx.font = "10px sans-serif";
+      ctx.fillText("Zero Deforestation Verified", sealX, sealY + 142);
+      ctx.textAlign = "start"; // Reset alignment
 
       // Footer Verification Strip
       ctx.fillStyle = "#062d22";
@@ -400,32 +390,36 @@ export default function FarmCertificateModal({
                 </div>
               </div>
 
-              {/* Right 1 col: QR Code & Verification Stamp */}
-              <div className="flex flex-col items-center justify-between rounded-2xl border border-[#dfe7d8] bg-[#f9faf7] p-3 text-center">
+              {/* Right 1 col: Official Verification Authority Seal */}
+              <div className="flex flex-col items-center justify-between rounded-2xl border border-[#cbe8c1] bg-gradient-to-b from-[#f4f9f0] to-[#edf7e8] p-4 text-center">
                 <div className="w-full">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#2d6130] mb-1.5 flex items-center justify-center gap-1">
-                    <QrCode size={12} /> Scan to Verify Pass
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#2d6130] mb-2 flex items-center justify-center gap-1">
+                    <BadgeCheck size={14} className="text-[#2a7a33]" /> Official Authority Seal
                   </div>
 
-                  <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-xl border border-[#dfe7d8] bg-white p-1.5 shadow-sm">
-                    {qrDataUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={qrDataUrl}
-                        alt="TraceTrade Trust Pass QR"
-                        className="h-full w-full object-contain"
-                      />
-                    ) : (
-                      <div className="text-[10px] text-gray-400">Generating QR...</div>
-                    )}
+                  {/* Seal Stamp Container */}
+                  <div className="mx-auto flex h-28 w-28 flex-col items-center justify-center rounded-full border-2 border-dashed border-[#2d6130]/40 bg-white p-2 shadow-inner">
+                    <div className="flex h-20 w-20 flex-col items-center justify-center rounded-full bg-[#062d22] text-[#b8f58b] shadow-sm">
+                      <ShieldCheck size={28} className="text-[#b8f58b]" />
+                      <span className="text-[8px] font-black tracking-widest text-white uppercase mt-0.5">EUDR PASSED</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-1">
+                    <div className="inline-flex items-center gap-1 rounded-full bg-[#2a7a33]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#1b4e28] border border-[#2a7a33]/20">
+                      <CheckCircle2 size={11} /> Zero Deforestation
+                    </div>
+                    <p className="text-[10px] font-semibold text-[#062d22]">
+                      Sovereign Registry Attested
+                    </p>
                   </div>
                 </div>
 
-                <div className="mt-2 w-full">
-                  <div className="rounded-lg bg-[#edf7e8] py-1 px-2 text-[10px] font-bold text-[#1b4e28] border border-[#cce4c4] flex items-center justify-center gap-1">
-                    <BadgeCheck size={12} /> TraceTrade Certified
+                <div className="mt-3 w-full border-t border-[#dfe7d8] pt-2">
+                  <div className="rounded-lg bg-white/80 py-1.5 px-2 text-[10px] font-mono font-bold text-[#1b4e28] border border-[#cce4c4] flex items-center justify-center gap-1">
+                    <FileCheck size={12} /> STATUS: VERIFIED & ACTIVE
                   </div>
-                  <p className="mt-0.5 text-[9px] text-[#6f7e73]">
+                  <p className="mt-1 text-[9px] text-[#6f7e73]">
                     Immutable pass recorded for export compliance.
                   </p>
                 </div>
@@ -453,15 +447,6 @@ export default function FarmCertificateModal({
               >
                 <Printer size={15} />
                 Print Pass
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-4 py-2.5 text-xs font-semibold text-[#10251d] transition hover:bg-[#f7f8f3] cursor-pointer shadow-sm"
-              >
-                {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-                {copied ? "Copied Link!" : "Copy Verification URL"}
               </button>
             </div>
 

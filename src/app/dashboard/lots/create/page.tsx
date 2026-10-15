@@ -522,7 +522,7 @@ function CreateCocoaLotContent() {
     return (
       <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
         <Navbar />
-        <main className="mx-auto max-w-4xl px-4 pt-32 pb-16">
+        <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
           <p className="text-sm text-[#57655d]">
             Verifying your account...
           </p>
@@ -535,32 +535,33 @@ function CreateCocoaLotContent() {
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
       <Navbar />
 
-      <main className="mx-auto max-w-4xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32">
-        <DashboardWorkflowNav />
+      <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
+        <DashboardWorkflowNav currentTab="production-inventory" />
 
-        <Link
-          href="/dashboard/lots"
-          className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-[#57655d] hover:text-[#0b3528]"
-        >
-          <ArrowLeft size={16} />
-          Back to Cocoa Lots
-        </Link>
+        <div className="max-w-4xl">
+          <Link
+            href="/dashboard/lots"
+            className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-[#57655d] hover:text-[#0b3528]"
+          >
+            <ArrowLeft size={16} />
+            Back to Cocoa Lots
+          </Link>
 
-        <div className="mb-8">
-          <span className="rounded-full bg-[#edf7e8] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
-            Production & Inventory
-          </span>
+          <div className="mb-8">
+            <span className="rounded-full bg-[#edf7e8] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
+              Production & Inventory
+            </span>
 
-          <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            Create a Cocoa Lot
-          </h1>
+            <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
+              Register a Cocoa Lot
+            </h1>
 
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[#57655d]">
-            Allocate harvested cocoa to a traceable lot. The image,
-            source harvest, and allocated quantity will be recorded
-            through the secure API.
-          </p>
-        </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#57655d]">
+              Allocate harvested cocoa to a traceable lot. The image,
+              source harvest, and allocated quantity will be recorded
+              through the secure API.
+            </p>
+          </div>
 
         {!user ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
@@ -970,12 +971,13 @@ function CreateCocoaLotContent() {
                 {submissionStage === "uploading"
                   ? "Uploading image..."
                   : submissionStage === "creating"
-                    ? "Creating cocoa lot..."
-                    : "Create Cocoa Lot"}
+                    ? "Registering cocoa lot..."
+                    : "Register Cocoa Lot"}
               </button>
             </div>
           </form>
         )}
+        </div>
       </main>
     </div>
   );

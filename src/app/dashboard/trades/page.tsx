@@ -219,7 +219,7 @@ export default function TradeManagementPage() {
 
       <main className="mx-auto max-w-[1360px] px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
         <div className="mb-6">
-          <DashboardWorkflowNav />
+          <DashboardWorkflowNav currentTab="cocoa-trade" />
         </div>
 
         {/* Header & Controls */}

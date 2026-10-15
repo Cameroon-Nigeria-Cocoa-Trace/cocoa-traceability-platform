@@ -154,7 +154,7 @@ export default function CocoaLotsPage() {
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
-        <DashboardWorkflowNav />
+        <DashboardWorkflowNav currentTab="production-inventory" />
 
         {/* Top Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
@@ -180,7 +180,7 @@ export default function CocoaLotsPage() {
               href="/dashboard/lots/create"
               className="inline-flex items-center gap-2 rounded-full bg-[#0b3528] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#07241b]"
             >
-              <Plus size={16} /> Create New Cocoa Lot
+              <Plus size={16} /> Register Cocoa Lot
             </Link>
           </div>
         </div>
@@ -265,7 +265,7 @@ export default function CocoaLotsPage() {
               href="/dashboard/lots/create"
               className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#07241b]"
             >
-              <Plus size={14} /> Create First Lot
+              <Plus size={14} /> Register Cocoa Lot
             </Link>
           </div>
         ) : (

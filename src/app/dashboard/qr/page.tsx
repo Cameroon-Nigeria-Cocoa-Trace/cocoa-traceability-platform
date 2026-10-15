@@ -480,7 +480,7 @@ export default function QRTraceabilityPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Workflow Navigation */}
-        <DashboardWorkflowNav />
+        <DashboardWorkflowNav currentTab="traceability-certification" />
 
         {/* Hero Section */}
         <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-stone-200">

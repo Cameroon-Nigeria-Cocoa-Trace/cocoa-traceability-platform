@@ -53,7 +53,7 @@ export default function ProductDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = Array.isArray(params?.id) ? params.id[0] : (params?.id as string);
-  const { user } = useFirebase();
+  const { user, loginWithGoogle } = useFirebase();
 
   const apiClient = useMemo(() => {
     return createCocoaApiClient(async () => {
@@ -214,6 +214,23 @@ export default function ProductDetailPage() {
         setSellerPayError(err.message);
       } else {
         setSellerPayError("Failed to initiate payment.");
+      }
+    } finally {
+      setSellerPaySubmitting(false);
+    }
+  };
+
+  // Handle Google Sign-in to unlock seller contact & initiate payment
+  const handleGoogleSignInToPay = async () => {
+    try {
+      setSellerPaySubmitting(true);
+      setSellerPayError(null);
+      await loginWithGoogle();
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setSellerPayError(err.message);
+      } else {
+        setSellerPayError("Sign-in failed. Please try again.");
       }
     } finally {
       setSellerPaySubmitting(false);
@@ -680,23 +697,66 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
-                <button
-                  type="button"
-                  onClick={() => setShowSellerPayModal(false)}
-                  className="rounded-full px-5 py-2.5 font-bold text-xs text-gray-500 hover:bg-gray-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleInitiateSellerPayment}
-                  disabled={sellerPaySubmitting || !user}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-xs text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
-                >
-                  {sellerPaySubmitting ? "Initializing Checkout..." : "Pay via Flutterwave"}
-                </button>
-              </div>
+              {!user ? (
+                <div className="mt-6 space-y-3 pt-3 border-t border-[#edf1ea]">
+                  <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-3 text-xs text-[#1c4b2e]">
+                    <div className="flex items-center gap-2 font-bold">
+                      <ShieldCheck size={16} className="text-[#2a7a33]" />
+                      Sign in to proceed with contact access fee
+                    </div>
+                    <p className="mt-1 text-[11px] text-[#426b52] leading-relaxed">
+                      Your payment receipt, escrow protection, and unlocked seller contact credentials will be securely linked to your account.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowSellerPayModal(false)}
+                      className="w-full sm:w-auto rounded-full px-5 py-2.5 font-bold text-xs text-gray-500 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+
+                    <Link
+                      href={`/login?redirect=${encodeURIComponent(`/product/${listing.listingId}`)}`}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-5 py-2.5 font-bold text-xs text-[#10251d] hover:bg-[#edf2ea] transition"
+                    >
+                      Sign In with Email
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={handleGoogleSignInToPay}
+                      disabled={sellerPaySubmitting}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-xs text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-[#0b3528]">
+                        G
+                      </span>
+                      {sellerPaySubmitting ? "Connecting..." : "Sign In with Google to Pay"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
+                  <button
+                    type="button"
+                    onClick={() => setShowSellerPayModal(false)}
+                    className="rounded-full px-5 py-2.5 font-bold text-xs text-gray-500 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleInitiateSellerPayment}
+                    disabled={sellerPaySubmitting}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-xs text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                  >
+                    {sellerPaySubmitting ? "Initializing Checkout..." : "Pay via Flutterwave"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -794,14 +854,23 @@ export default function ProductDetailPage() {
                   >
                     Cancel
                   </button>
-                  <button
-                    type="button"
-                    onClick={handlePurchase}
-                    disabled={purchaseSubmitting || !user}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
-                  >
-                    {purchaseSubmitting ? "Finalizing Trade..." : "Confirm & Pay"}
-                  </button>
+                  {!user ? (
+                    <Link
+                      href={`/login?redirect=${encodeURIComponent(`/product/${listing.listingId}`)}`}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737]"
+                    >
+                      Sign In to Confirm Trade
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handlePurchase}
+                      disabled={purchaseSubmitting}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                    >
+                      {purchaseSubmitting ? "Finalizing Trade..." : "Confirm & Pay"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

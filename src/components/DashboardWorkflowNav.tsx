@@ -3,8 +3,6 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import {
-  MapPin,
-  Trees,
   Compass,
   Sprout,
   Layers,
@@ -16,10 +14,8 @@ import {
   Store,
   Handshake,
   CreditCard,
-  ChevronDown,
   Clock,
   Sparkles,
-  ShieldCheck,
   CheckCircle2,
 } from "lucide-react";
 
@@ -50,21 +46,7 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
         href: "/dashboard",
         icon: Compass,
         isReady: true,
-        description: "Farmer plots, satellite map, and harvest totals",
-      },
-      {
-        name: "Farms",
-        href: "/farms",
-        icon: Trees,
-        isReady: true,
-        description: "Registered Cameroon farm holdings and plot dossiers",
-      },
-      {
-        name: "Farm Registration & Geofencing",
-        href: "/onboarding",
-        icon: MapPin,
-        isReady: true,
-        description: "5-step GPS boundary walk with canopy multipath filter",
+        description: "Farmer plots, geofencing map, and EUDR compliance overview",
       },
     ],
   },
@@ -77,25 +59,22 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
         name: "Production Records",
         href: "/dashboard/production",
         icon: Sprout,
-        isReady: false,
-        stageBadge: "Stage 2",
-        description: "Seasonal production periods and yield estimates",
+        isReady: true,
+        description: "Seasonal production periods, expected yields, and harvest campaigns",
       },
       {
         name: "Harvest Management",
         href: "/dashboard/harvests",
         icon: Layers,
-        isReady: false,
-        stageBadge: "Stage 2",
-        description: "Logged harvest batches and cumulative volume sync",
+        isReady: true,
+        description: "Logged harvest batches, weight verification, and quality grading",
       },
       {
         name: "Cocoa Lots",
         href: "/dashboard/lots",
         icon: Boxes,
-        isReady: false,
-        stageBadge: "Stage 2",
-        description: "Traceable cocoa lots with mandatory Cloudinary photos",
+        isReady: true,
+        description: "Traceable cocoa inventory, physical lot allocations, and specifications",
       },
     ],
   },
@@ -180,8 +159,11 @@ export function DashboardWorkflowNav({
   currentTab = "farm-management",
   onSelectTab,
 }: DashboardWorkflowNavProps) {
-  const [activeGroupIndex, setActiveGroupIndex] = useState(0);
-  const [mobileExpanded, setMobileExpanded] = useState(false);
+  const [selectedGroupOverride, setSelectedGroupOverride] = useState<string | null>(null);
+
+  const activeGroupId = selectedGroupOverride ?? currentTab;
+  const activeIndexCalculated = WORKFLOW_GROUPS.findIndex((g) => g.id === activeGroupId);
+  const activeGroupIndex = activeIndexCalculated >= 0 ? activeIndexCalculated : 0;
 
   return (
     <nav
@@ -195,11 +177,8 @@ export function DashboardWorkflowNav({
             <Sparkles size={18} />
           </div>
           <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-[#2d6130] flex items-center gap-1.5">
-              <span>Unified Workspace Hub</span>
-              <span className="rounded-full bg-[#edf7e8] px-2 py-0.2 text-[9px] font-extrabold text-[#2a7a33]">
-                Role 2 & 3
-              </span>
+            <div className="text-xs font-bold uppercase tracking-wider text-[#2d6130]">
+              Unified Workspace Hub
             </div>
             <div className="text-sm font-extrabold text-[#10251d]">
               Cameroon Cocoa Traceability, Inventory & Trade
@@ -216,7 +195,7 @@ export function DashboardWorkflowNav({
                 key={group.id}
                 type="button"
                 onClick={() => {
-                  setActiveGroupIndex(index);
+                  setSelectedGroupOverride(group.id);
                   if (onSelectTab) onSelectTab(group.id);
                 }}
                 className={`

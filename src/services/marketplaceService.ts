@@ -1026,7 +1026,7 @@ export async function listMarketplaceListings(
     }
   }
 
-  return listings.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return listings.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 }
 
 /**

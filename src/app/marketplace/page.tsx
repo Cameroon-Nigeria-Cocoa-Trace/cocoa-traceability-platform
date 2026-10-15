@@ -444,7 +444,7 @@ export default function MarketplacePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {user ? (
+            {user && (
               <>
                 <button
                   type="button"
@@ -462,13 +462,6 @@ export default function MarketplacePage() {
                   My Trades &amp; Orders
                 </Link>
               </>
-            ) : (
-              <Link
-                href="/signup"
-                className="inline-flex items-center justify-center rounded-full bg-[#b8f58b] px-6 py-3.5 text-sm font-bold text-[#073b2b] shadow-[0_14px_28px_rgba(184,245,139,0.18)] transition-transform hover:-translate-y-0.5"
-              >
-                Sign In to Trade Cocoa
-              </Link>
             )}
           </div>
         </section>
@@ -1284,14 +1277,23 @@ export default function MarketplacePage() {
                   >
                     Cancel
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleExecutePurchase}
-                    disabled={purchaseSubmitting || !user}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
-                  >
-                    {purchaseSubmitting ? "Finalizing Transaction..." : "Confirm & Execute Trade"}
-                  </button>
+                  {!user ? (
+                    <Link
+                      href={`/login?redirect=${encodeURIComponent(`/marketplace`)}`}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737]"
+                    >
+                      Sign In to Complete Trade
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleExecutePurchase}
+                      disabled={purchaseSubmitting}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                    >
+                      {purchaseSubmitting ? "Finalizing Transaction..." : "Confirm & Execute Trade"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

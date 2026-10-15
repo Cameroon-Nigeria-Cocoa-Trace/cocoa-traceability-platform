@@ -65,11 +65,12 @@ export default function OriginCertificatesPage() {
 
   // Application Form State
   const [formLotId, setFormLotId] = useState("");
-  const [formRequestedKg, setFormRequestedKg] = useState("");
   const [formApplicantType, setFormApplicantType] = useState<string>("farmer");
   const [submittingApp, setSubmittingApp] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+
+  const selectedFormLot = lots.find((l) => l.lotId === formLotId);
 
   // Authority quick-issue modal state (if applicable)
   const [issuingAppId, setIssuingAppId] = useState<string | null>(null);
@@ -186,17 +187,16 @@ export default function OriginCertificatesPage() {
       setFormError("Please select a backing Cocoa Lot.");
       return;
     }
-    const reqKg = parseFloat(formRequestedKg);
-    if (isNaN(reqKg) || reqKg <= 0) {
-      setFormError("Please enter a valid requested quantity in kg.");
+
+    const targetLot = lots.find((l) => l.lotId === formLotId);
+    if (!targetLot) {
+      setFormError("Selected Cocoa Lot was not found.");
       return;
     }
 
-    const targetLot = lots.find((l) => l.lotId === formLotId);
-    if (targetLot && reqKg > targetLot.quantityKg) {
-      setFormError(
-        `Requested quantity (${reqKg} kg) cannot exceed total lot capacity (${targetLot.quantityKg} kg).`
-      );
+    const totalLotKg = targetLot.quantityKg;
+    if (typeof totalLotKg !== "number" || isNaN(totalLotKg) || totalLotKg <= 0) {
+      setFormError("The selected Cocoa Lot does not have a valid recorded weight.");
       return;
     }
 
@@ -207,7 +207,7 @@ export default function OriginCertificatesPage() {
     try {
       const payload = {
         lotId: formLotId,
-        requestedQuantityKg: reqKg,
+        requestedQuantityKg: totalLotKg,
         applicantType: formApplicantType,
       };
 
@@ -219,7 +219,6 @@ export default function OriginCertificatesPage() {
       if (res && res.success) {
         setFormSuccess(`Application ${res.application.applicationNumber} submitted successfully!`);
         setFormLotId("");
-        setFormRequestedKg("");
         await loadApplications();
         setTimeout(() => {
           setShowApplyModal(false);
@@ -294,7 +293,7 @@ export default function OriginCertificatesPage() {
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
-        <DashboardWorkflowNav />
+        <DashboardWorkflowNav currentTab="traceability-certification" />
 
         {/* Header Banner */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
@@ -689,20 +688,14 @@ export default function OriginCertificatesPage() {
                 </label>
                 <select
                   value={formLotId}
-                  onChange={(e) => {
-                    setFormLotId(e.target.value);
-                    const selected = lots.find((l) => l.lotId === e.target.value);
-                    if (selected && !formRequestedKg) {
-                      setFormRequestedKg(String(selected.availableQuantityKg || selected.quantityKg));
-                    }
-                  }}
+                  onChange={(e) => setFormLotId(e.target.value)}
                   required
                   className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
                 >
                   <option value="">-- Select a registered Cocoa Lot --</option>
                   {lots.map((l) => (
                     <option key={l.lotId} value={l.lotId}>
-                      {l.lotNumber} — {l.quantityKg} kg ({l.productionPeriod})
+                      {l.lotNumber} — {l.quantityKg.toLocaleString()} kg ({l.productionPeriod})
                     </option>
                   ))}
                 </select>
@@ -713,23 +706,28 @@ export default function OriginCertificatesPage() {
                 )}
               </div>
 
-              {/* Requested Quantity */}
+              {/* Automatic Certification Quantity (Read-only total kg of the selected lot) */}
               <div>
                 <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
-                  Requested Certification Quantity (kg) <span className="text-red-500">*</span>
+                  Certification Quantity (Total Lot Weight)
                 </label>
-                <input
-                  type="number"
-                  step="any"
-                  placeholder="e.g. 500"
-                  value={formRequestedKg}
-                  onChange={(e) => setFormRequestedKg(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130]"
-                />
-                <p className="mt-1 text-[10px] text-[#6f7e73]">
-                  Must be ≤ total quantity of the selected cocoa lot.
-                </p>
+                {selectedFormLot ? (
+                  <div className="rounded-xl border border-[#c4ebb0] bg-[#eefae6] p-3 text-xs text-[#0c392b]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold">Total Physical Lot Weight:</span>
+                      <span className="font-mono text-base font-black text-[#2a7a33]">
+                        {selectedFormLot.quantityKg.toLocaleString()} kg
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[#2a5933] border-t border-[#c4ebb0]/60 pt-1.5">
+                      ✓ Automatically certified for <strong>100% of the lot ({selectedFormLot.quantityKg.toLocaleString()} kg)</strong>. Under Cameroon traceability and EUDR regulations, only whole lots can be certified—partial lot certification is not permitted.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-3 text-center text-xs text-[#8e9d92]">
+                    Select a backing cocoa lot above to automatically populate the complete lot certification weight.
+                  </div>
+                )}
               </div>
 
               {/* Applicant Type */}
