@@ -5,7 +5,7 @@ export async function POST(req: NextRequest) {
   try {
     const { action, email, password, displayName } = await req.json();
 
-    const apiKey = firebaseConfig.apiKey || "AIzaSyDSxfxaWu2o4jh0kiyyhf-aV03ZXdnS49w";
+    const apiKey = firebaseConfig.apiKey;
     if (!apiKey) {
       return NextResponse.json(
         { success: false, error: "Firebase API key is not configured." },

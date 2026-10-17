@@ -3,20 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Globe2, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useFirebase } from "@/context/FirebaseContext";
+
+const emptySubscribe = () => () => {};
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
   const pathname = usePathname();
   const { user, logout } = useFirebase();
+
+  const currentUser = mounted ? user : null;
 
   const links = [
     ["Home", "/"],
     ["Marketplace", "/marketplace"],
-    ...(user ? [["Dashboard", "/dashboard"]] : []),
-    ["For Farmers", user ? "/dashboard" : "/signup"],
-    ["Traceability", "/marketplace"],
+    ...(currentUser ? [["Dashboard", "/dashboard"]] : []),
+    ["For Farmers", currentUser ? "/dashboard" : "/signup"],
     ["Portal", "/login"],
   ];
 
@@ -33,7 +37,7 @@ export function Navbar() {
               </div>
 
               <div>
-                <div className="text-base font-bold tracking-tight text-white!">TraceTradeNetwork</div>
+                <div className="text-base font-bold tracking-tight text-white!">CocoaTrace</div>
                 <div className="text-[9px] uppercase tracking-[0.18em] text-white/60">From Farm to World</div>
               </div>
             </Link>
@@ -68,6 +72,7 @@ export function Navbar() {
               
               <select 
                 defaultValue="en"
+                suppressHydrationWarning
                 className="bg-transparent pl-1.5 pr-4 font-semibold appearance-none cursor-pointer outline-none border-none text-white! focus:ring-0 [&>option]:bg-[#062d22] [&>option]:text-white! [&>option]:py-2 text-xs"
                 aria-label="Select Language"
               >
@@ -89,10 +94,10 @@ export function Navbar() {
               </svg>
             </div>
 
-            {user ? (
+            {currentUser ? (
               <div className="flex items-center gap-2.5">
                 <span className="text-xs font-semibold text-white/80 max-w-[110px] truncate whitespace-nowrap">
-                  {user.displayName || user.email}
+                  {currentUser.displayName || currentUser.email}
                 </span>
                 <button
                   type="button"
@@ -132,7 +137,7 @@ export function Navbar() {
               ))}
 
               <div className="border-t border-white/10 pt-4 flex flex-col gap-3">
-                {user ? (
+                {currentUser ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -141,7 +146,7 @@ export function Navbar() {
                     }}
                     className="text-left text-sm text-red-300 py-1"
                   >
-                    Log out ({user.displayName || user.email})
+                    Log out ({currentUser.displayName || currentUser.email})
                   </button>
                 ) : (
                   <Link href="/login" className="text-white! text-sm py-1" onClick={() => setOpen(false)}>

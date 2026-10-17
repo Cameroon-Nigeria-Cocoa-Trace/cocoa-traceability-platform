@@ -1,7 +1,6 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
   collection,
@@ -10,8 +9,6 @@ import {
   setDoc,
   updateDoc,
   onSnapshot,
-  query,
-  where,
 } from "firebase/firestore";
 import {
   auth,
@@ -21,19 +18,13 @@ import {
   signUpWithEmail as authSignUpWithEmail,
   checkRedirectAuthResult,
   logoutUser,
+  handleFirestoreError,
+  OperationType,
 } from "@/lib/firebase";
-import { Product } from "@/data/products";
-import { validateCameroonFarmLocation } from "@/lib/geo/cameroonBoundary";
-import {
-  savePendingFarmDraft,
-  getPendingFarmDrafts,
-  removePendingFarmDraft,
-  PendingFarmDraft,
-} from "@/lib/cocoaDb";
+import { products as defaultProducts, Product } from "@/data/products";
 
 export interface FarmRecord {
   id: string;
-  farmUniqueId?: string;
   farmerId: string;
   farmerName?: string;
   farmerPhone?: string;
@@ -84,8 +75,6 @@ interface FirebaseContextType {
   logout: () => Promise<void>;
   lots: Product[];
   farms: FarmRecord[];
-  pendingDrafts: PendingFarmDraft[];
-  syncPendingDrafts: () => Promise<void>;
   registerFarm: (farm: Omit<FarmRecord, "id" | "farmerId" | "createdAt">) => Promise<FarmRecord>;
   updateFarm: (farmId: string, updates: Partial<Omit<FarmRecord, "id" | "farmerId" | "createdAt">>) => Promise<void>;
 }
@@ -99,10 +88,8 @@ const FirebaseContext = createContext<FirebaseContextType>({
   signUpWithEmail: async () => {},
   loginAsDemo: () => {},
   logout: async () => {},
-  lots: [],
+  lots: defaultProducts,
   farms: [],
-  pendingDrafts: [],
-  syncPendingDrafts: async () => {},
   registerFarm: async () => {
     throw new Error("Provider not initialized");
   },
@@ -114,9 +101,8 @@ const FirebaseContext = createContext<FirebaseContextType>({
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lots] = useState<Product[]>([]);
+  const [lots, setLots] = useState<Product[]>(defaultProducts);
   const [farms, setFarms] = useState<FarmRecord[]>([]);
-  const [pendingDrafts, setPendingDrafts] = useState<PendingFarmDraft[]>([]);
 
   // Auth Listener and Redirect Handler
   useEffect(() => {
@@ -126,8 +112,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     });
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // Never retain the previous account's farms across auth changes.
-      setFarms([]);
       if (currentUser) {
         setUser(currentUser);
         if (typeof window !== "undefined") {
@@ -182,85 +166,58 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-
-  // Fetch Farms from Firestore (Scoped securely by authenticated user UID)
+  // Fetch or Seed Marketplace Lots from Firestore
   useEffect(() => {
-    let active = true;
-
-    // Clear stale records as soon as this subscription is established.
-    setFarms([]);
-
-    const ownerUid = user?.uid;
-
-    // Demo identities are not Firebase-authenticated identities.
-    if (
-      !ownerUid ||
-      ownerUid.startsWith("demo_producer_") ||
-      auth.currentUser?.uid !== ownerUid
-    ) {
-      return () => {
-        active = false;
-      };
-    }
-
-    const farmsRef = collection(db, "farms");
-    const farmsQuery = query(
-      farmsRef,
-      where("farmerId", "==", ownerUid)
-    );
-
+    const lotsPath = "lots";
     const unsubscribe = onSnapshot(
-      farmsQuery,
-      (snapshot) => {
-        // Ignore callbacks from an obsolete subscription/account.
-        if (
-          !active ||
-          auth.currentUser?.uid !== ownerUid
-        ) {
-          return;
-        }
-
-        const fetchedFarms: FarmRecord[] = [];
-
-        snapshot.forEach((document) => {
-          const data = document.data() as FarmRecord;
-
-          // Defense in depth: never add another owner's record to state.
-          if (data.farmerId !== ownerUid) {
-            return;
-          }
-
-          fetchedFarms.push({
-            ...data,
-            id: document.id,
+      collection(db, lotsPath),
+      async (snapshot) => {
+        if (!snapshot.empty) {
+          const fetchedLots: Product[] = [];
+          snapshot.forEach((d) => {
+            fetchedLots.push(d.data() as Product);
           });
-        });
-
-        // Use only the current owner's authoritative snapshot.
-        // Do not merge records from the previous account's state.
-        setFarms(fetchedFarms);
+          setLots(fetchedLots);
+        } else {
+          setLots(defaultProducts);
+        }
       },
       (error) => {
-        if (
-          !active ||
-          auth.currentUser?.uid !== ownerUid
-        ) {
-          return;
-        }
-
-        console.error("Could not fetch user farms:", error);
-
-        // Do not leave potentially stale private records visible.
-        setFarms([]);
+        handleFirestoreError(error, OperationType.GET, lotsPath);
       }
     );
 
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [user]);
+    return () => unsubscribe();
+  }, []);
 
+  // Fetch Farms from Firestore
+  useEffect(() => {
+    const farmsPath = "farms";
+    const unsubscribe = onSnapshot(
+      collection(db, farmsPath),
+      (snapshot) => {
+        const fetchedFarms: FarmRecord[] = [];
+        snapshot.forEach((d) => {
+          fetchedFarms.push(d.data() as FarmRecord);
+        });
+        setFarms((prev) => {
+          // Merge fetched farms while preserving any locally registered ones
+          const merged = [...fetchedFarms];
+          for (const localFarm of prev) {
+            if (!merged.some((f) => f.id === localFarm.id)) {
+              merged.push(localFarm);
+            }
+          }
+          return merged;
+        });
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, farmsPath);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
 
   const loginWithGoogle = async () => {
     try {
@@ -359,235 +316,106 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Load pending drafts on mount or when user changes
-  useEffect(() => {
-    const loadDrafts = async () => {
-      try {
-        const drafts = await getPendingFarmDrafts(user?.uid);
-        setPendingDrafts(drafts);
-      } catch (err) {
-        console.warn("Could not load pending drafts from IndexedDB:", err);
-      }
-    };
-    loadDrafts();
-  }, [user]);
-
-  // Sync pending drafts when online
-  const syncPendingDrafts = useCallback(async (): Promise<void> => {
-    if (!user || user.uid.startsWith("demo_producer_")) return;
-    try {
-      const drafts = await getPendingFarmDrafts(user.uid);
-      if (drafts.length === 0) return;
-      const idToken = await user.getIdToken();
-      for (const draft of drafts) {
-        try {
-          const res = await fetch("/api/farms", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${idToken}`,
-            },
-            body: JSON.stringify(draft.farmData),
-          });
-          if (res.ok) {
-            const { farm: registeredFarm } = await res.json();
-            await removePendingFarmDraft(draft.draftId);
-            setFarms((prev) => [registeredFarm, ...prev.filter((f) => f.id !== registeredFarm.id)]);
-            setPendingDrafts((prev) => prev.filter((d) => d.draftId !== draft.draftId));
-          }
-        } catch {
-          // Keep draft in IndexedDB for subsequent retry
-        }
-      }
-    } catch (syncErr) {
-      console.warn("Background draft sync error:", syncErr);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleOnline = () => {
-      syncPendingDrafts();
-    };
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, [syncPendingDrafts]);
-
   const registerFarm = async (
     data: Omit<FarmRecord, "id" | "farmerId" | "createdAt">
   ): Promise<FarmRecord> => {
-    // 1. Enforce authoritative Cameroon location validation immediately
-    validateCameroonFarmLocation({
-      region: data.region,
-      state: data.state,
-      village: data.village,
-      geolocation: data.geolocation,
-      geofencePolygon: data.geofencePolygon,
-    });
-
     const farmId = `farm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const uniqueSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const generatedUniqueId = `TTN-CM-2026-${uniqueSuffix}`;
     const nowIso = new Date().toISOString();
     const effectiveFarmerId = user?.uid || "demo_producer_local";
-
-    const farmPayload = {
-      ...data,
-      farmId,
-      farmUniqueId: data.farmUniqueId || generatedUniqueId,
+    
+    // Construct clean farm object
+    const newFarm: FarmRecord = {
+      id: farmId,
       farmerId: effectiveFarmerId,
       farmerName: data.farmerName || user?.displayName || "Registered Farmer",
+      farmName: data.farmName,
+      region: data.region,
+      geolocation: data.geolocation,
       sizeHectares: Number(data.sizeHectares) || 2.5,
       createdAt: nowIso,
       registrationDate: data.registrationDate || nowIso.split("T")[0],
       eudrCompliant: data.eudrCompliant ?? true,
     };
 
-    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
-
-    if (isOffline) {
-      // Offline mode: store purely in local IndexedDB draft store
-      // DO NOT write to Firestore via client SDK, DO NOT add to registered farms state
-      await savePendingFarmDraft(farmId, effectiveFarmerId, farmPayload);
-      const updatedDrafts = await getPendingFarmDrafts(user?.uid);
-      setPendingDrafts(updatedDrafts);
-      throw new Error(
-        "Offline Pending Draft: Network is unavailable. Your farm has been securely saved locally to IndexedDB as an unvalidated draft. It will be submitted for official server validation and registration when you are back online."
-      );
+    if (data.farmerPhone) newFarm.farmerPhone = data.farmerPhone;
+    if (data.farmerEmail) newFarm.farmerEmail = data.farmerEmail;
+    if (data.village) newFarm.village = data.village;
+    if (data.lga) newFarm.lga = data.lga;
+    if (data.state) newFarm.state = data.state;
+    if (data.cooperative) newFarm.cooperative = data.cooperative;
+    if (data.cocoaVariety) newFarm.cocoaVariety = data.cocoaVariety;
+    if (data.harvestSeason) newFarm.harvestSeason = data.harvestSeason;
+    if (data.estimatedAnnualYieldKg !== undefined && !isNaN(data.estimatedAnnualYieldKg)) {
+      newFarm.estimatedAnnualYieldKg = Number(data.estimatedAnnualYieldKg);
     }
-
-    // Online path: Must pass through server-side authenticated validation endpoint
-    if (!user) {
-      throw new Error("Authentication Required: You must be signed in to officially register a farm plot.");
+    if (data.quantityHarvestedKg !== undefined && !isNaN(data.quantityHarvestedKg)) {
+      newFarm.quantityHarvestedKg = Number(data.quantityHarvestedKg);
+    }
+    if (data.batchNumber) newFarm.batchNumber = data.batchNumber;
+    if (data.aggregatorCenter) newFarm.aggregatorCenter = data.aggregatorCenter;
+    if (data.batchMovementRoute) newFarm.batchMovementRoute = data.batchMovementRoute;
+    if (data.processorExporter) newFarm.processorExporter = data.processorExporter;
+    if (data.designatedBuyer) newFarm.designatedBuyer = data.designatedBuyer;
+    if (data.landDocType) newFarm.landDocType = data.landDocType;
+    if (data.landDocReference) newFarm.landDocReference = data.landDocReference;
+    if (data.deforestationRisk) newFarm.deforestationRisk = data.deforestationRisk;
+    if (data.auditStatus) newFarm.auditStatus = data.auditStatus;
+    if (data.auditCertificateNumber) newFarm.auditCertificateNumber = data.auditCertificateNumber;
+    if (data.auditorName) newFarm.auditorName = data.auditorName;
+    if (data.auditDate) newFarm.auditDate = data.auditDate;
+    if (data.paymentMethod) newFarm.paymentMethod = data.paymentMethod;
+    if (data.transactionReference) newFarm.transactionReference = data.transactionReference;
+    if (data.transactionAmount) newFarm.transactionAmount = data.transactionAmount;
+    if (data.geofencePolygon && data.geofencePolygon.length > 0) {
+      newFarm.geofencePolygon = data.geofencePolygon;
+      newFarm.geofencePointCount = data.geofencePointCount || data.geofencePolygon.length;
+    }
+    if (data.geofenceAreaHa !== undefined) {
+      newFarm.geofenceAreaHa = Number(data.geofenceAreaHa);
     }
 
     try {
-      const idToken = await user.getIdToken();
-      const res = await fetch("/api/farms", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify(farmPayload),
+      if (user && !user.uid.startsWith("demo_producer_")) {
+        await setDoc(doc(db, "farms", farmId), newFarm);
+      }
+      setFarms((prev) => {
+        if (prev.some((f) => f.id === farmId)) return prev;
+        return [newFarm, ...prev];
       });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Server registration failed with status ${res.status}`);
-      }
-
-      const resData = await res.json();
-      const registeredFarm: FarmRecord = resData.farm;
-
-      // Add to registered farms state only upon confirmed server validation
-      setFarms((prev) => [registeredFarm, ...prev.filter((f) => f.id !== registeredFarm.id)]);
-      await removePendingFarmDraft(farmId);
-      setPendingDrafts((prev) => prev.filter((d) => d.draftId !== farmId));
-
-      return registeredFarm;
-    } catch (networkOrServerErr: unknown) {
-      const errorMsg = networkOrServerErr instanceof Error ? networkOrServerErr.message : "Registration failed";
-      if (errorMsg.includes("Validation") || errorMsg.includes("Registration Policy")) {
-        throw networkOrServerErr;
-      }
-
-      // If connection was dropped or server was unreachable, store draft locally in IndexedDB
-      await savePendingFarmDraft(farmId, effectiveFarmerId, farmPayload);
-      const updatedDrafts = await getPendingFarmDrafts(user?.uid);
-      setPendingDrafts(updatedDrafts);
-
-      throw new Error(
-        `Network Unreachable: ${errorMsg}. Your farm has been preserved as a local pending draft in IndexedDB awaiting server validation.`
-      );
+      return newFarm;
+    } catch (error) {
+      console.warn("Firestore save error, saving locally:", error);
+      setFarms((prev) => {
+        if (prev.some((f) => f.id === farmId)) return prev;
+        return [newFarm, ...prev];
+      });
+      return newFarm;
     }
   };
 
-  
   const updateFarm = async (
     farmId: string,
     updates: Partial<Omit<FarmRecord, "id" | "farmerId" | "createdAt">>
   ): Promise<void> => {
-    if (!farmId || typeof farmId !== "string") {
-      throw new Error("A valid farm ID is required.");
-    }
-
-    // Demo accounts can modify only their local demo state.
-    // They must never be treated as authenticated Firebase users.
-    if (user?.uid.startsWith("demo_producer_")) {
+    try {
+      if (user && !user.uid.startsWith("demo_producer_")) {
+        const sanitizedUpdates: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(updates)) {
+          if (value !== undefined) {
+            sanitizedUpdates[key] = value;
+          }
+        }
+        await updateDoc(doc(db, "farms", farmId), sanitizedUpdates);
+      }
       setFarms((prev) =>
-        prev.map((farm) =>
-          farm.id === farmId ? { ...farm, ...updates } : farm
-        )
+        prev.map((f) => (f.id === farmId ? { ...f, ...updates } : f))
       );
-      return;
-    }
-
-    if (!user) {
-      throw new Error(
-        "Authentication Required: Sign in before updating a farm."
+    } catch (error) {
+      console.warn("Firestore update error, saving locally:", error);
+      setFarms((prev) =>
+        prev.map((f) => (f.id === farmId ? { ...f, ...updates } : f))
       );
     }
-
-    const ownerUid = user.uid;
-
-    // Ensure the active Firebase session still belongs to this user.
-    if (auth.currentUser?.uid !== ownerUid) {
-      throw new Error(
-        "Your authentication session has changed. Please try again."
-      );
-    }
-
-    // All real farm updates must go through the server API.
-    // The server is responsible for checking ownership and validating
-    // location changes, geofencing, and cadastral-review safeguards.
-    const idToken = await user.getIdToken();
-
-    const response = await fetch("/api/farms", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        farmId,
-        ...updates,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-
-      throw new Error(
-        errorData.error ||
-          `Farm update failed with status ${response.status}.`
-      );
-    }
-
-    const result = await response.json();
-
-    if (!result.farm || typeof result.farm !== "object") {
-      throw new Error(
-        "Farm update response did not contain the updated farm."
-      );
-    }
-
-    // Never inject a response from a previous account into the
-    // currently signed-in user's farm state.
-    if (auth.currentUser?.uid !== ownerUid) {
-      return;
-    }
-
-    const updatedFarm = {
-      ...result.farm,
-      id: result.farm.id || farmId,
-    } as FarmRecord;
-
-    setFarms((prev) =>
-      prev.map((farm) =>
-        farm.id === farmId ? { ...farm, ...updatedFarm } : farm
-      )
-    );
   };
 
   return (
@@ -603,8 +431,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         logout,
         lots,
         farms,
-        pendingDrafts,
-        syncPendingDrafts,
         registerFarm,
         updateFarm,
       }}

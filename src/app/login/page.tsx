@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase } from "@/context/FirebaseContext";
 import {
@@ -17,18 +16,6 @@ import {
 } from "lucide-react";
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-[#f7f8f3]" />}>
-      <LoginContent />
-    </Suspense>
-  );
-}
-
-function LoginContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const redirectUrl = searchParams.get("redirect");
-
   const {
     user,
     loginWithGoogle,
@@ -134,11 +121,6 @@ function LoginContent() {
       setErrorDetails(null);
       await loginWithGoogle();
       setSuccess("Connected with Google successfully!");
-      if (redirectUrl) {
-        setTimeout(() => {
-          router.push(redirectUrl);
-        }, 500);
-      }
     } catch (err: unknown) {
       console.error("Google Auth Error:", err);
       const parsed = parseAuthError(err);
@@ -180,11 +162,6 @@ function LoginContent() {
       } else {
         await loginWithEmail(cleanEmail, password);
         setSuccess("Signed in successfully!");
-      }
-      if (redirectUrl) {
-        setTimeout(() => {
-          router.push(redirectUrl);
-        }, 500);
       }
     } catch (err: unknown) {
       console.error("Email Auth Error:", err);
@@ -269,17 +246,9 @@ function LoginContent() {
               </div>
 
               <div className="flex flex-col gap-2.5 pt-2">
-                {redirectUrl && (
-                  <Link
-                    href={redirectUrl}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2a7a33] px-5 py-3 text-sm font-bold text-white !text-white shadow-sm transition hover:bg-[#1e5824]"
-                  >
-                    Return to Cocoa Offering <ArrowRight size={16} />
-                  </Link>
-                )}
                 <Link
                   href="/dashboard"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b3528] px-5 py-3 text-sm font-bold text-white !text-white shadow-sm transition hover:bg-[#07241b]"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b3528] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#07241b]"
                 >
                   Open Farmer Dashboard <ArrowRight size={16} />
                 </Link>
