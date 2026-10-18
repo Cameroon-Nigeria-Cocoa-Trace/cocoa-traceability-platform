@@ -15,7 +15,7 @@ import { Navbar } from "@/components/Navbar";
 import { DashboardWorkflowNav } from "@/components/DashboardWorkflowNav";
 import { useFirebase } from "@/context/FirebaseContext";
 import { createCocoaApiClient, CocoaApiError } from "@/lib/cocoaApiClient";
-import { Harvest, ProductionRecord, CocoaQualityGrade } from "@/types/traceability";
+import { Harvest, ProductionRecord } from "@/types/traceability";
 import {
   Layers,
   Plus,
@@ -70,7 +70,6 @@ function HarvestsContent() {
   // Form State
   const [harvestDate, setHarvestDate] = useState(new Date().toISOString().split("T")[0]);
   const [quantityKg, setQuantityKg] = useState("");
-  const [qualityGrade, setQualityGrade] = useState<CocoaQualityGrade>("Grade 1");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -331,7 +330,6 @@ function HarvestsContent() {
         productionRecordId: selectedProdId,
         harvestDate: harvestDate.trim(),
         quantityKg: qty,
-        qualityGrade,
         notes: notes.trim() || undefined,
       };
 
@@ -584,8 +582,8 @@ function HarvestsContent() {
                     <th className="p-4">Harvest Date</th>
                     <th className="p-4">Total Weight</th>
                     <th className="p-4">Available Capacity</th>
-                    <th className="p-4">Quality Grade</th>
                     <th className="p-4">Status</th>
+                    <th className="p-4">Batch Notes</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -605,11 +603,6 @@ function HarvestsContent() {
                         {(h.availableQuantityKg ?? h.quantityKg).toLocaleString()} kg
                       </td>
                       <td className="p-4">
-                        <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[10px] font-bold text-[#2d6130]">
-                          {h.qualityGrade || "Grade 1"}
-                        </span>
-                      </td>
-                      <td className="p-4">
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
                             h.status === "allocated_to_lot"
@@ -618,6 +611,11 @@ function HarvestsContent() {
                           }`}
                         >
                           {h.status}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className="text-[11px] text-[#57655d] max-w-[150px] truncate block">
+                          {h.notes || "—"}
                         </span>
                       </td>
                       <td className="p-4 text-right">
@@ -706,20 +704,6 @@ function HarvestsContent() {
                   />
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-[#10251d] mb-1">
-                    Cocoa Quality Grade <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={qualityGrade}
-                    onChange={(e) => setQualityGrade(e.target.value as CocoaQualityGrade)}
-                    className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-sm font-medium text-[#10251d] outline-none focus:border-[#2d6130]"
-                  >
-                    <option value="Grade 1">Grade 1 (Properly Fermented, Premium)</option>
-                    <option value="Grade 2">Grade 2 (Fair Fermented)</option>
-                    <option value="Sub-standard">Sub-standard</option>
-                  </select>
-                </div>
 
                 <div>
                   <label className="block font-semibold text-[#10251d] mb-1">

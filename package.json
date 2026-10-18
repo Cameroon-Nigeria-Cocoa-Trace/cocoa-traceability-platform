@@ -20,6 +20,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.47.0",
     "mapbox-gl": "^3.33.0",
+    "maplibre-gl": "^6.14.0",
     "next": "16.3.6",
     "qrcode": "^1.5.4",
     "react": "19.2.8",

@@ -212,7 +212,52 @@ export async function POST(req: NextRequest) {
       createdBy: user.userId,
     };
 
+    const yearNumber = parseInt(input.seasonYear, 10);
+    if (!isNaN(yearNumber) && yearNumber >= 2020) {
+      input.startDate = `${yearNumber}-01-01`;
+      input.endDate = `${yearNumber}-12-31`;
+    }
+
     validateProductionInput(input, true);
+
+    // 1. Enforce unique season year per farm: a farmer cannot create 2 separate production records of the same year
+    const duplicateSeasonSnap = await firebaseAdminDb
+      .collection("productions")
+      .where("farmId", "==", farmId)
+      .where("seasonYear", "==", input.seasonYear)
+      .get();
+
+    if (!duplicateSeasonSnap.empty) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Conflict Error: A production record for season year ${input.seasonYear} already exists on this farm. Farmers cannot create multiple production records for the same year.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    // 2. Enforce harvest completion: must put all harvest periods for existing production seasons before adding another
+    const existingRecordsSnap = await firebaseAdminDb
+      .collection("productions")
+      .where("farmId", "==", farmId)
+      .get();
+
+    for (const doc of existingRecordsSnap.docs) {
+      const prod = doc.data();
+      const targetHarvests = Number(prod.expectedNumberOfHarvests ?? 0);
+      const loggedHarvests = Number(prod.numberOfHarvests ?? 0);
+
+      if (targetHarvests > 0 && loggedHarvests < targetHarvests) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Validation Error: All ${targetHarvests} harvest periods for production season ${prod.seasonYear} (${loggedHarvests} currently logged) must be logged before creating another production record.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     const productionRecordId =
       requestedId ||
@@ -542,6 +587,33 @@ export async function PATCH(req: NextRequest) {
     // Authorize access to the farm using trusted server-side data.
     await assertFarmOwnership(existing.farmId, user);
 
+    // Rule: Season year cannot be edited
+    if (body.seasonYear !== undefined && body.seasonYear !== existing.seasonYear) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Validation Error: Season year cannot be edited on an existing production record.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Rule: When editing, harvests cannot be reduced to less than the amount of harvests already present
+    const currentHarvestsCount = Number(existing.numberOfHarvests ?? 0);
+    if (
+      body.expectedNumberOfHarvests !== undefined &&
+      typeof body.expectedNumberOfHarvests === "number" &&
+      body.expectedNumberOfHarvests < currentHarvestsCount
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Validation Error: Number of harvests cannot be reduced to less than the ${currentHarvestsCount} harvest(s) already recorded for this production record.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const updates: UpdateProductionRecordInput = {};
 
     for (const key of suppliedFields) {
@@ -597,6 +669,118 @@ export async function PATCH(req: NextRequest) {
         error:
           status === 500
             ? "Could not update production record."
+            : message,
+      },
+      { status }
+    );
+  }
+}
+
+// DELETE /api/production?productionRecordId=...
+// A farmer cannot delete a production record after harvests have been added under it.
+export async function DELETE(req: NextRequest) {
+  let user: AuthenticatedUser;
+
+  try {
+    user = await getAuthenticatedUser(req);
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Authentication Required";
+
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    let productionRecordId = searchParams.get("productionRecordId")?.trim();
+
+    if (!productionRecordId) {
+      try {
+        const body = await req.json();
+        if (isJsonObject(body) && typeof body.productionRecordId === "string") {
+          productionRecordId = body.productionRecordId.trim();
+        }
+      } catch {
+        // Query param preferred
+      }
+    }
+
+    if (!productionRecordId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Validation Error: productionRecordId is required.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const recordRef = firebaseAdminDb
+      .collection("productions")
+      .doc(productionRecordId);
+
+    const recordSnap = await recordRef.get();
+
+    if (!recordSnap.exists) {
+      return NextResponse.json(
+        { success: false, error: "Production record not found." },
+        { status: 404 }
+      );
+    }
+
+    const existing = recordSnap.data()!;
+
+    if (typeof existing.farmId !== "string" || !existing.farmId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Production record has an invalid farm relationship.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Authorize farm ownership
+    await assertFarmOwnership(existing.farmId, user);
+
+    // Rule: Cannot delete a production record after harvests have been added under it
+    const loggedCount = Number(existing.numberOfHarvests ?? 0);
+    const harvestsSnap = await firebaseAdminDb
+      .collection("harvests")
+      .where("productionRecordId", "==", productionRecordId)
+      .get();
+
+    if (loggedCount > 0 || !harvestsSnap.empty) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Conflict Error: Cannot delete production record because ${harvestsSnap.size || loggedCount} harvest(s) have already been recorded under it.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    await recordRef.delete();
+
+    return NextResponse.json({
+      success: true,
+      message: "Production record deleted successfully.",
+    });
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Internal Server Error";
+
+    const status = validationStatus(message);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          status === 500
+            ? "Could not delete production record."
             : message,
       },
       { status }

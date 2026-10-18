@@ -327,6 +327,253 @@
         }
       },
       "required": ["id", "lotId", "step", "detail", "date"]
+    },
+    "ProductionRecord": {
+      "title": "ProductionRecord",
+      "description": "Seasonal cocoa production targets, periods, and harvest campaign yield metrics.",
+      "type": "object",
+      "properties": {
+        "productionRecordId": {
+          "type": "string",
+          "description": "Unique production record identifier",
+          "maxLength": 128
+        },
+        "farmId": {
+          "type": "string",
+          "description": "Reference to registered Cameroon farm plot",
+          "maxLength": 128
+        },
+        "seasonYear": {
+          "type": "string",
+          "description": "Cocoa season year (e.g. 2026/2027)",
+          "maxLength": 30
+        },
+        "productionPeriod": {
+          "type": "string",
+          "description": "Production cycle name (e.g. Main Crop 2026-2027)",
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Campaign start date (YYYY-MM-DD)",
+          "maxLength": 30
+        },
+        "endDate": {
+          "type": "string",
+          "description": "Campaign end date (YYYY-MM-DD)",
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle state",
+          "enum": ["active", "completed"]
+        },
+        "estimatedQuantityKg": {
+          "type": "number",
+          "description": "Estimated target production yield in kg"
+        },
+        "actualQuantityKg": {
+          "type": "number",
+          "description": "Cumulative harvested quantity in kg"
+        },
+        "expectedNumberOfHarvests": {
+          "type": "number",
+          "description": "Expected number of harvest cycles"
+        },
+        "numberOfHarvests": {
+          "type": "number",
+          "description": "Actual completed harvests"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Production notes and seasonal remarks",
+          "maxLength": 1000
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Firebase UID of record creator",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp",
+          "format": "date-time"
+        }
+      },
+      "required": ["productionRecordId", "farmId", "seasonYear", "productionPeriod", "startDate", "status", "createdBy", "createdAt"]
+    },
+    "Harvest": {
+      "title": "Harvest",
+      "description": "Logged harvest batch linked to a registered farm plot and seasonal production record.",
+      "type": "object",
+      "properties": {
+        "harvestId": {
+          "type": "string",
+          "description": "Unique harvest batch identifier",
+          "maxLength": 128
+        },
+        "productionRecordId": {
+          "type": "string",
+          "description": "Parent production record ID",
+          "maxLength": 128
+        },
+        "farmId": {
+          "type": "string",
+          "description": "Parent farm identifier",
+          "maxLength": 128
+        },
+        "harvestDate": {
+          "type": "string",
+          "description": "Date of harvest batch (YYYY-MM-DD)",
+          "maxLength": 30
+        },
+        "quantityKg": {
+          "type": "number",
+          "description": "Harvest batch weight in kilograms"
+        },
+        "allocatedQuantityKg": {
+          "type": "number",
+          "description": "Cumulative quantity allocated to downstream cocoa lots in kg"
+        },
+        "availableQuantityKg": {
+          "type": "number",
+          "description": "Remaining unallocated harvest batch quantity in kg"
+        },
+        "qualityGrade": {
+          "type": "string",
+          "description": "Assessed cocoa quality grade",
+          "maxLength": 50
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the harvest batch",
+          "enum": ["logged", "allocated_to_lot", "archived"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Harvest batch observations and notes",
+          "maxLength": 1000
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Firebase UID of creator",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp",
+          "format": "date-time"
+        }
+      },
+      "required": ["harvestId", "productionRecordId", "farmId", "harvestDate", "quantityKg", "status", "createdBy", "createdAt"]
+    },
+    "CocoaLot": {
+      "title": "CocoaLot",
+      "description": "Physical traceable cocoa lot with mandatory Cloudinary imagery and upstream provenance.",
+      "type": "object",
+      "properties": {
+        "lotId": {
+          "type": "string",
+          "description": "Unique lot identifier",
+          "maxLength": 128
+        },
+        "lotNumber": {
+          "type": "string",
+          "description": "Traceable lot tracking reference number",
+          "maxLength": 100
+        },
+        "farmId": {
+          "type": "string",
+          "description": "Upstream Cameroon farm identifier",
+          "maxLength": 128
+        },
+        "productionRecordId": {
+          "type": "string",
+          "description": "Upstream production record ID",
+          "maxLength": 128
+        },
+        "harvestId": {
+          "type": "string",
+          "description": "Upstream harvest batch ID",
+          "maxLength": 128
+        },
+        "originCountry": {
+          "type": "string",
+          "description": "Origin country (locked to Cameroon)",
+          "maxLength": 30
+        },
+        "productionPeriod": {
+          "type": "string",
+          "description": "Production season description",
+          "maxLength": 100
+        },
+        "productionDate": {
+          "type": "string",
+          "description": "Production or harvest date",
+          "maxLength": 30
+        },
+        "quantityKg": {
+          "type": "number",
+          "description": "Total lot weight in kilograms"
+        },
+        "availableQuantityKg": {
+          "type": "number",
+          "description": "Available unsold/unallocated weight in kg"
+        },
+        "certifiedQuantityKg": {
+          "type": "number",
+          "description": "Certified quantity in kg"
+        },
+        "pricePerKg": {
+          "type": "number",
+          "description": "Base price per kilogram"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency code (XAF, USD, NGN)",
+          "maxLength": 10
+        },
+        "qualityGrade": {
+          "type": "string",
+          "description": "Quality grade classification",
+          "maxLength": 50
+        },
+        "cocoaImage": {
+          "type": "object",
+          "description": "Cloudinary image metadata reference"
+        },
+        "lotStatus": {
+          "type": "string",
+          "description": "Lot lifecycle state",
+          "enum": ["created", "certified", "partially_certified", "in_marketplace", "transferred", "depleted"]
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Firebase UID of lot creator",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp",
+          "format": "date-time"
+        }
+      },
+      "required": ["lotId", "lotNumber", "farmId", "productionRecordId", "harvestId", "originCountry", "quantityKg", "pricePerKg", "cocoaImage", "lotStatus", "createdBy", "createdAt"]
     }
   },
   "firestore": {
@@ -340,11 +587,27 @@
     },
     "/lots/{lotId}": {
       "schema": "ProductLot",
-      "description": "Traceable cocoa marketplace and due-diligence lots."
+      "description": "Legacy traceable cocoa marketplace lots."
     },
     "/lots/{lotId}/events/{eventId}": {
       "schema": "TraceEvent",
       "description": "Sub-collection of custody milestones for a specific lot."
+    },
+    "/productions/{productionId}": {
+      "schema": "ProductionRecord",
+      "description": "Seasonal cocoa production targets and harvest campaigns."
+    },
+    "/productionRecords/{productionRecordId}": {
+      "schema": "ProductionRecord",
+      "description": "Alias for seasonal cocoa production records."
+    },
+    "/harvests/{harvestId}": {
+      "schema": "Harvest",
+      "description": "Logged harvest batches linked to farm and production records."
+    },
+    "/cocoaLots/{lotId}": {
+      "schema": "CocoaLot",
+      "description": "Traceable cocoa lots with mandatory Cloudinary imagery and upstream provenance."
     }
   }
 }

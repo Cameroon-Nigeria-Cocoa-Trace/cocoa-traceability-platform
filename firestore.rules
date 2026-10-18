@@ -10,7 +10,11 @@ service cloud.firestore {
     
     function isAdmin() {
       return isSignedIn()
-        && request.auth.token.admin == true;
+        && (
+          request.auth.token.admin == true
+          || (request.auth.token.email != null && request.auth.token.email == "afumbomboyo@gmail.com")
+          || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        );
     }
 
     // USER PROFILES
@@ -104,11 +108,148 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // PRODUCTION RECORDS (PRODUCTIONS)
+    // Seasonal cocoa production targets, periods, and harvest campaign yield metrics.
+    match /productions/{prodId} {
+      // Production records can be viewed by authenticated users (farmers, buyers, cooperatives, certifiers)
+      allow read: if isSignedIn();
+
+      // Create: Authenticated farmer creates seasonal campaign for their farm
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.productionRecordId is string
+        && request.resource.data.farmId is string
+        && request.resource.data.seasonYear is string
+        && request.resource.data.startDate is string;
+
+      // Update: Creator or admin can update, or harvest transaction updating cumulative actualQuantityKg/numberOfHarvests
+      // Immutable fields (productionRecordId, farmId, createdBy, createdAt) are strictly preserved
+      allow update: if isSignedIn()
+        && (
+          resource.data.createdBy == request.auth.uid
+          || isAdmin()
+          || (
+            request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.farmId == resource.data.farmId
+            && request.resource.data.productionRecordId == resource.data.productionRecordId
+            && request.resource.data.createdAt == resource.data.createdAt
+          )
+        )
+        && request.resource.data.productionRecordId == resource.data.productionRecordId
+        && request.resource.data.farmId == resource.data.farmId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Historical production records must be preserved for immutable lineage
+      allow delete: if isAdmin();
+    }
+
+    match /productionRecords/{prodId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.productionRecordId is string
+        && request.resource.data.farmId is string;
+
+      allow update: if isSignedIn()
+        && (
+          resource.data.createdBy == request.auth.uid
+          || isAdmin()
+          || (
+            request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.farmId == resource.data.farmId
+            && request.resource.data.productionRecordId == resource.data.productionRecordId
+            && request.resource.data.createdAt == resource.data.createdAt
+          )
+        )
+        && request.resource.data.productionRecordId == resource.data.productionRecordId
+        && request.resource.data.farmId == resource.data.farmId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if isAdmin();
+    }
+
+    // HARVESTS
+    // Logged harvest batches linked to farm and production records
+    match /harvests/{harvestId} {
+      // Authenticated users (farmers managing inventory, certifiers auditing yields) can read harvests
+      allow read: if isSignedIn();
+
+      // Create: Farmer creates harvest linked to their farm and production record
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.harvestId is string
+        && request.resource.data.productionRecordId is string
+        && request.resource.data.farmId is string
+        && request.resource.data.quantityKg is number
+        && request.resource.data.quantityKg > 0;
+
+      // Update: Creator or admin can update, or cocoa lot allocation updating allocatedQuantityKg
+      // Immutable fields must remain unchanged
+      allow update: if isSignedIn()
+        && (
+          resource.data.createdBy == request.auth.uid
+          || isAdmin()
+          || (
+            request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.farmId == resource.data.farmId
+            && request.resource.data.productionRecordId == resource.data.productionRecordId
+            && request.resource.data.harvestId == resource.data.harvestId
+            && request.resource.data.quantityKg == resource.data.quantityKg
+            && request.resource.data.createdAt == resource.data.createdAt
+          )
+        )
+        && request.resource.data.harvestId == resource.data.harvestId
+        && request.resource.data.farmId == resource.data.farmId
+        && request.resource.data.productionRecordId == resource.data.productionRecordId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Historical harvest events are preserved for immutable traceability
+      allow delete: if isAdmin();
+    }
+
     // COCOA LOTS
     // Traceable lot details are viewable for marketplace and origin inspection.
     match /cocoaLots/{lotId} {
+      // Public read for marketplace buyers, export due diligence, and QR code verification
       allow read: if true;
-      allow create, update: if isSignedIn();
+
+      // Create: Authenticated farmer or aggregator registers cocoa lot
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.lotId is string
+        && request.resource.data.farmId is string
+        && request.resource.data.productionRecordId is string
+        && request.resource.data.harvestId is string
+        && request.resource.data.quantityKg is number
+        && request.resource.data.quantityKg > 0;
+
+      // Update: Creator or admin, or marketplace trade & certificate transitions
+      // Immutable upstream lineage must remain unchanged
+      allow update: if isSignedIn()
+        && (
+          resource.data.createdBy == request.auth.uid
+          || isAdmin()
+          || (
+            request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.farmId == resource.data.farmId
+            && request.resource.data.productionRecordId == resource.data.productionRecordId
+            && request.resource.data.harvestId == resource.data.harvestId
+            && request.resource.data.lotId == resource.data.lotId
+            && request.resource.data.createdAt == resource.data.createdAt
+          )
+        )
+        && request.resource.data.lotId == resource.data.lotId
+        && request.resource.data.farmId == resource.data.farmId
+        && request.resource.data.productionRecordId == resource.data.productionRecordId
+        && request.resource.data.harvestId == resource.data.harvestId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Deletion restricted to administrators
       allow delete: if isAdmin();
     }
 
