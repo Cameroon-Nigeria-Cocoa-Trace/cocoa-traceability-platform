@@ -37,6 +37,7 @@ import {
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
+import { CocoaGradeCard } from "@/components/CocoaGradeInfo";
 
 const MapboxGeofenceMap = dynamic(() => import("@/components/MapboxGeofenceMap"), {
   ssr: false,
@@ -436,6 +437,11 @@ export default function ProductDetailPage() {
         {/* Details Grid */}
         <section className="grid gap-6 lg:grid-cols-[1.8fr_0.9fr]">
           <div className="space-y-6">
+            {/* Cocoa Lot Quality Grade Specifications for Agents & Buyers */}
+            <CocoaGradeCard
+              gradeStr={listing.qualityGrade || backingLot?.qualityGrade || "Grade 1"}
+            />
+
             {/* Origin & Cocoa Lot Specifications */}
             <div className="rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
               <div className="mb-4 flex items-center justify-between">

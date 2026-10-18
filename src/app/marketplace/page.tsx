@@ -40,7 +40,11 @@ import {
   ArrowRight,
   Sparkles,
   HelpCircle,
+  Award,
+  Info,
 } from "lucide-react";
+import { CocoaGradeModal } from "@/components/CocoaGradeInfo";
+import { getCocoaGradeSpec } from "@/data/cocoaGradingStandards";
 
 export default function MarketplacePage() {
   const { user } = useFirebase();
@@ -67,6 +71,7 @@ export default function MarketplacePage() {
   // Create Listing Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [selectedGradeForModal, setSelectedGradeForModal] = useState<string | null>(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSuccess, setCreateSuccess] = useState<string | null>(null);
@@ -750,6 +755,27 @@ export default function MarketplacePage() {
                         </dd>
                       </div>
 
+                      <div className="flex items-center justify-between pb-1">
+                        <dt className="text-[#6c7b72]">Quality Grade</dt>
+                        <dd className="flex items-center gap-1.5">
+                          <span className="font-bold text-[#10251d]">
+                            {item.qualityGrade || "Grade 1"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedGradeForModal(
+                                item.qualityGrade || "Grade 1"
+                              )
+                            }
+                            className="inline-flex items-center gap-1 rounded-full bg-[#edf7e8] px-2 py-0.5 text-[10px] font-bold text-[#2d6130] hover:bg-[#d8f0d0] transition cursor-pointer"
+                            title="Inspect quality grade specifications"
+                          >
+                            <Info size={11} /> Specs
+                          </button>
+                        </dd>
+                      </div>
+
                       {item.lotId && (
                         <div className="flex items-center justify-between pb-1">
                           <dt className="text-[#6c7b72]">Cocoa Lot</dt>
@@ -1202,6 +1228,62 @@ export default function MarketplacePage() {
                   </div>
                 </div>
 
+                {/* Assessed Quality Grade Details for Selected Lot */}
+                <div className="rounded-2xl border border-[#dfe7d8] bg-white p-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-[#edf1ea]">
+                    <div className="flex items-center gap-2">
+                      <Award size={18} className="text-[#2d6130]" />
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#2d6130] block">
+                          Assessed Quality Grade
+                        </span>
+                        <strong className="text-sm font-extrabold text-[#10251d]">
+                          {getCocoaGradeSpec(purchaseListing.qualityGrade).title}
+                        </strong>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedGradeForModal(
+                          purchaseListing.qualityGrade || "Grade 1"
+                        )
+                      }
+                      className="inline-flex items-center gap-1 rounded-full bg-[#edf7e8] px-2.5 py-1 text-[11px] font-bold text-[#2d6130] hover:bg-[#d8f0d0] transition cursor-pointer"
+                    >
+                      <Info size={12} /> Full Guide
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-[#57655d] leading-relaxed">
+                    {getCocoaGradeSpec(purchaseListing.qualityGrade).tagline}
+                  </p>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                    {getCocoaGradeSpec(purchaseListing.qualityGrade).criteria.map(
+                      (c, i) => (
+                        <div
+                          key={i}
+                          className="rounded-xl border border-[#edf1ea] bg-[#fafcf9] p-2"
+                        >
+                          <strong className="block text-[#10251d] text-[10px] uppercase font-bold">
+                            {c.label}
+                          </strong>
+                          <span className="text-[#47544d] text-[10px] leading-snug block mt-0.5">
+                            {c.value}
+                          </span>
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {getCocoaGradeSpec(purchaseListing.qualityGrade).actionNote && (
+                    <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[10px] text-amber-900 leading-tight">
+                      {getCocoaGradeSpec(purchaseListing.qualityGrade).actionNote}
+                    </div>
+                  )}
+                </div>
+
                 {/* Buyer Entity Role */}
                 <div>
                   <label className="block font-semibold text-[#10251d] mb-1">Your Buyer Entity Role</label>
@@ -1386,6 +1468,13 @@ export default function MarketplacePage() {
             </div>
           </div>
         )}
+
+        {/* Quality Grade Specifications Modal for Agents */}
+        <CocoaGradeModal
+          isOpen={Boolean(selectedGradeForModal)}
+          onClose={() => setSelectedGradeForModal(null)}
+          selectedGrade={selectedGradeForModal}
+        />
       </main>
     </div>
   );

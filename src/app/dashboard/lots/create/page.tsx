@@ -32,6 +32,7 @@ import {
   Loader2,
   Boxes,
 } from "lucide-react";
+import { CocoaGradeSelector } from "@/components/CocoaGradeInfo";
 
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -864,31 +865,11 @@ function CreateCocoaLotContent() {
                 </select>
               </div>
 
-              <div>
-                <label
-                  htmlFor="grade"
-                  className="mb-1.5 block text-xs font-bold text-[#57655d]"
-                >
-                  Cocoa Quality Grade
-                </label>
-                <select
-                  id="grade"
+              <div className="sm:col-span-2 pt-3 border-t border-[#edf1ea]">
+                <CocoaGradeSelector
                   value={qualityGrade}
-                  onChange={(event) =>
-                    setQualityGrade(
-                      event.target.value as CocoaQualityGrade
-                    )
-                  }
-                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-sm outline-none focus:border-[#2d6130]"
-                >
-                  <option value="Grade 1">
-                    Grade 1 — Premium
-                  </option>
-                  <option value="Grade 2">Grade 2</option>
-                  <option value="Sub-standard">
-                    Sub-standard
-                  </option>
-                </select>
+                  onChange={(val) => setQualityGrade(val as CocoaQualityGrade)}
+                />
               </div>
             </div>
 
