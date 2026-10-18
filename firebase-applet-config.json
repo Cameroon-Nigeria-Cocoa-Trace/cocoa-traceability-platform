@@ -1,12 +1,12 @@
 {
-  "projectId": "project-f29473bc-1882-4b08-b62",
-  "appId": "1:853837781529:web:8a27a8087be712217be888",
-  "apiKey": "AIzaSyDJiUgQgWsqFkJlBUTYRB_W3I7IchWjpw8",
-  "authDomain": "project-f29473bc-1882-4b08-b62.firebaseapp.com",
+  "projectId": "cocoa-trace",
+  "appId": "1:515593397497:web:6e5783abb72a12c08bee28",
+  "apiKey": "AIzaSyDSxfxaWu2o4jh0kiyyhf-aV03ZXdnS49w",
+  "authDomain": "cocoa-trace.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
-  "storageBucket": "project-f29473bc-1882-4b08-b62.firebasestorage.app",
-  "messagingSenderId": "853837781529",
-  "measurementId": "G-JQQL1N2MYY",
-  "oAuthClientId": "853837781529-37goub64fta4v45vmu71s1l440pgsedn.apps.googleusercontent.com",
+  "storageBucket": "cocoa-trace.firebasestorage.app",
+  "messagingSenderId": "515593397497",
+  "measurementId": "G-FGL17GQTDH",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

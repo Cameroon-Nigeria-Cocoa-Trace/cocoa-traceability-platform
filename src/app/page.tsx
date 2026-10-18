@@ -86,15 +86,15 @@ export default function HomePage() {
           <div className="max-w-3xl">
             <div className="mb-3 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b8f58b] sm:text-xs sm:tracking-[0.22em]">
               <span className="h-px w-6 bg-[#b8f58b] sm:w-8" />
-              Cameroon — Cross River Cocoa Traceability
+              Cameroon Cocoa for Nigeria and Cameroon Buyers
             </div>
 
             <h1 className="text-[2.7rem] font-semibold leading-[0.95] tracking-[-0.04em] text-white sm:text-[4rem] lg:text-[5rem]">
-              Genuine Cocoa.
+              Genuine Cocoa
               <br />
-              <span className="text-white">Known Origin.</span>
+              <span className="text-white">Known Origin</span>
               <br />
-              <span className="text-[#b8f58b]">Global Trust.</span>
+              <span className="text-[#b8f58b]">Global Trust</span>
             </h1>
 
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/75 sm:text-lg sm:leading-8">
@@ -102,7 +102,19 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3 sm:gap-4">
-              <Link href="/signup" className="group flex items-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-[1rem] font-semibold text-[#073b2b] transition hover:bg-[#d2ffb9] sm:gap-3 sm:px-7 sm:py-4 sm:text-base">
+              <Link
+                href="/marketplace"
+                className="group flex items-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-[1rem] font-semibold text-[#073b2b] transition hover:bg-[#d2ffb9] sm:gap-3 sm:px-7 sm:py-4 sm:text-base"
+              >
+                <ShoppingBag size={18} className="text-[#073b2b]" />
+                Buy Cocoa
+                <ArrowRight size={18} className="transition group-hover:translate-x-1" />
+              </Link>
+
+              <Link
+                href="/signup"
+                className="group flex items-center gap-2 rounded-full border border-white/35 bg-white/10 px-5 py-3 text-[1rem] font-semibold text-white backdrop-blur transition hover:bg-white/20 sm:gap-3 sm:px-7 sm:py-4 sm:text-base"
+              >
                 Register Your Farm
                 <ArrowRight size={18} className="transition group-hover:translate-x-1" />
               </Link>
@@ -382,8 +394,8 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="mt-16 border-t border-white/10 pt-7 text-sm text-white/30" suppressHydrationWarning>
-          © 2026 CocoaTrace. All rights reserved.
+        <div className="mt-16 border-t border-white/10 pt-7 text-sm text-white/30">
+          © {new Date().getFullYear()} CocoaTrace. All rights reserved.
         </div>
       </div>
     </footer>

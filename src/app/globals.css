@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import "mapbox-gl/dist/mapbox-gl.css";
+@import "tailwindcss";
 
 :root {
   --background: #f2efe6;
@@ -77,19 +77,83 @@ body {
   pointer-events: none !important;
 }
 
-/* FIXED: Removed the broad * padding reset which broke Tailwind utility classes */
-button,
-input,
-select {
-  font: inherit;
+@layer base {
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  a {
+    text-decoration: none;
+  }
+
+  img {
+    max-width: 100%;
+    display: block;
+  }
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Global Button & Link High-Contrast Fix:
+   Ensure all dark green buttons, links, and CTAs across the entire application render with crisp, readable white text */
+a[class*="bg-[#0b3528]"],
+a[class*="bg-[#07241b]"],
+a[class*="bg-[#073b2b]"],
+a[class*="bg-[#2d6130]"],
+a[class*="bg-[#062d22]"],
+a[class*="bg-[#10251d]"],
+a[class*="bg-[#06432f]"],
+a[class*="bg-[#052e22]"],
+a[class*="bg-[#031d16]"],
+a[class*="bg-[#031d15]"],
+a[class*="bg-emerald-7"],
+a[class*="bg-emerald-8"],
+a[class*="bg-emerald-9"],
+a[class*="bg-green-7"],
+a[class*="bg-green-8"],
+a[class*="bg-green-9"],
+button[class*="bg-[#0b3528]"],
+button[class*="bg-[#07241b]"],
+button[class*="bg-[#073b2b]"],
+button[class*="bg-[#2d6130]"],
+button[class*="bg-[#062d22]"],
+button[class*="bg-[#10251d]"],
+button[class*="bg-[#06432f]"],
+button[class*="bg-[#052e22]"],
+button[class*="bg-[#031d16]"],
+button[class*="bg-[#031d15]"],
+button[class*="bg-emerald-7"],
+button[class*="bg-emerald-8"],
+button[class*="bg-emerald-9"],
+button[class*="bg-green-7"],
+button[class*="bg-green-8"],
+button[class*="bg-green-9"],
+a.text-white,
+button.text-white,
+a[class*="text-white"],
+button[class*="text-white"] {
+  color: #ffffff !important;
 }
 
-img {
-  max-width: 100%;
-  display: block;
+/* Maintain light green accent on buttons/badges where explicitly styled */
+a[class*="text-[#b8f58b]"],
+button[class*="text-[#b8f58b]"],
+[class*="text-[#b8f58b]"] {
+  color: #b8f58b !important;
+}
+
+/* Ensure SVG icons inside dark green buttons inherit the white text color */
+a[class*="bg-[#0b3528]"] svg,
+a[class*="bg-[#07241b]"] svg,
+a[class*="bg-[#073b2b]"] svg,
+a[class*="bg-[#2d6130]"] svg,
+a[class*="bg-[#062d22]"] svg,
+a[class*="bg-[#10251d]"] svg,
+button[class*="bg-[#0b3528]"] svg,
+button[class*="bg-[#07241b]"] svg,
+button[class*="bg-[#073b2b]"] svg,
+button[class*="bg-[#2d6130]"] svg,
+button[class*="bg-[#062d22]"] svg,
+button[class*="bg-[#10251d]"] svg {
+  color: currentColor;
 }

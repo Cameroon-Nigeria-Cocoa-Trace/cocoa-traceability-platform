@@ -23,12 +23,7 @@
         "role": {
           "type": "string",
           "description": "User role",
-          "enum": [
-            "farmer",
-            "buyer",
-            "cooperative",
-            "admin"
-          ]
+          "enum": ["farmer", "buyer", "cooperative", "admin"]
         },
         "createdAt": {
           "type": "string",
@@ -36,11 +31,7 @@
           "format": "date-time"
         }
       },
-      "required": [
-        "id",
-        "email",
-        "createdAt"
-      ]
+      "required": ["id", "email", "createdAt"]
     },
     "Farm": {
       "title": "Farm",
@@ -51,6 +42,11 @@
           "type": "string",
           "description": "Unique farm record ID",
           "maxLength": 128
+        },
+        "farmUniqueId": {
+          "type": "string",
+          "description": "Official generated TraceTrade Network Unique Farm ID (e.g. TTN-CM-2026-XXXXXX)",
+          "maxLength": 64
         },
         "farmerId": {
           "type": "string",
@@ -219,14 +215,7 @@
           "format": "date-time"
         }
       },
-      "required": [
-        "id",
-        "farmerId",
-        "farmName",
-        "region",
-        "geolocation",
-        "createdAt"
-      ]
+      "required": ["id", "farmerId", "farmName", "region", "geolocation", "createdAt"]
     },
     "ProductLot": {
       "title": "ProductLot",
@@ -281,12 +270,7 @@
         "status": {
           "type": "string",
           "description": "Current status",
-          "enum": [
-            "Available",
-            "Reserved",
-            "Sold",
-            "In-Transit"
-          ]
+          "enum": ["Available", "Reserved", "Sold", "In-Transit"]
         },
         "trace": {
           "type": "string",
@@ -309,18 +293,7 @@
           "format": "date-time"
         }
       },
-      "required": [
-        "id",
-        "title",
-        "seller",
-        "origin",
-        "quantity",
-        "price",
-        "compliance",
-        "status",
-        "trace",
-        "route"
-      ]
+      "required": ["id", "title", "seller", "origin", "quantity", "price", "compliance", "status", "trace", "route"]
     },
     "TraceEvent": {
       "title": "TraceEvent",
@@ -353,13 +326,7 @@
           "maxLength": 50
         }
       },
-      "required": [
-        "id",
-        "lotId",
-        "step",
-        "detail",
-        "date"
-      ]
+      "required": ["id", "lotId", "step", "detail", "date"]
     }
   },
   "firestore": {

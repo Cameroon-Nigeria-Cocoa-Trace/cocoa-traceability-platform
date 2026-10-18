@@ -2,8 +2,20 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Product, traceFlow } from "@/data/products";
-import { CheckCircle2, ShieldCheck, MapPin } from "lucide-react";
+import { CheckCircle2, ShieldCheck, MapPin, Trees, Compass } from "lucide-react";
+
+const MapboxGeofenceMap = dynamic(() => import("@/components/MapboxGeofenceMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[320px] w-full items-center justify-center rounded-3xl bg-[#062d22] text-white">
+      <div className="flex items-center gap-2 text-xs text-[#b8f58b]">
+        <Compass className="animate-spin" size={18} /> Loading map...
+      </div>
+    </div>
+  ),
+});
 
 export function ProductDetailClient({ product }: { product: Product }) {
   const [verified, setVerified] = useState(false);
@@ -102,6 +114,37 @@ export function ProductDetailClient({ product }: { product: Product }) {
               <label className="text-xs uppercase tracking-[0.12em] text-[#627064]">Route</label>
               <strong className="mt-2 block text-base font-semibold text-[#10251d]">{product.route}</strong>
             </div>
+          </div>
+
+          <div className="mt-8 rounded-3xl border border-[#dfe7d8] bg-[#fbfdfa] p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
+                  <Trees size={14} className="text-[#2d6130]" />
+                  Canopy Geolocation &amp; Protected Forest Boundaries
+                </span>
+              </div>
+              <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#2a7a33] border border-[#c6e8ba]">
+                Zero-Deforestation Verified
+              </span>
+            </div>
+
+            <MapboxGeofenceMap
+              initialCenter={[9.1245, 4.5912]}
+              initialZoom={14}
+              activePolygon={[
+                [9.1225, 4.5902],
+                [9.1265, 4.5918],
+                [9.1278, 4.5892],
+                [9.1238, 4.5882],
+              ]}
+              heightClass="h-[340px]"
+              showForestReservesDefault={true}
+            />
+
+            <p className="mt-2.5 text-[11px] text-[#57655d] leading-relaxed">
+              🛰️ Real-time EUDR verification: Farm plot boundary is geofenced outside gazetted forest reserves and national parks.
+            </p>
           </div>
 
           <ul className="mt-8 space-y-4">

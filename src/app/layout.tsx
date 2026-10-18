@@ -26,9 +26,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       {/* FIXED: Enforced a full viewport canvas anchor for absolute components */}
-      <body className="min-h-screen w-full relative antialiased bg-[#031d16]" suppressHydrationWarning>
+      <body className="min-h-screen w-full relative antialiased bg-[#031d16]">
         <FirebaseProvider>{children}</FirebaseProvider>
       </body>
     </html>

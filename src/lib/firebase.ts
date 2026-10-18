@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAnalytics, isSupported, Analytics } from "firebase/analytics";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -12,10 +13,32 @@ import {
   UserCredential,
 } from "firebase/auth";
 import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
-import firebaseConfig from "../../firebase-applet-config.json";
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+export const firebaseConfig = {
+  apiKey: "AIzaSyDSxfxaWu2o4jh0kiyyhf-aV03ZXdnS49w",
+  authDomain: "cocoa-trace.firebaseapp.com",
+  projectId: "cocoa-trace",
+  storageBucket: "cocoa-trace.firebasestorage.app",
+  messagingSenderId: "515593397497",
+  appId: "1:515593397497:web:6e5783abb72a12c08bee28",
+  measurementId: "G-FGL17GQTDH",
+  firestoreDatabaseId: "(default)",
+};
 
 // Initialize Firebase App
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+
+// Initialize Analytics (safe for SSR/Next.js)
+export let analytics: Analytics | null = null;
+if (typeof window !== "undefined") {
+  isSupported().then((supported) => {
+    if (supported) {
+      analytics = getAnalytics(app);
+    }
+  }).catch(() => {});
+}
 
 // Initialize Firestore
 export const db =
@@ -199,7 +222,8 @@ export interface FirestoreErrorInfo {
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
-  path: string | null
+  path: string | null,
+  throwError: boolean = true
 ) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -218,6 +242,11 @@ export function handleFirestoreError(
     operationType,
     path,
   };
-  console.error("Firestore Error: ", JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  if (throwError) {
+    console.error("Firestore Error: ", JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  } else {
+    console.warn("Firestore Warning (non-fatal):", errInfo.error);
+  }
 }
+
