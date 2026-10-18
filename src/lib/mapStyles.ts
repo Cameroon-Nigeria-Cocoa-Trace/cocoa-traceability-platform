@@ -1,9 +1,9 @@
-import type { StyleSpecification } from 'maplibre-gl';
+import type mapboxgl from 'mapbox-gl';
 
 export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
-// Open Satellite Raster Style (ESRI World Imagery + Carto labels) - No API Key Required
-export const OPEN_SATELLITE_STYLE: StyleSpecification = {
+// Open Satellite Raster Style (ESRI World Imagery + OpenStreetMap labels) - No API Key Required
+export const OPEN_SATELLITE_STYLE: mapboxgl.Style = {
   version: 8,
   sources: {
     'esri-imagery': {
@@ -42,7 +42,7 @@ export const OPEN_SATELLITE_STYLE: StyleSpecification = {
 };
 
 // Open Street Map Raster Style - No API Key Required
-export const OPEN_STREETS_STYLE: StyleSpecification = {
+export const OPEN_STREETS_STYLE: mapboxgl.Style = {
   version: 8,
   sources: {
     'osm-base': {
@@ -65,7 +65,7 @@ export const OPEN_STREETS_STYLE: StyleSpecification = {
 };
 
 // Open Topo / Terrain Style - No API Key Required
-export const OPEN_OUTDOORS_STYLE: StyleSpecification = {
+export const OPEN_OUTDOORS_STYLE: mapboxgl.Style = {
   version: 8,
   sources: {
     'opentopo-base': {
@@ -87,15 +87,13 @@ export const OPEN_OUTDOORS_STYLE: StyleSpecification = {
   ],
 };
 
-export function getMapStyle(styleKey: 'satellite' | 'streets' | 'outdoors'): string | StyleSpecification {
-  // If user provided a valid Mapbox public token (starts with pk.), load Mapbox styles
-  if (MAPBOX_TOKEN && MAPBOX_TOKEN.trim().startsWith('pk.')) {
-    if (styleKey === 'streets') return `https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_TOKEN}`;
-    if (styleKey === 'outdoors') return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v12?access_token=${MAPBOX_TOKEN}`;
-    return `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12?access_token=${MAPBOX_TOKEN}`;
+export function getMapStyle(styleKey: 'satellite' | 'streets' | 'outdoors'): any {
+  if (MAPBOX_TOKEN) {
+    if (styleKey === 'streets') return 'mapbox://styles/mapbox/streets-v12';
+    if (styleKey === 'outdoors') return 'mapbox://styles/mapbox/outdoors-v12';
+    return 'mapbox://styles/mapbox/satellite-streets-v12';
   }
 
-  // Default to reliable, completely free open raster styles with 0 API keys required
   if (styleKey === 'streets') return OPEN_STREETS_STYLE;
   if (styleKey === 'outdoors') return OPEN_OUTDOORS_STYLE;
   return OPEN_SATELLITE_STYLE;
