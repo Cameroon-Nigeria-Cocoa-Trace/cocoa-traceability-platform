@@ -84,8 +84,8 @@ export default function HomePage() {
         {/* FIXED: Applied pt-28 sm:pt-32 to clear fixed navbar */}
         <div className="relative mx-auto flex min-h-[760px] w-full max-w-[1500px] items-center px-5 pb-20 pt-28 sm:px-7 sm:pt-32 md:px-10 lg:px-18">
           <div className="max-w-3xl">
-            <div className="mb-3 flex items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b8f58b] sm:text-xs sm:tracking-[0.22em]">
-              <span className="h-px w-6 bg-[#b8f58b] sm:w-8" />
+            <div className="mb-3 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.2em] text-[#b8f58b] sm:text-sm sm:tracking-[0.25em]">
+              <span className="h-px w-8 bg-[#b8f58b] sm:w-10" />
               Cameroon Cocoa for Nigeria and Cameroon Buyers
             </div>
 
@@ -265,7 +265,7 @@ export default function HomePage() {
 
             {/* Main Heading */}
             <h2 className="mt-2 text-xl font-bold leading-tight text-white sm:text-3xl md:text-4xl">
-              CocoaTrace connects Cameroon&apos;s cocoa to the world.
+              TraceTradeNetwork connects Cameroon&apos;s cocoa to the world.
             </h2>
 
             {/* 4-Column Stats Grid */}
@@ -310,7 +310,7 @@ export default function HomePage() {
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-x-16 gap-y-8 opacity-60 grayscale">
           <span className="text-xl font-bold">MTN MoMo</span>
-          <span className="text-xl font-bold">CocoaTrace</span>
+          <span className="text-xl font-bold">TraceTradeNetwork</span>
           <span className="text-xl font-bold">Cameroon</span>
           <span className="text-xl font-bold">Cross River</span>
           <span className="text-xl font-bold">EUDR</span>
@@ -356,8 +356,8 @@ export default function HomePage() {
                 🌿
               </div>
 
-              <div>
-                <div className="font-bold">CocoaTrace</div>
+               <div>
+                <div className="font-bold">TraceTradeNetwork</div>
                 <div className="text-[10px] uppercase tracking-widest text-white/40">
                   From Farm to World
                 </div>
@@ -395,7 +395,7 @@ export default function HomePage() {
         </div>
 
         <div className="mt-16 border-t border-white/10 pt-7 text-sm text-white/30">
-          © {new Date().getFullYear()} CocoaTrace. All rights reserved.
+          © {new Date().getFullYear()} TraceTradeNetwork. All rights reserved.
         </div>
       </div>
     </footer>

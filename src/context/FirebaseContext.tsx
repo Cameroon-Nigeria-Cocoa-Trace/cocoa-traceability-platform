@@ -354,6 +354,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       }
       setUser(null);
       await logoutUser();
+      if (typeof window !== "undefined") {
+        window.location.href = "/";
+      }
     } catch (error) {
       console.error("Logout failed:", error);
     }
