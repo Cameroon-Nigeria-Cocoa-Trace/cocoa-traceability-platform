@@ -48,7 +48,7 @@ export default function ContactPage() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#2d6130]">
                     Powered by Partner (Cameroon)
                   </span>
-                  <h3 className="text-lg font-bold text-[#10251d]">Slite Ltd</h3>
+                  <h3 className="text-lg font-bold text-[#10251d]">Slite Solutions Ltd</h3>
                 </div>
               </div>
 
@@ -77,7 +77,7 @@ export default function ContactPage() {
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#2d6130]">
                     Powered by Partner (Nigeria)
                   </span>
-                  <h3 className="text-lg font-bold text-[#10251d]">Bota Supplies and Logistics</h3>
+                  <h3 className="text-lg font-bold text-[#10251d]">Bota Supplies and Logistics Ltd</h3>
                 </div>
               </div>
 

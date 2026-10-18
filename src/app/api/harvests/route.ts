@@ -304,23 +304,24 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const record: Harvest = {
+      const record: Record<string, unknown> = {
         harvestId: harvestRef.id,
         farmId,
         productionRecordId,
         harvestDate,
         quantityKg,
-        qualityGrade:
-          body.qualityGrade as CocoaQualityGrade | undefined,
         status: "logged",
-        notes:
-          typeof body.notes === "string"
-            ? body.notes.trim()
-            : undefined,
         createdBy: userId,
         createdAt: now,
         updatedAt: now,
       };
+
+      if (typeof body.notes === "string" && body.notes.trim()) {
+        record.notes = body.notes.trim();
+      }
+      if (typeof body.qualityGrade === "string" && body.qualityGrade.trim()) {
+        record.qualityGrade = body.qualityGrade.trim();
+      }
 
       const actualQuantity = Number(production.actualQuantityKg ?? 0);
       const harvestCount = Number(production.numberOfHarvests ?? 0);
