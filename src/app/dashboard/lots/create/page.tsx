@@ -463,12 +463,16 @@ function CreateCocoaLotContent() {
 
       const uploadResponse = await apiClient.uploadFile<{
         success: boolean;
-        imageReference: CloudinaryImageReference;
+        imageReference?: CloudinaryImageReference;
+        image?: CloudinaryImageReference;
       }>("/api/upload/cocoa-lot", imageFile);
+
+      const resolvedImageRef =
+        uploadResponse?.imageReference || uploadResponse?.image;
 
       if (
         !uploadResponse?.success ||
-        !uploadResponse.imageReference
+        !resolvedImageRef
       ) {
         throw new Error("The image upload did not return valid metadata.");
       }
@@ -488,7 +492,7 @@ function CreateCocoaLotContent() {
         pricePerKg: price,
         currency,
         qualityGrade,
-        cocoaImage: uploadResponse.imageReference,
+        cocoaImage: resolvedImageRef,
       });
 
       if (!response?.success || !response.lot) {

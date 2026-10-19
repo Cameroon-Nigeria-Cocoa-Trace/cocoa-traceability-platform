@@ -88,6 +88,12 @@ export async function POST(req: NextRequest) {
       mimeType,
       uploaderId: user.userId,
     });
+
+    return NextResponse.json({
+      success: true,
+      imageReference,
+      image: imageReference,
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
     console.error("Cocoa lot image upload error:", message);
