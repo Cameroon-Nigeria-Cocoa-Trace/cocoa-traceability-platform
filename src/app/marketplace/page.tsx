@@ -43,7 +43,7 @@ import {
   Award,
   Info,
 } from "lucide-react";
-import { CocoaGradeModal } from "@/components/CocoaGradeInfo";
+import { CocoaGradeModal, CocoaGradeSelector } from "@/components/CocoaGradeInfo";
 import { getCocoaGradeSpec } from "@/data/cocoaGradingStandards";
 
 export default function MarketplacePage() {
@@ -927,7 +927,7 @@ export default function MarketplacePage() {
 
                     {/* Quality Grade: Only shows after a holding/lot is selected */}
                     {formHoldingId && (
-                      <div className="rounded-xl border border-[#cdebc2] bg-white p-3 space-y-2">
+                      <div className="rounded-xl border border-[#cdebc2] bg-white p-3.5 space-y-3">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-[#edf1ea] pb-2">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-[#10251d]">
                             <Award size={15} className="text-[#2d6130]" />
@@ -936,30 +936,18 @@ export default function MarketplacePage() {
                           <div className="flex items-center gap-1 text-[11px]">
                             <span className="text-[#57655d]">Registered Lot Grade:</span>
                             <span className="rounded-full bg-[#edf7e8] border border-[#b8f58b] px-2 py-0.5 font-extrabold text-[#2d6130]">
-                              {activeLot?.qualityGrade || "Grade 1 Export"}
+                              {activeLot?.qualityGrade || "Grade 1"}
                             </span>
                           </div>
                         </div>
                         <p className="text-[10px] text-[#57655d]">
-                          Inherited from registered cocoa lot ({activeLot?.lotNumber || activeHolding?.lotId || "Lot"}). You can maintain this grade or select a new grade below if the cocoa beans have been re-conditioned, further dried, or degraded.
+                          Inherited from registered cocoa lot ({activeLot?.lotNumber || activeHolding?.lotId || "Lot"}). Select the official grade standard below (Grade 1, 2, or 3).
                         </p>
                         <div>
-                          <label className="block text-[11px] font-semibold text-[#10251d] mb-1">
-                            Listing Quality Grade <span className="text-red-500">*</span>
-                          </label>
-                          <select
+                          <CocoaGradeSelector
                             value={formQualityGrade}
-                            onChange={(e) => setFormQualityGrade(e.target.value)}
-                            className="w-full rounded-xl border border-[#dfe7d8] bg-[#f7f8f3] p-2 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
-                          >
-                            <option value="Grade 1 Export">Grade 1 Export (Premium Cocoa — Highest Export Quality)</option>
-                            <option value="Grade 2 Export">Grade 2 Export (Good Commercial Cocoa — Standard Commercial)</option>
-                            <option value="Sub-standard">Sub-standard / Off-grade (Requires Remediation / Non-Export)</option>
-                            {activeLot?.qualityGrade &&
-                              !["Grade 1 Export", "Grade 2 Export", "Sub-standard"].includes(activeLot.qualityGrade) && (
-                                <option value={activeLot.qualityGrade}>{activeLot.qualityGrade} (Current Lot Grade)</option>
-                              )}
-                          </select>
+                            onChange={(val) => setFormQualityGrade(val)}
+                          />
                         </div>
                       </div>
                     )}
@@ -1068,7 +1056,7 @@ export default function MarketplacePage() {
 
                     {/* Quality Grade: Only shows after a lot is selected */}
                     {formLotId && activeLot && (
-                      <div className="rounded-xl border border-[#e5e0cc] bg-white p-3 space-y-2">
+                      <div className="rounded-xl border border-[#e5e0cc] bg-white p-3.5 space-y-3">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-[#edf1ea] pb-2">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-[#10251d]">
                             <Award size={15} className="text-[#745f21]" />
@@ -1077,30 +1065,18 @@ export default function MarketplacePage() {
                           <div className="flex items-center gap-1 text-[11px]">
                             <span className="text-[#57655d]">Registered Lot Grade:</span>
                             <span className="rounded-full bg-[#fdfbe8] border border-[#fae89c] px-2 py-0.5 font-extrabold text-[#745f21]">
-                              {activeLot.qualityGrade || "Grade 1 Export"}
+                              {activeLot.qualityGrade || "Grade 1"}
                             </span>
                           </div>
                         </div>
                         <p className="text-[10px] text-[#57655d]">
-                          Inherited from registered cocoa lot ({activeLot.lotNumber || activeLot.lotId}). You can keep this grade or select a new grade below if the cocoa beans have been re-conditioned, further dried, or degraded.
+                          Inherited from registered cocoa lot ({activeLot.lotNumber || activeLot.lotId}). Select the official grade standard below (Grade 1, 2, or 3).
                         </p>
                         <div>
-                          <label className="block text-[11px] font-semibold text-[#10251d] mb-1">
-                            Listing Quality Grade <span className="text-red-500">*</span>
-                          </label>
-                          <select
+                          <CocoaGradeSelector
                             value={formQualityGrade}
-                            onChange={(e) => setFormQualityGrade(e.target.value)}
-                            className="w-full rounded-xl border border-[#dfe7d8] bg-[#f7f8f3] p-2 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
-                          >
-                            <option value="Grade 1 Export">Grade 1 Export (Premium Cocoa — Highest Export Quality)</option>
-                            <option value="Grade 2 Export">Grade 2 Export (Good Commercial Cocoa — Standard Commercial)</option>
-                            <option value="Sub-standard">Sub-standard / Off-grade (Requires Remediation / Non-Export)</option>
-                            {activeLot.qualityGrade &&
-                              !["Grade 1 Export", "Grade 2 Export", "Sub-standard"].includes(activeLot.qualityGrade) && (
-                                <option value={activeLot.qualityGrade}>{activeLot.qualityGrade} (Current Lot Grade)</option>
-                              )}
-                          </select>
+                            onChange={(val) => setFormQualityGrade(val)}
+                          />
                         </div>
                       </div>
                     )}
