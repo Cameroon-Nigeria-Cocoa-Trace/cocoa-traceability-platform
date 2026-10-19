@@ -92,6 +92,8 @@ export default function MarketplacePage() {
   const [formPricePerKg, setFormPricePerKg] = useState<number>(0);
   const [formCurrency, setFormCurrency] = useState("XAF");
   const [formQualityGrade, setFormQualityGrade] = useState("Grade 1 Export");
+  const [formImageSource, setFormImageSource] = useState<"previous" | "new">("previous");
+  const [formNewImageFile, setFormNewImageFile] = useState<File | null>(null);
 
   // Quick Purchase Modal State
   const [purchaseListing, setPurchaseListing] = useState<MarketplaceListing | null>(null);
@@ -180,11 +182,54 @@ export default function MarketplacePage() {
     }
   }, [formHoldingId, formInventoryMode, user, apiClient]);
 
+  const holdingToListedKgMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of listings) {
+      if (
+        (item.listingStatus === "available" || item.listingStatus === "under_negotiation") &&
+        item.sourceHoldingId
+      ) {
+        map[item.sourceHoldingId] = (map[item.sourceHoldingId] || 0) + (item.quantityAvailableKg || 0);
+      }
+    }
+    return map;
+  }, [listings]);
+
+  const lotToListedKgMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of listings) {
+      if (
+        (item.listingStatus === "available" || item.listingStatus === "under_negotiation") &&
+        item.lotId &&
+        !item.sourceHoldingId
+      ) {
+        map[item.lotId] = (map[item.lotId] || 0) + (item.quantityAvailableKg || 0);
+      }
+    }
+    return map;
+  }, [listings]);
+
+  const availableHoldings = useMemo(() => {
+    return myHoldings.filter((h) => {
+      const listedKg = holdingToListedKgMap[h.holdingId] || 0;
+      const availableKg = h.availableQuantityKg || 0;
+      return listedKg < availableKg;
+    });
+  }, [myHoldings, holdingToListedKgMap]);
+
+  const availableLots = useMemo(() => {
+    return myLots.filter((l) => {
+      const listedKg = lotToListedKgMap[l.lotId] || 0;
+      const totalKg = l.availableQuantityKg ?? l.quantityKg ?? 0;
+      return listedKg < totalKg;
+    });
+  }, [myLots, lotToListedKgMap]);
+
   // Active holding and lot selected in creation form
   const activeHolding = useMemo(() => {
     if (formCertificationType !== "certified" || !formHoldingId) return null;
-    return myHoldings.find((h) => h.holdingId === formHoldingId) || null;
-  }, [formCertificationType, formHoldingId, myHoldings]);
+    return availableHoldings.find((h) => h.holdingId === formHoldingId) || null;
+  }, [formCertificationType, formHoldingId, availableHoldings]);
 
   const activeLot = useMemo(() => {
     if (formCertificationType === "certified") {
@@ -192,8 +237,8 @@ export default function MarketplacePage() {
       return myLots.find((l) => l.lotId === activeHolding.lotId) || null;
     }
     if (!formLotId) return null;
-    return myLots.find((l) => l.lotId === formLotId) || null;
-  }, [formCertificationType, activeHolding, formLotId, myLots]);
+    return availableLots.find((l) => l.lotId === formLotId) || null;
+  }, [formCertificationType, activeHolding, formLotId, myLots, availableLots]);
 
   // Maximum allowable quantity for this selection
   const maxAvailableKg = useMemo(() => {
@@ -318,6 +363,25 @@ export default function MarketplacePage() {
         // Uncertified
         if (!formLotId) throw new Error("Please select a Cocoa Lot.");
         payload.lotId = formLotId;
+      }
+
+      let imageRefToUse = activeLot?.cocoaImage;
+      if (formImageSource === "new" && formNewImageFile) {
+        const formData = new FormData();
+        formData.append("file", formNewImageFile);
+        const uploadRes = await fetch("/api/upload/cocoa-lot", {
+          method: "POST",
+          body: formData,
+          headers: user ? { Authorization: `Bearer ${await user.getIdToken()}` } : {},
+        });
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson.success) {
+          throw new Error(uploadJson.error || "Failed to upload new image.");
+        }
+        imageRefToUse = uploadJson.imageReference || uploadJson.image;
+      }
+      if (imageRefToUse) {
+        payload.cocoaImage = imageRefToUse;
       }
 
       const res = await apiClient.post<{ success: boolean; listing: MarketplaceListing }>(
@@ -643,17 +707,8 @@ export default function MarketplacePage() {
                   className="flex flex-col justify-between rounded-[28px] border border-[#dfe7d8] bg-white p-5 shadow-[0_18px_35px_rgba(16,37,29,0.06)] transition hover:shadow-md"
                 >
                   <div>
-                    {/* Header Badges */}
-                    <div className="mb-3 flex items-center justify-between gap-2">
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-bold uppercase tracking-wider ${
-                          isCertified
-                            ? "bg-[#edf7e8] text-[#2d6130] border border-[#cdebc2]"
-                            : "bg-[#f5f3e9] text-[#745f21] border border-[#e8e0c0]"
-                        }`}
-                      >
-                        {isCertified ? "Certified Origin" : "Uncertified"}
-                      </span>
+                      {/* Header Badges */}
+                      <div className="mb-3 flex items-center justify-end gap-2">
 
                       <div className="flex items-center gap-1.5">
                         {isOwner && (
@@ -802,7 +857,7 @@ export default function MarketplacePage() {
                         Details &amp; Trace
                       </Link>
 
-                      {!isSold && (
+                      {!isSold && !isOwner && (
                         <button
                           type="button"
                           onClick={() => openPurchaseModal(item)}
@@ -912,15 +967,15 @@ export default function MarketplacePage() {
                         className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
                       >
                         <option value="">-- Choose Eligible Holding --</option>
-                        {myHoldings.map((h) => (
+                        {availableHoldings.map((h) => (
                           <option key={h.holdingId} value={h.holdingId}>
                             {h.holdingId} — Lot: {h.lotId} ({h.availableQuantityKg} kg available)
                           </option>
                         ))}
                       </select>
-                      {myHoldings.length === 0 && (
+                      {availableHoldings.length === 0 && (
                         <p className="mt-1 text-[11px] text-amber-700">
-                          No certificate holdings available for this user. Create or transfer a holding first in Dashboard Holdings.
+                          No available certificate holdings (all holdings have been fully listed or none exist).
                         </p>
                       )}
                     </div>
@@ -1046,12 +1101,17 @@ export default function MarketplacePage() {
                         className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
                       >
                         <option value="">-- Choose Cocoa Lot --</option>
-                        {myLots.map((l) => (
+                        {availableLots.map((l) => (
                           <option key={l.lotId} value={l.lotId}>
                             {l.lotNumber || l.lotId} — Farm: {l.farmId} ({l.availableQuantityKg ?? l.quantityKg} kg available)
                           </option>
                         ))}
                       </select>
+                      {availableLots.length === 0 && (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          No available uncertified lots (all lots have been fully listed or none exist).
+                        </p>
+                      )}
                     </div>
 
                     {/* Quality Grade: Only shows after a lot is selected */}
@@ -1106,6 +1166,60 @@ export default function MarketplacePage() {
                     className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
                   />
                 </div>
+
+                {/* Image Selection Option */}
+                {(formHoldingId || formLotId) && (
+                  <div className="rounded-2xl border border-[#dfe7d8] bg-white p-3.5 space-y-2.5">
+                    <label className="block font-semibold text-[#10251d]">Cocoa Lot Image</label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer font-medium text-xs">
+                        <input
+                          type="radio"
+                          name="imgSrc"
+                          checked={formImageSource === "previous"}
+                          onChange={() => {
+                            setFormImageSource("previous");
+                            setFormNewImageFile(null);
+                          }}
+                        />
+                        Use Previous Lot Image
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer font-medium text-xs">
+                        <input
+                          type="radio"
+                          name="imgSrc"
+                          checked={formImageSource === "new"}
+                          onChange={() => setFormImageSource("new")}
+                        />
+                        Upload New Image
+                      </label>
+                    </div>
+
+                    {formImageSource === "previous" ? (
+                      <div className="flex items-center gap-2 text-[11px] text-[#57655d] bg-[#f8f9f3] p-2 rounded-lg">
+                        <span>Will use registered lot image ({activeLot?.lotNumber || activeHolding?.lotId || "Lot"})</span>
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/jpg,image/png,image/webp,image/heic"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              setFormNewImageFile(e.target.files[0]);
+                            }
+                          }}
+                          className="w-full text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#edf7e8] file:text-[#2d6130] hover:file:bg-[#d8f0d0] cursor-pointer"
+                        />
+                        {formNewImageFile && (
+                          <p className="mt-1 text-[11px] text-[#2d6130] font-medium">
+                            Selected: {formNewImageFile.name}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Quantity & Pricing */}
                 <div className="grid grid-cols-3 gap-3">

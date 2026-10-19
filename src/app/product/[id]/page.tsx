@@ -356,15 +356,6 @@ export default function ProductDetailPage() {
         <section className="mb-8 flex flex-col gap-6 rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-2">
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-bold uppercase tracking-wider ${
-                  isCertified
-                    ? "bg-[#edf7e8] text-[#2d6130] border border-[#cdebc2]"
-                    : "bg-[#f5f3e9] text-[#745f21] border border-[#e8e0c0]"
-                }`}
-              >
-                {isCertified ? "Certified Origin Trace" : "Uncertified Cocoa"}
-              </span>
               <span className="rounded-full bg-[#eefbf3] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#1d6a45]">
                 {listing.listingStatus.toUpperCase()}
               </span>
@@ -417,19 +408,32 @@ export default function ProductDetailPage() {
             </dl>
 
             <div className="mt-5 pt-3 border-t border-[#edf1ea]">
-              {!isSold ? (
-                <button
-                  type="button"
-                  onClick={() => setShowPurchaseModal(true)}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-sm font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                >
-                  <CreditCard size={16} /> Purchase Cocoa
-                </button>
-              ) : (
-                <div className="w-full py-2.5 text-center text-xs font-bold text-red-700 bg-red-50 rounded-full">
-                  Listing Fully Sold / Completed
-                </div>
-              )}
+              {(() => {
+                const isMyListing = user && listing && (listing.createdByUid === user.uid || listing.sellerHolderId === user.uid);
+                if (isMyListing) {
+                  return (
+                    <div className="w-full py-2.5 text-center text-xs font-bold text-[#2d6130] bg-[#edf7e8] rounded-full">
+                      Your Offering (Owned by You)
+                    </div>
+                  );
+                }
+                if (!isSold) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setShowPurchaseModal(true)}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-sm font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                    >
+                      <CreditCard size={16} /> Purchase Cocoa
+                    </button>
+                  );
+                }
+                return (
+                  <div className="w-full py-2.5 text-center text-xs font-bold text-red-700 bg-red-50 rounded-full">
+                    Listing Fully Sold / Completed
+                  </div>
+                );
+              })()}
             </div>
           </aside>
         </section>

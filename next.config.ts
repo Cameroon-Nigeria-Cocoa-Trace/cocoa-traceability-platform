@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+        port: "",
+        pathname: "/**",
+      },
+    ],
+  },
   allowedDevOrigins: [
     "ais-dev-st5vylp6my67vnd2h5z6r5-738691926329.europe-west2.run.app",
     "ais-pre-st5vylp6my67vnd2h5z6r5-738691926329.europe-west2.run.app",
