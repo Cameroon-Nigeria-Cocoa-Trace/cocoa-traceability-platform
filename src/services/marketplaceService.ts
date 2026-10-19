@@ -59,7 +59,7 @@ export const COLLECTIONS = {
 export interface CreateMarketplaceListingInput {
   listingId?: string;
   sellerHolderId: string;
-  sellerHolderType: CertificateHolderType;
+  sellerHolderType?: CertificateHolderType;
   createdByUid?: string; // Human operator Firebase UID
   certificationType: MarketplaceCertificationType;
   lotId: string;
@@ -223,10 +223,36 @@ export async function createMarketplaceListing(
     );
   }
 
+  // Automatically derive seller entity role from user document in Firestore if not explicitly passed
+  let resolvedSellerHolderType = (
+    typeof input.sellerHolderType === "string" ? input.sellerHolderType.trim().toLowerCase() : ""
+  ) as CertificateHolderType;
+
+  if (!resolvedSellerHolderType) {
+    try {
+      const userDocSnap = await firebaseAdminDb.collection("users").doc(actorUid).get();
+      if (userDocSnap.exists) {
+        const userData = userDocSnap.data();
+        const rawRole = (userData?.role || userData?.accountType || userData?.entityType || "farmer")
+          .toString()
+          .toLowerCase()
+          .trim();
+        if (["farmer", "cooperative", "agent", "warehouse"].includes(rawRole)) {
+          resolvedSellerHolderType = rawRole as CertificateHolderType;
+        } else {
+          resolvedSellerHolderType = "farmer";
+        }
+      } else {
+        resolvedSellerHolderType = "farmer";
+      }
+    } catch {
+      resolvedSellerHolderType = "farmer";
+    }
+  }
+
   if (
-    typeof input.sellerHolderType !== "string" ||
     !["farmer", "cooperative", "agent", "warehouse"].includes(
-      input.sellerHolderType.trim().toLowerCase()
+      resolvedSellerHolderType
     )
   ) {
     throw new Error("Validation Error: Unsupported seller holder type.");
@@ -263,7 +289,7 @@ export async function createMarketplaceListing(
     throw new Error("Validation Error: Currency must be a three-letter code.");
   }
 
-  const sellerHolderType = input.sellerHolderType.trim();
+  let sellerHolderType = resolvedSellerHolderType;
   const normalizedSellerType = sellerHolderType.toLowerCase();
 
   // An organizational membership verifier has not yet been implemented.
@@ -538,13 +564,16 @@ export async function createMarketplaceListing(
       if (
         holding.holdingId !== sourceHoldingId ||
         holding.holderId !== sellerHolderId ||
-        holding.holderType !== sellerHolderType ||
         holding.lotId !== lotId ||
         holding.certificateId !== certificateId
       ) {
         throw new Error(
           "Relational Mismatch: Source holding, seller, lot, and certificate must match."
         );
+      }
+
+      if (holding.holderType && typeof holding.holderType === "string") {
+        sellerHolderType = holding.holderType as CertificateHolderType;
       }
 
       if (

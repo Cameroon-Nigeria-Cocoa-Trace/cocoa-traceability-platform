@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any, react-hooks/set-state-in-effect, @typescript-eslint/no-unused-vars */
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
@@ -63,9 +63,7 @@ export default function MarketplacePage() {
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterCertification, setFilterCertification] = useState<"ALL" | "certified" | "uncertified">("ALL");
   const [filterStatus, setFilterStatus] = useState<"ALL" | MarketplaceListingStatus>("ALL");
-  const [filterMode, setFilterMode] = useState<"ALL" | MarketplaceInventoryMode>("ALL");
   const [viewScope, setViewScope] = useState<"catalog" | "my-listings">("catalog");
 
   // Create Listing Modal State
@@ -84,7 +82,6 @@ export default function MarketplacePage() {
 
   // Create Form fields
   const [formCertificationType, setFormCertificationType] = useState<MarketplaceCertificationType>("certified");
-  const [formSellerHolderType, setFormSellerHolderType] = useState<CertificateHolderType>("cooperative");
   const [formHoldingId, setFormHoldingId] = useState("");
   const [formLotId, setFormLotId] = useState("");
   const [formInventoryMode, setFormInventoryMode] = useState<MarketplaceInventoryMode>("BULK");
@@ -183,18 +180,54 @@ export default function MarketplacePage() {
     }
   }, [formHoldingId, formInventoryMode, user, apiClient]);
 
-  // When holding is picked in certified mode, automatically sync Lot and Certificate
+  // Active holding and lot selected in creation form
+  const activeHolding = useMemo(() => {
+    if (formCertificationType !== "certified" || !formHoldingId) return null;
+    return myHoldings.find((h) => h.holdingId === formHoldingId) || null;
+  }, [formCertificationType, formHoldingId, myHoldings]);
+
+  const activeLot = useMemo(() => {
+    if (formCertificationType === "certified") {
+      if (!activeHolding) return null;
+      return myLots.find((l) => l.lotId === activeHolding.lotId) || null;
+    }
+    if (!formLotId) return null;
+    return myLots.find((l) => l.lotId === formLotId) || null;
+  }, [formCertificationType, activeHolding, formLotId, myLots]);
+
+  // Maximum allowable quantity for this selection
+  const maxAvailableKg = useMemo(() => {
+    if (formCertificationType === "certified") {
+      if (!activeHolding) return 0;
+      return activeHolding.availableQuantityKg || 0;
+    }
+    if (!activeLot) return 0;
+    return activeLot.availableQuantityKg ?? activeLot.quantityKg ?? 0;
+  }, [formCertificationType, activeHolding, activeLot]);
+
+  // When holding is picked in certified mode, automatically sync Lot, Grade, and Quantity
   useEffect(() => {
-    if (formHoldingId && formCertificationType === "certified") {
-      const h = myHoldings.find((x) => x.holdingId === formHoldingId);
-      if (h) {
-        setFormLotId(h.lotId);
-        if (formInventoryMode === "BULK") {
-          setFormQuantityKg(h.availableQuantityKg || 0);
-        }
+    if (formHoldingId && formCertificationType === "certified" && activeHolding) {
+      setFormLotId(activeHolding.lotId);
+      if (activeLot?.qualityGrade) {
+        setFormQualityGrade(activeLot.qualityGrade);
+      }
+      if (formInventoryMode === "BULK") {
+        setFormQuantityKg(activeHolding.availableQuantityKg || 0);
       }
     }
-  }, [formHoldingId, formCertificationType, formInventoryMode, myHoldings]);
+  }, [formHoldingId, formCertificationType, formInventoryMode, activeHolding, activeLot]);
+
+  // When physical lot is picked in uncertified mode, automatically sync Grade and Quantity
+  useEffect(() => {
+    if (formLotId && formCertificationType === "uncertified" && activeLot) {
+      if (activeLot.qualityGrade) {
+        setFormQualityGrade(activeLot.qualityGrade);
+      }
+      const avail = activeLot.availableQuantityKg ?? activeLot.quantityKg ?? 0;
+      setFormQuantityKg(avail);
+    }
+  }, [formLotId, formCertificationType, activeLot]);
 
   // Automatically compute selected QR quantity in QR_PACKAGES mode
   useEffect(() => {
@@ -227,24 +260,14 @@ export default function MarketplacePage() {
         if (!matchesTitle && !matchesNum && !matchesLot && !matchesSeller) return false;
       }
 
-      // Certification Filter
-      if (filterCertification !== "ALL" && item.certificationType !== filterCertification) {
-        return false;
-      }
-
       // Status Filter
       if (filterStatus !== "ALL" && item.listingStatus !== filterStatus) {
         return false;
       }
 
-      // Inventory Mode Filter
-      if (filterMode !== "ALL" && item.inventoryMode !== filterMode) {
-        return false;
-      }
-
       return true;
     });
-  }, [listings, searchQuery, filterCertification, filterStatus, filterMode, viewScope, user]);
+  }, [listings, searchQuery, filterStatus, viewScope, user]);
 
   // Create Listing Handler
   const handleCreateListing = async (e: React.FormEvent) => {
@@ -255,14 +278,19 @@ export default function MarketplacePage() {
 
     try {
       if (!formTitle.trim()) throw new Error("Listing Title is required.");
-      if (formPricePerKg <= 0) throw new Error("Price per kg must be greater than 0.");
       if (formQuantityKg <= 0) throw new Error("Quantity in kilograms must be greater than 0.");
+      if (maxAvailableKg > 0 && formQuantityKg > maxAvailableKg) {
+        throw new Error(
+          `Listing quantity cannot exceed ${maxAvailableKg.toLocaleString()} kg available in the selected ${
+            formCertificationType === "certified" ? "certificate holding" : "cocoa lot"
+          }.`
+        );
+      }
 
       const payload: any = {
         title: formTitle.trim(),
         description: formDescription.trim() || undefined,
         sellerHolderId: user?.uid,
-        sellerHolderType: formSellerHolderType,
         certificationType: formCertificationType,
         pricePerKg: Number(formPricePerKg),
         quantityInitialKg: Number(formQuantityKg),
@@ -538,71 +566,20 @@ export default function MarketplacePage() {
           {/* Filter Pills */}
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#edf1ea] pt-3 text-xs">
             <span className="font-semibold text-[#57655d] flex items-center gap-1">
-              <Filter size={12} /> Certification:
+              <Filter size={12} /> Status:
             </span>
-            <button
-              type="button"
-              onClick={() => setFilterCertification("ALL")}
-              className={`rounded-full px-2.5 py-1 font-semibold ${
-                filterCertification === "ALL"
-                  ? "bg-[#2d6130] text-white"
-                  : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
-              }`}
-            >
-              All Types
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCertification("certified")}
-              className={`rounded-full px-2.5 py-1 font-semibold ${
-                filterCertification === "certified"
-                  ? "bg-[#2d6130] text-white"
-                  : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
-              }`}
-            >
-              Certified Only
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterCertification("uncertified")}
-              className={`rounded-full px-2.5 py-1 font-semibold ${
-                filterCertification === "uncertified"
-                  ? "bg-[#2d6130] text-white"
-                  : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
-              }`}
-            >
-              Uncertified
-            </button>
-
-            <span className="ml-3 font-semibold text-[#57655d]">Status:</span>
             {(["ALL", "available", "under_negotiation", "sold"] as const).map((st) => (
               <button
                 key={st}
                 type="button"
                 onClick={() => setFilterStatus(st)}
-                className={`rounded-full px-2.5 py-1 font-semibold capitalize ${
+                className={`rounded-full px-2.5 py-1 font-semibold capitalize transition cursor-pointer ${
                   filterStatus === st
                     ? "bg-[#0b3528] text-white"
                     : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
                 }`}
               >
-                {st.replace("_", " ")}
-              </button>
-            ))}
-
-            <span className="ml-3 font-semibold text-[#57655d]">Mode:</span>
-            {(["ALL", "BULK", "QR_PACKAGES"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setFilterMode(m)}
-                className={`rounded-full px-2.5 py-1 font-semibold ${
-                  filterMode === m
-                    ? "bg-[#0b3528] text-white"
-                    : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
-                }`}
-              >
-                {m}
+                {st === "ALL" ? "All Listings" : st.replace("_", " ")}
               </button>
             ))}
           </div>
@@ -638,7 +615,7 @@ export default function MarketplacePage() {
             </div>
             <h3 className="mt-4 text-lg font-bold text-[#10251d]">No cocoa listings found</h3>
             <p className="mt-1 max-w-sm text-xs text-[#57655d]">
-              {searchQuery || filterCertification !== "ALL" || filterStatus !== "ALL"
+              {searchQuery || filterStatus !== "ALL"
                 ? "No listings match the current filters. Try resetting your search parameters."
                 : "No marketplace listings have been created yet. Be the first producer or cooperative to publish an offering."}
             </p>
@@ -679,6 +656,11 @@ export default function MarketplacePage() {
                       </span>
 
                       <div className="flex items-center gap-1.5">
+                        {isOwner && (
+                          <span className="rounded-full bg-[#e8effd] border border-[#c5d9f8] px-2 py-0.5 text-[0.65rem] font-bold text-[#1e4bb5]">
+                            Your Offering
+                          </span>
+                        )}
                         {item.inventoryMode && (
                           <span className="rounded-full bg-[#f1f4ee] px-2 py-0.5 text-[0.65rem] font-semibold text-[#48564e]">
                             {item.inventoryMode === "QR_PACKAGES" ? "QR Packages" : "Bulk Lot"}
@@ -915,45 +897,19 @@ export default function MarketplacePage() {
                   </div>
                 </div>
 
-                {/* Seller Holder Type */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">Seller Entity Role</label>
-                    <select
-                      value={formSellerHolderType}
-                      onChange={(e) => setFormSellerHolderType(e.target.value as CertificateHolderType)}
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                    >
-                      <option value="farmer">Farmer (Producer)</option>
-                      <option value="cooperative">Cooperative Society</option>
-                      <option value="agent">Licensed Buying Agent</option>
-                      <option value="warehouse">Licensed Export Warehouse</option>
-                    </select>
-                  </div>
 
-                  <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">Quality Grade</label>
-                    <input
-                      type="text"
-                      value={formQualityGrade}
-                      onChange={(e) => setFormQualityGrade(e.target.value)}
-                      placeholder="e.g. Grade 1 Export, Standard Fermented"
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                    />
-                  </div>
-                </div>
 
                 {/* Source Selection depending on Certification */}
                 {formCertificationType === "certified" ? (
-                  <div className="rounded-2xl border border-[#d6e5d1] bg-[#f5f9f3] p-3 space-y-3">
+                  <div className="rounded-2xl border border-[#d6e5d1] bg-[#f5f9f3] p-3.5 space-y-3.5">
                     <div>
                       <label className="block font-semibold text-[#10251d] mb-1">
-                        Select Certificate Holding (Source Custody Unit)
+                        Select Certificate Holding (Source Custody Unit) <span className="text-red-500">*</span>
                       </label>
                       <select
                         value={formHoldingId}
                         onChange={(e) => setFormHoldingId(e.target.value)}
-                        className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium"
+                        className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
                       >
                         <option value="">-- Choose Eligible Holding --</option>
                         {myHoldings.map((h) => (
@@ -969,11 +925,50 @@ export default function MarketplacePage() {
                       )}
                     </div>
 
+                    {/* Quality Grade: Only shows after a holding/lot is selected */}
+                    {formHoldingId && (
+                      <div className="rounded-xl border border-[#cdebc2] bg-white p-3 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-[#edf1ea] pb-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#10251d]">
+                            <Award size={15} className="text-[#2d6130]" />
+                            <span>Cocoa Quality Grade Assessment</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px]">
+                            <span className="text-[#57655d]">Registered Lot Grade:</span>
+                            <span className="rounded-full bg-[#edf7e8] border border-[#b8f58b] px-2 py-0.5 font-extrabold text-[#2d6130]">
+                              {activeLot?.qualityGrade || "Grade 1 Export"}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-[#57655d]">
+                          Inherited from registered cocoa lot ({activeLot?.lotNumber || activeHolding?.lotId || "Lot"}). You can maintain this grade or select a new grade below if the cocoa beans have been re-conditioned, further dried, or degraded.
+                        </p>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#10251d] mb-1">
+                            Listing Quality Grade <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={formQualityGrade}
+                            onChange={(e) => setFormQualityGrade(e.target.value)}
+                            className="w-full rounded-xl border border-[#dfe7d8] bg-[#f7f8f3] p-2 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
+                          >
+                            <option value="Grade 1 Export">Grade 1 Export (Premium Cocoa — Highest Export Quality)</option>
+                            <option value="Grade 2 Export">Grade 2 Export (Good Commercial Cocoa — Standard Commercial)</option>
+                            <option value="Sub-standard">Sub-standard / Off-grade (Requires Remediation / Non-Export)</option>
+                            {activeLot?.qualityGrade &&
+                              !["Grade 1 Export", "Grade 2 Export", "Sub-standard"].includes(activeLot.qualityGrade) && (
+                                <option value={activeLot.qualityGrade}>{activeLot.qualityGrade} (Current Lot Grade)</option>
+                              )}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
                     {formHoldingId && (
                       <div className="pt-2 border-t border-[#e2edd8]">
                         <label className="block font-semibold text-[#10251d] mb-1">Inventory Mode</label>
                         <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer font-medium">
+                          <label className="flex items-center gap-2 cursor-pointer font-medium text-xs">
                             <input
                               type="radio"
                               name="invMode"
@@ -985,7 +980,7 @@ export default function MarketplacePage() {
                             />
                             BULK Cocoa (Continuous kg quantity)
                           </label>
-                          <label className="flex items-center gap-2 cursor-pointer font-medium">
+                          <label className="flex items-center gap-2 cursor-pointer font-medium text-xs">
                             <input
                               type="radio"
                               name="invMode"
@@ -1050,26 +1045,65 @@ export default function MarketplacePage() {
                   </div>
                 ) : (
                   // Uncertified Mode: Cocoa Lot selector
-                  <div className="rounded-2xl border border-[#e5e0cc] bg-[#faf8f0] p-3">
-                    <label className="block font-semibold text-[#10251d] mb-1">
-                      Select Physical Cocoa Lot
-                    </label>
-                    <select
-                      value={formLotId}
-                      onChange={(e) => {
-                        setFormLotId(e.target.value);
-                        const found = myLots.find((l) => l.lotId === e.target.value);
-                        if (found) setFormQuantityKg(found.quantityKg || 0);
-                      }}
-                      className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium"
-                    >
-                      <option value="">-- Choose Cocoa Lot --</option>
-                      {myLots.map((l) => (
-                        <option key={l.lotId} value={l.lotId}>
-                          {l.lotNumber || l.lotId} — Farm: {l.farmId} ({l.quantityKg} kg total physical)
-                        </option>
-                      ))}
-                    </select>
+                  <div className="rounded-2xl border border-[#e5e0cc] bg-[#faf8f0] p-3.5 space-y-3.5">
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Select Physical Cocoa Lot <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={formLotId}
+                        onChange={(e) => {
+                          setFormLotId(e.target.value);
+                        }}
+                        className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
+                      >
+                        <option value="">-- Choose Cocoa Lot --</option>
+                        {myLots.map((l) => (
+                          <option key={l.lotId} value={l.lotId}>
+                            {l.lotNumber || l.lotId} — Farm: {l.farmId} ({l.availableQuantityKg ?? l.quantityKg} kg available)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Quality Grade: Only shows after a lot is selected */}
+                    {formLotId && activeLot && (
+                      <div className="rounded-xl border border-[#e5e0cc] bg-white p-3 space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-[#edf1ea] pb-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#10251d]">
+                            <Award size={15} className="text-[#745f21]" />
+                            <span>Cocoa Quality Grade Assessment</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px]">
+                            <span className="text-[#57655d]">Registered Lot Grade:</span>
+                            <span className="rounded-full bg-[#fdfbe8] border border-[#fae89c] px-2 py-0.5 font-extrabold text-[#745f21]">
+                              {activeLot.qualityGrade || "Grade 1 Export"}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-[#57655d]">
+                          Inherited from registered cocoa lot ({activeLot.lotNumber || activeLot.lotId}). You can keep this grade or select a new grade below if the cocoa beans have been re-conditioned, further dried, or degraded.
+                        </p>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#10251d] mb-1">
+                            Listing Quality Grade <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={formQualityGrade}
+                            onChange={(e) => setFormQualityGrade(e.target.value)}
+                            className="w-full rounded-xl border border-[#dfe7d8] bg-[#f7f8f3] p-2 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
+                          >
+                            <option value="Grade 1 Export">Grade 1 Export (Premium Cocoa — Highest Export Quality)</option>
+                            <option value="Grade 2 Export">Grade 2 Export (Good Commercial Cocoa — Standard Commercial)</option>
+                            <option value="Sub-standard">Sub-standard / Off-grade (Requires Remediation / Non-Export)</option>
+                            {activeLot.qualityGrade &&
+                              !["Grade 1 Export", "Grade 2 Export", "Sub-standard"].includes(activeLot.qualityGrade) && (
+                                <option value={activeLot.qualityGrade}>{activeLot.qualityGrade} (Current Lot Grade)</option>
+                              )}
+                          </select>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1100,18 +1134,43 @@ export default function MarketplacePage() {
                 {/* Quantity & Pricing */}
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">
-                      Quantity (kg)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block font-semibold text-[#10251d]">
+                        Quantity (kg) <span className="text-red-500">*</span>
+                      </label>
+                      {maxAvailableKg > 0 && (
+                        <span className="text-[10px] font-bold text-[#2d6130]">
+                          Max: {maxAvailableKg.toLocaleString()} kg
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="number"
                       required
-                      min={1}
+                      min={0.01}
+                      max={maxAvailableKg > 0 ? maxAvailableKg : undefined}
+                      step="any"
                       disabled={formInventoryMode === "QR_PACKAGES"}
                       value={formQuantityKg || ""}
-                      onChange={(e) => setFormQuantityKg(Number(e.target.value))}
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium disabled:opacity-60"
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setFormQuantityKg(isNaN(val) ? 0 : val);
+                      }}
+                      className={`w-full rounded-2xl border p-2.5 outline-none font-medium disabled:opacity-60 text-xs ${
+                        maxAvailableKg > 0 && formQuantityKg > maxAvailableKg
+                          ? "border-red-500 bg-red-50 text-red-900 font-bold"
+                          : "border-[#dfe7d8] bg-[#f7f8f3]"
+                      }`}
                     />
+                    {maxAvailableKg > 0 && formQuantityKg > maxAvailableKg ? (
+                      <p className="mt-1 text-[10px] font-bold text-red-600">
+                        ⚠️ Cannot exceed {maxAvailableKg.toLocaleString()} kg
+                      </p>
+                    ) : maxAvailableKg > 0 ? (
+                      <p className="mt-1 text-[10px] text-[#57655d]">
+                        Auto-filled from lot balance. Cannot exceed max.
+                      </p>
+                    ) : null}
                   </div>
 
                   <div>

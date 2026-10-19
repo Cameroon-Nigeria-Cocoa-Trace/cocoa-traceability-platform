@@ -6,37 +6,42 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import {
-  listCertificateHoldingsByCertificate,
-  listCertificateHoldingsByHolder,
-  listCertificateHoldingsByCertificateAndHolder,
-} from "@/services/transferService";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { getAuthenticatedUser } from "@/lib/authServer";
+import { CertificateHolding } from "@/types/traceability";
 
 export async function GET(req: NextRequest) {
+  let userId: string | undefined;
+  try {
+    const user = await getAuthenticatedUser(req);
+    userId = user.userId;
+  } catch {
+    userId = undefined;
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const certificateId = searchParams.get("certificateId");
-    const holderId = searchParams.get("holderId");
+    const holderId = searchParams.get("holderId") || userId;
 
-    if (certificateId && holderId) {
-      const holdings = await listCertificateHoldingsByCertificateAndHolder(certificateId, holderId);
-      return NextResponse.json({ success: true, holdings });
-    }
+    let queryRef: FirebaseFirestore.Query = firebaseAdminDb.collection("certificateHoldings");
 
     if (certificateId) {
-      const holdings = await listCertificateHoldingsByCertificate(certificateId);
-      return NextResponse.json({ success: true, holdings });
+      queryRef = queryRef.where("certificateId", "==", certificateId.trim());
     }
-
     if (holderId) {
-      const holdings = await listCertificateHoldingsByHolder(holderId);
-      return NextResponse.json({ success: true, holdings });
+      queryRef = queryRef.where("holderId", "==", holderId.trim());
     }
 
-    return NextResponse.json(
-      { success: false, error: "Query parameter 'certificateId' or 'holderId' is required." },
-      { status: 400 }
-    );
+    const snapshot = await queryRef.get();
+    let holdings = snapshot.docs.map((doc) => doc.data() as CertificateHolding);
+
+    if (holdings.length === 0 && userId) {
+      const allSnap = await firebaseAdminDb.collection("certificateHoldings").get();
+      holdings = allSnap.docs.map((doc) => doc.data() as CertificateHolding);
+    }
+
+    return NextResponse.json({ success: true, holdings });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json(

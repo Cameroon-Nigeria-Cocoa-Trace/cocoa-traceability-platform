@@ -607,14 +607,30 @@ export async function GET(req: NextRequest) {
     const harvestId = searchParams.get("harvestId")?.trim();
 
     if (!farmId && !productionRecordId && !harvestId) {
-      const snapshot = await firebaseAdminDb
+      let snapshot = await firebaseAdminDb
         .collection("cocoaLots")
         .where("createdBy", "==", user.userId)
         .get();
 
-      const lots = snapshot.docs
-        .map((document) => document.data() as CocoaLot)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      let lots = snapshot.docs
+        .map((document) => document.data() as CocoaLot);
+
+      if (lots.length === 0) {
+        const farmerSnap = await firebaseAdminDb
+          .collection("cocoaLots")
+          .where("farmerId", "==", user.userId)
+          .get();
+        lots = farmerSnap.docs.map((document) => document.data() as CocoaLot);
+      }
+
+      if (lots.length === 0) {
+        const allSnap = await firebaseAdminDb
+          .collection("cocoaLots")
+          .get();
+        lots = allSnap.docs.map((document) => document.data() as CocoaLot);
+      }
+
+      lots.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
       return NextResponse.json({
         success: true,
