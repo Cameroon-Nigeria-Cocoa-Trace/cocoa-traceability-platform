@@ -497,6 +497,7 @@ export async function createMarketplaceListing(
     cocoaImage = imageCandidate;
     qualityGrade = input.qualityGrade || lot.qualityGrade;
 
+    const descriptionTrimmed = input.description?.trim();
     const baseListing = {
       listingId,
       listingNumber: generateListingNumber(),
@@ -506,7 +507,7 @@ export async function createMarketplaceListing(
       certificationType,
       lotId: lot.lotId,
       title,
-      description: input.description?.trim() || undefined,
+      ...(descriptionTrimmed ? { description: descriptionTrimmed } : {}),
       pricePerKg: input.pricePerKg,
       currency:
         requestedCurrency ||
