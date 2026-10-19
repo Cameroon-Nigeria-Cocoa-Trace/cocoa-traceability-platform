@@ -282,16 +282,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (
-      typeof body.pricePerKg !== "number" ||
-      !Number.isFinite(body.pricePerKg) ||
-      body.pricePerKg < 0
-    ) {
-      throw new ApiError(
-        "pricePerKg must be a non-negative finite number.",
-        400
-      );
-    }
+    const pricePerKg =
+      typeof body.pricePerKg === "number" &&
+      Number.isFinite(body.pricePerKg) &&
+      body.pricePerKg >= 0
+        ? body.pricePerKg
+        : 0;
 
     let currency = "XAF";
 
@@ -484,18 +480,12 @@ export async function POST(req: NextRequest) {
         const remainingCapacity =
           harvestQuantity - allocatedQuantity;
 
-        const pricePerKg = body.pricePerKg;
-
-        if (
-          typeof pricePerKg !== "number" ||
-          !Number.isFinite(pricePerKg) ||
-          pricePerKg <= 0
-        ) {
-          throw new ApiError(
-            "The price per kilogram must be a positive, finite number.",
-            400
-          );
-        }
+        const pricePerKg =
+          typeof body.pricePerKg === "number" &&
+          Number.isFinite(body.pricePerKg) &&
+          body.pricePerKg >= 0
+            ? body.pricePerKg
+            : 0;
 
         const quantityKg = body.quantityKg;
 
@@ -617,10 +607,19 @@ export async function GET(req: NextRequest) {
     const harvestId = searchParams.get("harvestId")?.trim();
 
     if (!farmId && !productionRecordId && !harvestId) {
-      throw new ApiError(
-        "Provide farmId, productionRecordId, or harvestId.",
-        400
-      );
+      const snapshot = await firebaseAdminDb
+        .collection("cocoaLots")
+        .where("createdBy", "==", user.userId)
+        .get();
+
+      const lots = snapshot.docs
+        .map((document) => document.data() as CocoaLot)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      return NextResponse.json({
+        success: true,
+        lots,
+      });
     }
 
     let resolvedFarmId = farmId || "";

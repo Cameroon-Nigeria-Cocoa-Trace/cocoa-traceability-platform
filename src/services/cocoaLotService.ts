@@ -44,7 +44,7 @@ export interface CreateCocoaLotInput {
   productionRecordId: string;
   harvestId: string;
   quantityKg: number;
-  pricePerKg: number;
+  pricePerKg?: number;
   currency?: string; // Defaults to "XAF"
   qualityGrade?: CocoaQualityGrade;
   cocoaImage: CloudinaryImageReference; // MANDATORY: Valid Cloudinary metadata reference
@@ -146,10 +146,11 @@ export function validateCocoaLotInput(input: CreateCocoaLotInput): void {
     );
   }
   if (
-    typeof input.pricePerKg !== "number" ||
-    isNaN(input.pricePerKg) ||
-    !isFinite(input.pricePerKg) ||
-    input.pricePerKg < 0
+    input.pricePerKg !== undefined &&
+    (typeof input.pricePerKg !== "number" ||
+      isNaN(input.pricePerKg) ||
+      !isFinite(input.pricePerKg) ||
+      input.pricePerKg < 0)
   ) {
     throw new Error(
       `Validation Error: Invalid pricePerKg (${input.pricePerKg}). Must be a non-negative finite number.`

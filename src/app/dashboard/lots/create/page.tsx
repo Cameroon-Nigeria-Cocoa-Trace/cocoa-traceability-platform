@@ -111,8 +111,6 @@ function CreateCocoaLotContent() {
     useState(false);
 
   const [quantityKg, setQuantityKg] = useState("");
-  const [pricePerKg, setPricePerKg] = useState("");
-  const [currency, setCurrency] = useState("XAF");
   const [qualityGrade, setQualityGrade] =
     useState<CocoaQualityGrade>("Grade 1");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -431,7 +429,6 @@ function CreateCocoaLotContent() {
     }
 
     const quantity = Number(quantityKg);
-    const price = Number(pricePerKg);
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
       setError("Quantity must be a positive number.");
@@ -442,11 +439,6 @@ function CreateCocoaLotContent() {
       setError(
         `Only ${remainingHarvestKg.toLocaleString()} kg is available in this harvest.`
       );
-      return;
-    }
-
-    if (!Number.isFinite(price) || price < 0) {
-      setError("Price per kilogram must be a non-negative number.");
       return;
     }
 
@@ -489,8 +481,6 @@ function CreateCocoaLotContent() {
         productionRecordId: selectedProductionId,
         harvestId: selectedHarvestId,
         quantityKg: quantity,
-        pricePerKg: price,
-        currency,
         qualityGrade,
         cocoaImage: resolvedImageRef,
       });
@@ -826,48 +816,14 @@ function CreateCocoaLotContent() {
                 )}
               </div>
 
-              <div>
-                <label
-                  htmlFor="price"
-                  className="mb-1.5 block text-xs font-bold text-[#57655d]"
-                >
-                  Reference Price per kg
-                </label>
-                <input
-                  id="price"
-                  type="number"
-                  min="0"
-                  step="any"
-                  required
-                  value={pricePerKg}
-                  onChange={(event) =>
-                    setPricePerKg(event.target.value)
-                  }
-                  placeholder="e.g. 2500"
-                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-sm outline-none focus:border-[#2d6130]"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="currency"
-                  className="mb-1.5 block text-xs font-bold text-[#57655d]"
-                >
-                  Currency
-                </label>
-                <select
-                  id="currency"
-                  value={currency}
-                  onChange={(event) =>
-                    setCurrency(event.target.value)
-                  }
-                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-sm outline-none focus:border-[#2d6130]"
-                >
-                  <option value="XAF">XAF — Central African CFA franc</option>
-                  <option value="USD">USD — US dollar</option>
-                  <option value="NGN">NGN — Nigerian naira</option>
-                </select>
-              </div>
+                <div className="rounded-2xl border border-[#dfe7d8] bg-[#f8faf6] p-3.5 text-xs text-[#57655d] flex items-center gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#edf7e8] text-[#2d6130] font-bold">
+                    ℹ️
+                  </span>
+                  <span>
+                    <strong>Marketplace Pricing:</strong> Reference price per kg and currency will be configured when you publish this lot to the marketplace.
+                  </span>
+                </div>
 
               <div className="sm:col-span-2 pt-3 border-t border-[#edf1ea]">
                 <CocoaGradeSelector

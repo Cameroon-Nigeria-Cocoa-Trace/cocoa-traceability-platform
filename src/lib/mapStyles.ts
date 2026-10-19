@@ -87,7 +87,7 @@ export const OPEN_OUTDOORS_STYLE: mapboxgl.Style = {
   ],
 };
 
-export function getMapStyle(styleKey: 'satellite' | 'streets' | 'outdoors'): any {
+export function getMapStyle(styleKey: 'satellite' | 'streets' | 'outdoors'): string | mapboxgl.Style {
   if (MAPBOX_TOKEN) {
     if (styleKey === 'streets') return 'mapbox://styles/mapbox/streets-v12';
     if (styleKey === 'outdoors') return 'mapbox://styles/mapbox/outdoors-v12';
