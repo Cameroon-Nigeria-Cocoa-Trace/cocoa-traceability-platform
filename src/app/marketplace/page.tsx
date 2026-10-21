@@ -326,7 +326,7 @@ export default function MarketplacePage() {
       if (formQuantityKg <= 0) throw new Error("Quantity in kilograms must be greater than 0.");
       if (maxAvailableKg > 0 && formQuantityKg > maxAvailableKg) {
         throw new Error(
-          `Listing quantity cannot exceed ${maxAvailableKg.toLocaleString()} kg available in the selected ${
+          `Listing quantity cannot exceed ${(Number(maxAvailableKg) || 0).toLocaleString()} kg available in the selected ${
             formCertificationType === "certified" ? "certificate holding" : "cocoa lot"
           }.`
         );
@@ -776,10 +776,10 @@ export default function MarketplacePage() {
                       <div className="flex items-center justify-between pb-1">
                         <dt className="text-[#6c7b72]">Available Quantity</dt>
                         <dd className="font-bold text-[#10251d]">
-                          {item.quantityAvailableKg.toLocaleString()} kg
+                          {(Number(item.quantityAvailableKg) || 0).toLocaleString()} kg
                           {item.quantityInitialKg !== item.quantityAvailableKg && (
                             <span className="ml-1 text-[10px] text-gray-400 font-normal">
-                              (of {item.quantityInitialKg.toLocaleString()} kg)
+                              (of {(Number(item.quantityInitialKg) || 0).toLocaleString()} kg)
                             </span>
                           )}
                         </dd>
@@ -788,7 +788,7 @@ export default function MarketplacePage() {
                       <div className="flex items-center justify-between pb-1">
                         <dt className="text-[#6c7b72]">Unit Price</dt>
                         <dd className="font-bold text-[#10251d]">
-                          {item.pricePerKg.toLocaleString()} {item.currency} / kg
+                          {(Number(item.pricePerKg) || 0).toLocaleString()} {item.currency} / kg
                         </dd>
                       </div>
 
@@ -845,7 +845,7 @@ export default function MarketplacePage() {
                     <div className="mb-3 flex items-baseline justify-between">
                       <span className="text-xs text-[#6c7b72]">Estimated Lot Total</span>
                       <strong className="text-lg font-bold text-[#10251d]">
-                        {(item.quantityAvailableKg * item.pricePerKg).toLocaleString()} {item.currency}
+                        {((Number(item.quantityAvailableKg) || 0) * (Number(item.pricePerKg) || 0)).toLocaleString()} {item.currency}
                       </strong>
                     </div>
 
@@ -1230,7 +1230,7 @@ export default function MarketplacePage() {
                       </label>
                       {maxAvailableKg > 0 && (
                         <span className="text-[10px] font-bold text-[#2d6130]">
-                          Max: {maxAvailableKg.toLocaleString()} kg
+                          Max: {(Number(maxAvailableKg) || 0).toLocaleString()} kg
                         </span>
                       )}
                     </div>
@@ -1254,7 +1254,7 @@ export default function MarketplacePage() {
                     />
                     {maxAvailableKg > 0 && formQuantityKg > maxAvailableKg ? (
                       <p className="mt-1 text-[10px] font-bold text-red-600">
-                        ⚠️ Cannot exceed {maxAvailableKg.toLocaleString()} kg
+                        ⚠️ Cannot exceed {(Number(maxAvailableKg) || 0).toLocaleString()} kg
                       </p>
                     ) : maxAvailableKg > 0 ? (
                       <p className="mt-1 text-[10px] text-[#57655d]">
@@ -1294,7 +1294,7 @@ export default function MarketplacePage() {
                 <div className="rounded-2xl bg-[#edf7e8] p-3 text-xs flex items-center justify-between font-bold text-[#10251d]">
                   <span>Total Listing Value:</span>
                   <span>
-                    {(formQuantityKg * formPricePerKg).toLocaleString()} {formCurrency}
+                    {((Number(formQuantityKg) || 0) * (Number(formPricePerKg) || 0)).toLocaleString()} {formCurrency}
                   </span>
                 </div>
 
@@ -1365,13 +1365,13 @@ export default function MarketplacePage() {
                     <div>
                       <span className="text-gray-500">Unit Price:</span>{" "}
                       <strong className="text-[#10251d]">
-                        {purchaseListing.pricePerKg.toLocaleString()} {purchaseListing.currency} / kg
+                        {(Number(purchaseListing.pricePerKg) || 0).toLocaleString()} {purchaseListing.currency} / kg
                       </strong>
                     </div>
                     <div>
                       <span className="text-gray-500">Available:</span>{" "}
                       <strong className="text-[#10251d]">
-                        {purchaseListing.quantityAvailableKg.toLocaleString()} kg
+                        {(Number(purchaseListing.quantityAvailableKg) || 0).toLocaleString()} kg
                       </strong>
                     </div>
                   </div>
@@ -1479,21 +1479,21 @@ export default function MarketplacePage() {
                   <div className="flex justify-between">
                     <span>Base Trade Value:</span>
                     <span>
-                      {(purchaseQuantityKg * purchaseListing.pricePerKg).toLocaleString()}{" "}
+                      {((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0)).toLocaleString()}{" "}
                       {purchaseListing.currency}
                     </span>
                   </div>
                   <div className="flex justify-between text-gray-600">
                     <span>Platform Service Fee (2%):</span>
                     <span>
-                      {Math.round(purchaseQuantityKg * purchaseListing.pricePerKg * 0.02).toLocaleString()}{" "}
+                      {Math.round((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0) * 0.02).toLocaleString()}{" "}
                       {purchaseListing.currency}
                     </span>
                   </div>
                   <div className="flex justify-between pt-2 border-t border-[#c6e6bb] font-bold text-sm">
                     <span>Total Amount Payable:</span>
                     <span>
-                      {Math.round(purchaseQuantityKg * purchaseListing.pricePerKg * 1.02).toLocaleString()}{" "}
+                      {Math.round((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0) * 1.02).toLocaleString()}{" "}
                       {purchaseListing.currency}
                     </span>
                   </div>

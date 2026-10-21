@@ -322,41 +322,36 @@ export default function CocoaLotsPage() {
                       {lot.productionPeriod}
                     </h3>
 
-                    {/* Quantity & Pricing Cards */}
-                    <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-xl bg-[#fafcf9] p-2.5 border border-[#edf1ea]">
+                    {/* Total Volume & Certification Status */}
+                    <div className="mt-4 rounded-xl bg-[#fafcf9] p-3 border border-[#edf1ea] flex items-center justify-between">
+                      <div>
                         <span className="block text-[10px] text-[#6f7e73] uppercase font-semibold">
                           Total Volume
                         </span>
-                        <strong className="text-sm font-black text-[#10251d] block mt-0.5">
+                        <strong className="text-base font-black text-[#10251d] block mt-0.5">
                           {lot.quantityKg.toLocaleString()} kg
                         </strong>
                       </div>
-
-                      <div className="rounded-xl bg-[#fafcf9] p-2.5 border border-[#edf1ea]">
+                      <div className="text-right">
                         <span className="block text-[10px] text-[#6f7e73] uppercase font-semibold">
-                          Reference Price
+                          Trace Status
                         </span>
-                        <strong className="text-sm font-black text-[#2a7a33] block mt-0.5">
-                          {lot.pricePerKg.toLocaleString()} {lot.currency}/kg
-                        </strong>
+                        <span
+                          className={`mt-1 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                            lot.lotStatus === "certified" || (lot.certifiedQuantityKg || 0) > 0
+                              ? "bg-[#edf7e8] text-[#2d6130] border border-[#cdebc2]"
+                              : "bg-slate-100 text-slate-700 border border-slate-200"
+                          }`}
+                        >
+                          {lot.lotStatus === "certified" || (lot.certifiedQuantityKg || 0) > 0
+                            ? "✓ Trace Certified"
+                            : "Standard / Uncertified"}
+                        </span>
                       </div>
                     </div>
 
                     <div className="mt-3 space-y-1 text-[11px] text-[#57655d]">
-                      <div className="flex justify-between">
-                        <span>Available Uncertified/Bulk:</span>
-                        <strong className="text-[#10251d]">
-                          {lot.availableQuantityKg.toLocaleString()} kg
-                        </strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Certified Quantity:</span>
-                        <strong className="text-[#2d6130]">
-                          {(lot.certifiedQuantityKg || 0).toLocaleString()} kg
-                        </strong>
-                      </div>
-                      <div className="flex justify-between pt-1 border-t border-[#edf1ea]">
+                      <div className="flex justify-between pt-1">
                         <span>Source Harvest:</span>
                         <span className="font-mono text-[10px] text-[#57655d]">
                           {lot.harvestId.slice(0, 16)}...
