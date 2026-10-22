@@ -25,6 +25,7 @@ import {
   RefreshCw,
   AlertCircle,
   Truck,
+  Trees,
 } from "lucide-react";
 
 type MapPlot = {
@@ -82,9 +83,13 @@ function DashboardContent() {
   const [certificateModalFarm, setCertificateModalFarm] =
     useState<FarmRecord | null>(null);
 
-  // Only show farms owned by the signed-in user.
+  // Only show farms owned by the signed-in user that have a valid geofence polygon.
   const userFarms = user
-    ? farms.filter((farm) => farm.farmerId === user.uid)
+    ? farms.filter((farm) => {
+        if (farm.farmerId !== user.uid) return false;
+        const poly = farm.geofencePolygon;
+        return Array.isArray(poly) && poly.length >= 3;
+      })
     : [];
 
   // Use saved polygon coordinates only. Do not invent farm boundaries.
@@ -557,6 +562,28 @@ function DashboardContent() {
                           </strong>
                         </div>
                       </div>
+
+                      {/* Geofence Map matching Marketplace */}
+                      {Array.isArray(farm.geofencePolygon) && farm.geofencePolygon.length >= 3 && (
+                        <div className="mt-4 rounded-3xl border border-[#dfe7d8] bg-[#fbfdfa] p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
+                              <Trees size={15} />
+                              EUDR Canopy Geolocation &amp; Plot Geofence
+                            </span>
+                            <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.65rem] font-bold text-[#2a7a33] border border-[#c6e8ba]">
+                              Zero-Deforestation Audited
+                            </span>
+                          </div>
+                          <MapboxGeofenceMap
+                            initialCenter={[9.1245, 4.5912]}
+                            initialZoom={13}
+                            activePolygon={farm.geofencePolygon.map((p: any) => Array.isArray(p) ? [p[0], p[1]] : [p.lng || 0, p.lat || 0])}
+                            heightClass="h-[220px]"
+                            showForestReservesDefault={true}
+                          />
+                        </div>
+                      )}
 
                       {/* Custody Route Footer */}
                       {farm.batchMovementRoute && (

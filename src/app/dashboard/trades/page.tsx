@@ -238,7 +238,7 @@ export default function TradeManagementPage() {
               Commercial Trades &amp; Orders
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#57655d]">
-              Manage authenticated on-platform cocoa purchases, automatic 2% service fee records,
+              Manage authenticated on-platform cocoa purchases, automatic service fee records,
               and off-platform negotiated sales across verified supply-chain participants.
             </p>
           </div>
@@ -605,7 +605,7 @@ export default function TradeManagementPage() {
 
                   {selectedTrade.platformFeeApplied && (
                     <div className="flex justify-between text-gray-600 pt-1 text-[11px]">
-                      <span>Platform Fee (2%):</span>
+                      <span>Platform Fee:</span>
                       <span>
                         {selectedTrade.platformFeeApplied.calculatedAmount.toLocaleString()}{" "}
                         {selectedTrade.currency}

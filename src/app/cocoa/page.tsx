@@ -116,7 +116,7 @@ const WORKFLOW_CARDS: WorkflowCard[] = [
     href: "/cocoa/marketplace",
     capabilities: [
       "Certified vs Uncertified inventory separation",
-      "2% platform service fee assessment",
+      "Platform service fee assessment",
       "On-platform purchase & off-platform sale",
     ],
   },
@@ -125,11 +125,11 @@ const WORKFLOW_CARDS: WorkflowCard[] = [
     stage: "Stage 5",
     status: "planned",
     description:
-      "Access confidential seller contact information through Flutterwave with a 0.5% integer fee and a 15-minute intent lock.",
+      "Access confidential seller contact information through Flutterwave with a service fee and a 15-minute intent lock.",
     icon: CreditCard,
     href: "/cocoa/payments",
     capabilities: [
-      "0.5% Math.ceil() NGN fee derivation",
+      "NGN fee derivation",
       "Dual-idempotency & reservation lock",
       "Timing-safe webhook signature verification",
     ],

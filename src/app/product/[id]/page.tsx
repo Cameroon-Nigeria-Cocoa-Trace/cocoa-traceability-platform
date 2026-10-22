@@ -352,22 +352,41 @@ export default function ProductDetailPage() {
           <span className="font-mono text-[#10251d]">{listing.listingNumber}</span>
         </div>
 
-        {/* Hero Section */}
-        <section className="mb-8 flex flex-col gap-6 rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-[#eefbf3] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#1d6a45]">
-                {listing.listingStatus.toUpperCase()}
-              </span>
-            </div>
+        {/* Hero Section with Listing Image at Top Left */}
+        <section className="mb-8 flex flex-col gap-6 rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-5 max-w-2xl">
+            {(listing.cocoaImage?.secureUrl || backingLot?.cocoaImage?.secureUrl) && (
+              <div className="relative shrink-0 overflow-hidden rounded-2xl border border-[#dfe7d8] bg-[#f0f4ec]">
+                <Image
+                  src={listing.cocoaImage?.secureUrl || backingLot?.cocoaImage?.secureUrl || ""}
+                  alt={listing.title}
+                  width={listing.cocoaImage?.width || backingLot?.cocoaImage?.width || 300}
+                  height={listing.cocoaImage?.height || backingLot?.cocoaImage?.height || 300}
+                  className="h-24 w-24 sm:h-28 sm:w-28 object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-[#eefbf3] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#1d6a45]">
+                  {listing.listingStatus.toUpperCase()}
+                </span>
+                {user && (listing.createdByUid === user.uid || listing.sellerHolderId === user.uid) && (
+                  <span className="rounded-full bg-[#e8effd] border border-[#c5d9f8] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#1e4bb5]">
+                    Your Offering
+                  </span>
+                )}
+              </div>
 
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-[#10251d] md:text-4xl">
-              {listing.title}
-            </h1>
-            <p className="mt-3 text-sm leading-relaxed text-[#57655d]">
-              {listing.description ||
-                "Verified Cameroonian cocoa offering registered with authenticated single-origin traceability records and supply-chain custody integrity."}
-            </p>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#10251d] sm:text-3xl md:text-4xl">
+                {listing.title}
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-[#57655d]">
+                {listing.description ||
+                  "Verified Cameroonian cocoa offering registered with authenticated single-origin traceability records and supply-chain custody integrity."}
+              </p>
+            </div>
           </div>
 
           <aside className="w-full max-w-md rounded-[24px] border border-[#dfe7d8] bg-[#f8f9f3] p-5">
@@ -598,65 +617,83 @@ export default function ProductDetailPage() {
             <div className="rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
               <h3 className="text-lg font-bold text-[#10251d]">Seller Information</h3>
 
-              {hasSellerAccess && sellerInfo ? (
-                <div className="mt-4 space-y-2.5 text-xs">
-                  <div className="rounded-2xl bg-[#eefbf3] p-3 text-[#1d6a45] font-semibold">
-                    ✓ Verified Contact Access Granted
+              {(() => {
+                const isMyListing = user && listing && (listing.createdByUid === user.uid || listing.sellerHolderId === user.uid);
+                if (isMyListing) {
+                  return (
+                    <div className="mt-4 space-y-2.5 text-xs">
+                      <div className="rounded-2xl bg-[#eefbf3] p-3 text-[#1d6a45] font-semibold">
+                        ✓ Your Offering (Owned by You)
+                      </div>
+                      <p className="text-gray-500">
+                        You are the seller of this listing. Contact access is automatically unlocked.
+                      </p>
+                    </div>
+                  );
+                }
+                if (hasSellerAccess && sellerInfo) {
+                  return (
+                    <div className="mt-4 space-y-2.5 text-xs">
+                      <div className="rounded-2xl bg-[#eefbf3] p-3 text-[#1d6a45] font-semibold">
+                        ✓ Verified Contact Access Granted
+                      </div>
+
+                      {sellerInfo.contactName && (
+                        <div>
+                          <span className="text-gray-500">Contact Name:</span>
+                          <strong className="block text-[#10251d]">
+                            {sellerInfo.contactName}
+                          </strong>
+                        </div>
+                      )}
+
+                      {sellerInfo.phone && (
+                        <div>
+                          <span className="text-gray-500">Phone:</span>
+                          <strong className="block text-[#10251d] font-mono">
+                            {sellerInfo.phone}
+                          </strong>
+                        </div>
+                      )}
+
+                      {sellerInfo.email && (
+                        <div>
+                          <span className="text-gray-500">Email:</span>
+                          <strong className="block text-[#10251d]">
+                            {sellerInfo.email}
+                          </strong>
+                        </div>
+                      )}
+
+                      {sellerInfo.location && (
+                        <div>
+                          <span className="text-gray-500">Location:</span>
+                          <strong className="block text-[#10251d]">
+                            {sellerInfo.location}
+                          </strong>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mt-4 space-y-3 text-xs text-gray-600">
+                    <p>
+                      Seller direct contact information is protected. Request access to unlock direct seller credentials via Flutterwave secure payment.
+                    </p>
+                    <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
+                      <Lock size={14} /> Protected Entity: {listing.sellerHolderType.toUpperCase()}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSellerPayModal(true)}
+                      className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                    >
+                      <CreditCard size={14} /> Unlock Seller Contact (Fee in XAF, Converted to NGN at checkout)
+                    </button>
                   </div>
-
-                  {sellerInfo.contactName && (
-                    <div>
-                      <span className="text-gray-500">Contact Name:</span>
-                      <strong className="block text-[#10251d]">
-                        {sellerInfo.contactName}
-                      </strong>
-                    </div>
-                  )}
-
-                  {sellerInfo.phone && (
-                    <div>
-                      <span className="text-gray-500">Phone:</span>
-                      <strong className="block text-[#10251d] font-mono">
-                        {sellerInfo.phone}
-                      </strong>
-                    </div>
-                  )}
-
-                  {sellerInfo.email && (
-                    <div>
-                      <span className="text-gray-500">Email:</span>
-                      <strong className="block text-[#10251d]">
-                        {sellerInfo.email}
-                      </strong>
-                    </div>
-                  )}
-
-                  {sellerInfo.location && (
-                    <div>
-                      <span className="text-gray-500">Location:</span>
-                      <strong className="block text-[#10251d]">
-                        {sellerInfo.location}
-                      </strong>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="mt-4 space-y-3 text-xs text-gray-600">
-                  <p>
-                    Seller direct contact information is protected. Request access to unlock direct seller credentials via Flutterwave secure payment.
-                  </p>
-                  <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
-                    <Lock size={14} /> Protected Entity: {listing.sellerHolderType.toUpperCase()}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowSellerPayModal(true)}
-                    className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                  >
-                    <CreditCard size={14} /> Unlock Seller Contact (Fee calculated in NGN at checkout)
-                  </button>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </aside>
         </section>
@@ -679,7 +716,7 @@ export default function ProductDetailPage() {
               <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Seller Information Access Fee</h2>
               <div className="flex justify-between pt-2 border-t border-[#dfe7d8] font-bold text-sm text-[#2d6130]">
                 <span>Seller Access Fee:</span>
-                <span>Calculated at checkout in NGN</span>
+                <span>Calculated in XAF (Converted to NGN at checkout)</span>
               </div>
 
               {sellerPayError && (
@@ -702,8 +739,8 @@ export default function ProductDetailPage() {
                   <span className="font-bold text-[#10251d]">{(listing.quantityAvailableKg * listing.pricePerKg).toLocaleString()} {listing.currency}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-[#dfe7d8] font-bold text-sm text-[#2d6130]">
-                  <span>Access Fee (0.5% Math.ceil):</span>
-                  <span>₦{Math.ceil(listing.quantityAvailableKg * listing.pricePerKg * 0.005).toLocaleString()} NGN</span>
+                  <span>Access Fee:</span>
+                  <span>{Math.ceil(listing.quantityAvailableKg * listing.pricePerKg * 0.005).toLocaleString()} XAF (Converted at checkout)</span>
                 </div>
               </div>
 
@@ -841,7 +878,7 @@ export default function ProductDetailPage() {
                     </span>
                   </div>
                   <div className="flex justify-between text-gray-600">
-                    <span>Platform Fee (2%):</span>
+                    <span>Platform Fee:</span>
                     <span>
                       {Math.round(purchaseQuantityKg * listing.pricePerKg * 0.02).toLocaleString()}{" "}
                       {listing.currency}

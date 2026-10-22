@@ -288,9 +288,16 @@ export default function MarketplacePage() {
   // Filtered Listings
   const filteredListings = useMemo(() => {
     return listings.filter((item) => {
+      const isOwner = user && (item.sellerHolderId === user.uid || item.createdByUid === user.uid);
+
       // User scope filter
       if (viewScope === "my-listings") {
-        if (!user || (item.sellerHolderId !== user.uid && item.createdByUid !== user.uid)) {
+        if (!isOwner) {
+          return false;
+        }
+      } else {
+        // Public Exchange (catalog): hide user's own listings
+        if (isOwner) {
           return false;
         }
       }
@@ -577,7 +584,7 @@ export default function MarketplacePage() {
                     : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
                 }`}
               >
-                Public Exchange ({listings.length})
+                Public Exchange ({listings.filter(item => !user || (item.sellerHolderId !== user.uid && item.createdByUid !== user.uid)).length})
               </button>
               {user && (
                 <button
@@ -589,7 +596,7 @@ export default function MarketplacePage() {
                       : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
                   }`}
                 >
-                  My Offerings
+                  My Offerings ({listings.filter(item => user && (item.sellerHolderId === user.uid || item.createdByUid === user.uid)).length})
                 </button>
               )}
             </div>
@@ -1336,7 +1343,7 @@ export default function MarketplacePage() {
               </div>
               <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Purchase Cocoa Offering</h2>
               <p className="mt-1 text-xs text-[#57655d]">
-                Execute real on-platform trade execution with automated platform fees (2%) and atomic
+                Execute real on-platform trade execution with automated platform fees and atomic
                 certificate transfer.
               </p>
 
@@ -1484,7 +1491,7 @@ export default function MarketplacePage() {
                     </span>
                   </div>
                   <div className="flex justify-between text-gray-600">
-                    <span>Platform Service Fee (2%):</span>
+                    <span>Platform Service Fee:</span>
                     <span>
                       {Math.round((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0) * 0.02).toLocaleString()}{" "}
                       {purchaseListing.currency}
