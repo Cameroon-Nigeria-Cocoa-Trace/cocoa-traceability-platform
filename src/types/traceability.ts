@@ -819,3 +819,17 @@ export interface CompleteTraceabilityLineage {
   qrCodes: QRCode[];
   recentScans: QRScan[];
 }
+
+export interface MarketplaceReview {
+  reviewId: string;
+  sellerId: string;
+  listingId: string;
+  tradeId: string;
+  buyerId: string;
+  buyerName: string;
+  rating: number; // e.g. 1 to 5
+  comment: string;
+  purchasedQuantityKg: number;
+  createdAt: string;
+}
+

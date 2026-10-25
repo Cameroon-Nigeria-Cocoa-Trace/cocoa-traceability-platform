@@ -16,6 +16,8 @@ import {
   TraceCertificate,
   QRCode,
   CertificateHolderType,
+  MarketplaceReview,
+  TradeRecord,
 } from "@/types/traceability";
 import {
   ShieldCheck,
@@ -36,6 +38,8 @@ import {
   ExternalLink,
   ChevronRight,
   RefreshCw,
+  Star,
+  MessageSquare,
 } from "lucide-react";
 import { CocoaGradeCard } from "@/components/CocoaGradeInfo";
 
@@ -87,6 +91,105 @@ export default function ProductDetailPage() {
   const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+
+  // Reviews & Ratings State
+  const [reviews, setReviews] = useState<MarketplaceReview[]>([]);
+  const [averageRating, setAverageRating] = useState<number>(0);
+  const [totalReviews, setTotalReviews] = useState<number>(0);
+  const [userPurchases, setUserPurchases] = useState<TradeRecord[]>([]);
+  const [formRating, setFormRating] = useState<number>(5);
+  const [formComment, setFormComment] = useState("");
+  const [selectedTradeIdForReview, setSelectedTradeIdForReview] = useState<string>("");
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState<string | null>(null);
+
+  const loadReviewsAndPurchases = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await apiClient.get<{ success: boolean; reviews: MarketplaceReview[]; averageRating: number; totalReviews: number }>(
+        `/api/marketplace/reviews?listingId=${id}`
+      );
+      if (res && res.success) {
+        setReviews(res.reviews || []);
+        setAverageRating(res.averageRating || 0);
+        setTotalReviews(res.totalReviews || 0);
+      }
+    } catch (err) {
+      console.warn("Could not load reviews:", err);
+    }
+
+    if (user) {
+      try {
+        const tradesRes = await apiClient.get<{ success: boolean; trades: TradeRecord[] }>("/api/marketplace/trades?role=buyer");
+        if (tradesRes && tradesRes.success && Array.isArray(tradesRes.trades)) {
+          const myListingTrades = tradesRes.trades.filter(
+            (t) => t.listingId === id && (t.tradeStatus === "completed" || t.tradeStatus === "delivered" || !t.tradeStatus)
+          );
+          setUserPurchases(myListingTrades);
+          if (myListingTrades.length > 0 && !selectedTradeIdForReview) {
+            const reviewedTradeIds = new Set(reviews.map((r) => r.tradeId));
+            const unreviewed = myListingTrades.find((t) => !reviewedTradeIds.has(t.tradeId));
+            if (unreviewed) {
+              setSelectedTradeIdForReview(unreviewed.tradeId);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load user purchases:", err);
+      }
+    }
+  }, [id, apiClient, user, reviews, selectedTradeIdForReview]);
+
+  useEffect(() => {
+    loadReviewsAndPurchases();
+  }, [loadReviewsAndPurchases]);
+
+  const reviewedTradeIds = useMemo(() => new Set(reviews.map((r) => r.tradeId)), [reviews]);
+  const unreviewedPurchases = useMemo(() => {
+    return userPurchases.filter((t) => !reviewedTradeIds.has(t.tradeId));
+  }, [userPurchases, reviewedTradeIds]);
+
+  const handleRateAndComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReviewError(null);
+    setReviewSuccess(null);
+    setReviewSubmitting(true);
+
+    try {
+      if (!selectedTradeIdForReview) throw new Error("Please select a purchase trade to review.");
+      if (!formComment.trim()) throw new Error("Please enter a comment.");
+
+      const res = await apiClient.post<{ success: boolean; review: MarketplaceReview }>(
+        "/api/marketplace/reviews",
+        {
+          listingId: id,
+          sellerId: listing?.sellerHolderId || listing?.createdByUid,
+          tradeId: selectedTradeIdForReview,
+          rating: Number(formRating),
+          comment: formComment.trim(),
+        }
+      );
+
+      if (res && res.success) {
+        setReviewSuccess("Review submitted successfully!");
+        setFormComment("");
+        setFormRating(5);
+        await loadReviewsAndPurchases();
+        setTimeout(() => setReviewSuccess(null), 3000);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError) {
+        setReviewError(err.message);
+      } else if (err instanceof Error) {
+        setReviewError(err.message);
+      } else {
+        setReviewError("Failed to submit review.");
+      }
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   // Load Listing Details
   const loadListingDetails = useCallback(async () => {
@@ -564,6 +667,161 @@ export default function ProductDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* Seller Ratings & Comments Section */}
+            <div className="rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
+              <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-[#edf1ea] pb-3">
+                <div>
+                  <h3 className="text-lg font-bold text-[#10251d] flex items-center gap-2">
+                    <Star size={20} className="fill-amber-400 text-amber-500" />
+                    Seller Ratings &amp; Reviews ({totalReviews})
+                  </h3>
+                  <p className="text-xs text-[#57655d]">
+                    Authentic feedback from verified cocoa buyers.
+                  </p>
+                </div>
+                {totalReviews > 0 && (
+                  <div className="flex items-center gap-2 rounded-2xl bg-[#fdfbe8] border border-[#fae89c] px-3 py-1.5">
+                    <div className="flex items-center text-amber-500">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          size={14}
+                          className={star <= Math.round(averageRating) ? "fill-amber-400 text-amber-500" : "text-gray-300"}
+                        />
+                      ))}
+                    </div>
+                    <span className="font-extrabold text-sm text-[#10251d]">{averageRating}</span>
+                    <span className="text-xs text-gray-500">/ 5.0</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Review Submission Form for Buyers */}
+              {user && (
+                <div className="mb-6 rounded-2xl border border-[#dfe7d8] bg-[#f8f9f3] p-4">
+                  <h4 className="font-bold text-xs text-[#10251d] mb-2">Leave a Rating &amp; Comment</h4>
+                  {userPurchases.length === 0 ? (
+                    <p className="text-xs text-gray-500">
+                      You must purchase cocoa or have your purchase declared by the seller before leaving a rating and comment (if you unlocked seller info, please wait until your trade is completed or declared).
+                    </p>
+                  ) : unreviewedPurchases.length === 0 ? (
+                    <div className="rounded-xl bg-[#edf7e8] border border-[#c5e4ba] p-3 text-xs text-[#1d6a45]">
+                      ✓ You have reviewed your purchase(s) for this listing. <strong>Buy again to leave another review.</strong>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleRateAndComment} className="space-y-3 text-xs">
+                      {reviewError && (
+                        <div className="rounded-xl bg-red-50 p-2.5 text-red-700 flex items-center gap-1.5 border border-red-200">
+                          <AlertCircle size={14} /> {reviewError}
+                        </div>
+                      )}
+                      {reviewSuccess && (
+                        <div className="rounded-xl bg-green-50 p-2.5 text-green-700 flex items-center gap-1.5 border border-green-200">
+                          <CheckCircle2 size={14} /> {reviewSuccess}
+                        </div>
+                      )}
+
+                      {unreviewedPurchases.length > 1 && (
+                        <div>
+                          <label className="block font-semibold mb-1 text-gray-600">Select Purchase Trade:</label>
+                          <select
+                            value={selectedTradeIdForReview}
+                            onChange={(e) => setSelectedTradeIdForReview(e.target.value)}
+                            className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2 text-xs font-mono"
+                          >
+                            {unreviewedPurchases.map((t) => (
+                              <option key={t.tradeId} value={t.tradeId}>
+                                {t.tradeNumber} ({t.quantityKg || 0} kg)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block font-semibold mb-1 text-gray-600">Rating (Stars):</label>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setFormRating(star)}
+                              className="p-1 focus:outline-none cursor-pointer"
+                            >
+                              <Star
+                                size={22}
+                                className={star <= formRating ? "fill-amber-400 text-amber-500" : "text-gray-300 hover:text-amber-400"}
+                              />
+                            </button>
+                          ))}
+                          <span className="ml-2 font-bold text-sm text-[#10251d]">{formRating} Stars</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold mb-1 text-gray-600">Your Comment:</label>
+                        <textarea
+                          rows={2}
+                          required
+                          value={formComment}
+                          onChange={(e) => setFormComment(e.target.value)}
+                          placeholder="Share your experience regarding cocoa quality, fermentation, delivery, etc..."
+                          className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={reviewSubmitting}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2 font-bold text-white transition hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                      >
+                        {reviewSubmitting ? "Submitting..." : "Submit Review"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+
+              {/* Reviews List */}
+              {reviews.length === 0 ? (
+                <div className="text-center py-8 text-xs text-gray-500">
+                  No reviews yet for this listing. Be the first verified buyer to leave a rating.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {reviews.map((rev) => (
+                    <div key={rev.reviewId} className="rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <strong className="text-[#10251d] text-sm">{rev.buyerName}</strong>
+                          {/* Amount of cocoa bought indicated as a tag beside their name */}
+                          <span className="rounded-full bg-[#edf7e8] border border-[#b8f58b] px-2 py-0.5 text-[10px] font-bold text-[#2d6130]">
+                            Verified Buyer • {rev.purchasedQuantityKg} kg purchased
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(rev.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 text-amber-500">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            size={12}
+                            className={star <= rev.rating ? "fill-amber-400 text-amber-500" : "text-gray-300"}
+                          />
+                        ))}
+                        <span className="ml-1 font-bold text-xs text-[#10251d]">{rev.rating} / 5</span>
+                      </div>
+
+                      <p className="text-gray-700 leading-relaxed">{rev.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right Sidebar: Trace Certificate & Seller Details */}
