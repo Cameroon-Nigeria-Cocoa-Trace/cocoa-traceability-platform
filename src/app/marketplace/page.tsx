@@ -42,7 +42,9 @@ import {
   HelpCircle,
   Award,
   Info,
+  Star,
 } from "lucide-react";
+import { getAllListingReviewStats } from "@/services/reviewService";
 import { CocoaGradeModal, CocoaGradeSelector } from "@/components/CocoaGradeInfo";
 import { getCocoaGradeSpec } from "@/data/cocoaGradingStandards";
 
@@ -104,20 +106,23 @@ export default function MarketplacePage() {
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
   const [calculatedIntent, setCalculatedIntent] = useState<any | null>(null);
+  const [listingReviewStats, setListingReviewStats] = useState<Record<string, { averageRating: number; totalReviews: number }>>({});
 
   // Load Listings
   const loadListings = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get<{ success: boolean; listings: MarketplaceListing[] }>(
-        "/api/marketplace/listings"
-      );
+      const [res, stats] = await Promise.all([
+        apiClient.get<{ success: boolean; listings: MarketplaceListing[] }>("/api/marketplace/listings"),
+        getAllListingReviewStats().catch(() => ({})),
+      ]);
       if (res && res.success && Array.isArray(res.listings)) {
         setListings(res.listings);
       } else {
         setListings([]);
       }
+      setListingReviewStats(stats || {});
     } catch (err: unknown) {
       if (err instanceof CocoaApiError) {
         setError(err.message);
@@ -766,10 +771,21 @@ export default function MarketplacePage() {
 
                     {/* Title & Listing Number */}
                     <h2 className="text-lg font-bold leading-snug text-[#10251d]">{item.title}</h2>
-                    <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-[#57655d]">
-                      <span>{item.listingNumber}</span>
-                      <span>•</span>
-                      <span className="capitalize">{item.sellerHolderType} seller</span>
+                    <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-[#57655d]">
+                      <div className="flex items-center gap-2">
+                        <span>{item.listingNumber}</span>
+                        <span>•</span>
+                        <span className="capitalize">{item.sellerHolderType} seller</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs font-semibold">
+                        <span className="flex items-center gap-1 text-amber-600 font-bold">
+                          <Star size={12} className="fill-amber-400 text-amber-500" />
+                          {listingReviewStats[item.listingId]?.averageRating ? listingReviewStats[item.listingId].averageRating.toFixed(1) : "0.0"}
+                        </span>
+                        <span className="text-[#57655d] font-normal">
+                          ({listingReviewStats[item.listingId]?.totalReviews || 0})
+                        </span>
+                      </div>
                     </div>
 
                     {item.description && (

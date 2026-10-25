@@ -93,3 +93,33 @@ export async function createReview(input: {
   await setDoc(doc(db, COLLECTIONS.REVIEWS, reviewId), review);
   return review;
 }
+
+export async function getAllListingReviewStats(): Promise<Record<string, { averageRating: number; totalReviews: number }>> {
+  try {
+    const snap = await getDocs(collection(db, COLLECTIONS.REVIEWS));
+    const stats: Record<string, { totalRating: number; count: number }> = {};
+    snap.forEach((d) => {
+      const r = d.data() as MarketplaceReview;
+      if (r.listingId) {
+        if (!stats[r.listingId]) {
+          stats[r.listingId] = { totalRating: 0, count: 0 };
+        }
+        stats[r.listingId].totalRating += Number(r.rating) || 0;
+        stats[r.listingId].count += 1;
+      }
+    });
+
+    const result: Record<string, { averageRating: number; totalReviews: number }> = {};
+    for (const [listingId, data] of Object.entries(stats)) {
+      result[listingId] = {
+        averageRating: data.count > 0 ? Number((data.totalRating / data.count).toFixed(1)) : 0,
+        totalReviews: data.count,
+      };
+    }
+    return result;
+  } catch (err) {
+    console.warn("Error fetching all review stats:", err);
+    return {};
+  }
+}
+
