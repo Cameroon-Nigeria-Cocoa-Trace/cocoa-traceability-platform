@@ -526,6 +526,7 @@ export interface TradeRecord {
   currency: string;
   paymentChannel: TradePaymentChannel;
   paymentReference?: string; // Unique idempotency key / gateway payment reference
+  notes?: string;
   tradeStatus: TradeStatus;
   platformFeeApplied?: AppliedFeeRecord; // CONFIRMED: 2% platform service fee on purchase price
   transferFeeApplied?: AppliedFeeRecord; // Preserved transfer fee if settled with cert transfer
@@ -851,4 +852,3 @@ export interface MarketplaceReview {
   purchasedQuantityKg: number;
   createdAt: string;
 }
-
