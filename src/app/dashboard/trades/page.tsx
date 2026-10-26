@@ -863,6 +863,8 @@ export default function TradeManagementPage() {
             </div>
           </div>
         )}
+          </div>
+        )}
         {activeTab === "negotiations" ? (
           <div className="mt-8">
             <NegotiationsView
