@@ -23,7 +23,7 @@ const ROLES = [
     description: "Coordinate farmer groups, manage collection centers, oversee cooperative inventory, and execute certificate transfers.",
     icon: Store,
     badge: "Collection Hub",
-    href: "/dashboard/cooperative",
+    href: "/signup/cooperative",
   },
   {
     id: "agent",

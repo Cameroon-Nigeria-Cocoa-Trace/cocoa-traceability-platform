@@ -51,10 +51,18 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "production-inventory",
-    title: "Production & Inventory",
-    subtitle: "Seasons, harvest events & traceable lots",
+    id: "cooperative-management",
+    title: "Cooperative & Supply Chain Hub",
+    subtitle: "Farmer membership roster, collection centers & hierarchies",
     items: [
+      {
+        name: "Cooperative Hub",
+        href: "/dashboard/cooperative",
+        icon: Store,
+        isReady: true,
+        stageBadge: "Role 4",
+        description: "Cooperative member directory, onboarding, status history & sub-cooperative hierarchy",
+      },
       {
         name: "Production Records",
         href: "/dashboard/production",
