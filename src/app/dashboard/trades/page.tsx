@@ -606,6 +606,7 @@ export default function TradeManagementPage() {
         </div>
 
         {activeTab === "trades" && (
+          <div>
             {/* Filter Bar */}
             <section className="mb-6 rounded-[24px] border border-[#dfe7d8] bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -862,7 +863,7 @@ export default function TradeManagementPage() {
             </div>
           </div>
         )}
-        {activeTab === "negotiations" && (
+        {activeTab === "negotiations" ? (
           <div className="mt-8">
             <NegotiationsView
               negotiations={filteredNegotiations}
@@ -872,7 +873,7 @@ export default function TradeManagementPage() {
               onFellThrough={openFellThroughModal}
             />
           </div>
-        )}
+        ) : null}
 
         {/* Modal: Trade Record Audit */}
         {selectedTrade && (
@@ -1206,11 +1207,10 @@ export default function TradeManagementPage() {
                     {declareSubmitting ? "Recording..." : "Declare Sale"}
                   </button>
                 </div>
-              </form>
+                </form>
             </div>
           </div>
         )}
-      </main>
     </div>
   );
 }

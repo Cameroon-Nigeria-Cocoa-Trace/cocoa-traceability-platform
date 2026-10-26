@@ -607,7 +607,7 @@ export async function GET(req: NextRequest) {
     const harvestId = searchParams.get("harvestId")?.trim();
 
     if (!farmId && !productionRecordId && !harvestId) {
-      let snapshot = await firebaseAdminDb
+      const snapshot = await firebaseAdminDb
         .collection("cocoaLots")
         .where("createdBy", "==", user.userId)
         .get();
