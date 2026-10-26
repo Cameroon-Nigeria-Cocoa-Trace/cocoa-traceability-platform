@@ -11,9 +11,8 @@ import {
   AlertCircle,
   Mail,
   Lock,
-  User,
+  Phone,
   ArrowRight,
-  Plus,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -33,19 +32,16 @@ function LoginContent() {
     user,
     loginWithGoogle,
     loginWithEmail,
-    signUpWithEmail,
     logout,
     farms,
   } = useFirebase();
 
-  // Auth Mode: "signin" | "signup"
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  // Identifier Type: "email" | "phone"
+  const [identifierType, setIdentifierType] = useState<"email" | "phone">("email");
 
   // Form states
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +60,7 @@ function LoginContent() {
       return {
         title: "Email/Password sign-in is disabled in your Firebase console.",
         detail:
-          "In Firebase Console (principal-continuum-fvr20), navigate to Authentication → Sign-in method, select 'Email/Password' and switch Enable to ON.",
+          "In Firebase Console, navigate to Authentication → Sign-in method, select 'Email/Password' and switch Enable to ON.",
       };
     }
     if (msg.includes("auth/unauthorized-domain")) {
@@ -78,13 +74,7 @@ function LoginContent() {
     if (msg.includes("auth/popup-blocked")) {
       return {
         title: "Sign-in popup was blocked by your browser or iframe.",
-        detail: "Please allow popups for this site, or use the Email/Password sign-in below.",
-      };
-    }
-    if (msg.includes("auth/email-already-in-use")) {
-      return {
-        title: "This email address is already registered. Please sign in instead.",
-        detail: null,
+        detail: "Please allow popups for this site, or use the Email/Phone sign-in below.",
       };
     }
     if (
@@ -93,7 +83,7 @@ function LoginContent() {
       msg.includes("auth/user-not-found")
     ) {
       return {
-        title: "Invalid email or password. Please verify your credentials.",
+        title: "Invalid credentials. Please verify your email/phone and password.",
         detail: null,
       };
     }
@@ -115,12 +105,6 @@ function LoginContent() {
         detail: null,
       };
     }
-    if (msg.includes("auth/argument-error")) {
-      return {
-        title: "Please ensure your email and password fields are filled out properly.",
-        detail: null,
-      };
-    }
     return {
       title: err.message,
       detail: null,
@@ -138,6 +122,10 @@ function LoginContent() {
         setTimeout(() => {
           router.push(redirectUrl);
         }, 500);
+      } else {
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 500);
       }
     } catch (err: unknown) {
       console.error("Google Auth Error:", err);
@@ -149,45 +137,43 @@ function LoginContent() {
     }
   };
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setErrorDetails(null);
     setSuccess(null);
 
-    const cleanEmail = email.trim();
-    if (!cleanEmail || !password) {
-      setError("Please fill in both email and password.");
+    const cleanInput = identifier.trim();
+    if (!cleanInput || !password) {
+      setError(`Please fill in both ${identifierType === "email" ? "email address" : "phone number"} and password.`);
       return;
     }
 
-    if (mode === "signup") {
-      if (password.length < 6) {
-        setError("Password must be at least 6 characters.");
+    let authEmail = cleanInput;
+    if (identifierType === "phone") {
+      const cleanPhone = cleanInput.replace(/\D/g, "");
+      if (cleanPhone.length < 8) {
+        setError("Please enter a valid phone number (at least 8 digits).");
         return;
       }
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        return;
-      }
+      authEmail = `phone_${cleanPhone}@phone.tracetrade.cm`;
     }
 
     try {
       setLoading(true);
-      if (mode === "signup") {
-        await signUpWithEmail(cleanEmail, password, displayName.trim() || undefined);
-        setSuccess("Account created successfully! You are now signed in.");
-      } else {
-        await loginWithEmail(cleanEmail, password);
-        setSuccess("Signed in successfully!");
-      }
+      await loginWithEmail(authEmail, password);
+      setSuccess("Signed in successfully!");
       if (redirectUrl) {
         setTimeout(() => {
           router.push(redirectUrl);
         }, 500);
+      } else {
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 500);
       }
     } catch (err: unknown) {
-      console.error("Email Auth Error:", err);
+      console.error("Auth Error:", err);
       const parsed = parseAuthError(err);
       setError(parsed.title);
       setErrorDetails(parsed.detail);
@@ -211,14 +197,12 @@ function LoginContent() {
           </div>
 
           <h1 className="mt-2 text-2xl font-semibold text-[#10251d] sm:text-3xl">
-            {user ? "Your Account" : mode === "signin" ? "Sign In" : "Create Account"}
+            {user ? "Your Account" : "Sign In"}
           </h1>
           <p className="mt-1 text-xs text-[#57655d]">
             {user
               ? "Manage your verified profile, farm records, and supply chain certificates."
-              : mode === "signin"
-              ? "Access your farm plots and verified traceability records."
-              : "Register as a cocoa producer or off-taker on the platform."}
+              : "Access your farm plots and verified traceability records."}
           </p>
 
           {error && (
@@ -249,64 +233,35 @@ function LoginContent() {
                     {(user.displayName || user.email || "U")[0].toUpperCase()}
                   </div>
                   <div className="overflow-hidden">
-                    <p className="font-semibold text-sm text-[#10251d] truncate">
-                      {user.displayName || "Producer / User"}
+                    <p className="font-bold text-[#10251d] truncate">
+                      {user.displayName || "Verified User"}
                     </p>
-                    <p className="text-[0.72rem] text-[#6f7e73] truncate">{user.email}</p>
+                    <p className="text-[11px] text-[#57655d] truncate">{user.email}</p>
+                    <p className="mt-1 text-[10px] font-mono text-[#2d6130]">
+                      UID: {user.uid.substring(0, 12)}...
+                    </p>
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#edf1ea] pt-3 text-[0.72rem]">
-                  <div>
-                    <span className="block text-[0.62rem] uppercase text-[#6f7e73]">Account UID</span>
-                    <span className="font-mono text-[#10251d]">{user.uid.slice(0, 14)}...</span>
+                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#edf1ea] pt-3">
+                  <div className="rounded-xl bg-white p-2.5 border border-[#edf1ea] text-center">
+                    <p className="text-[10px] text-[#57655d]">Registered Farms</p>
+                    <p className="text-sm font-bold text-[#10251d]">{userFarmsCount}</p>
                   </div>
-                  <div>
-                    <span className="block text-[0.62rem] uppercase text-[#6f7e73]">Your Registered Plots</span>
-                    <strong className="text-[#2d6130]">{userFarmsCount} plot(s)</strong>
+                  <div className="rounded-xl bg-white p-2.5 border border-[#edf1ea] text-center">
+                    <p className="text-[10px] text-[#57655d]">Account Status</p>
+                    <p className="text-sm font-bold text-[#2d6130]">Active</p>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2.5 pt-2">
-                {redirectUrl && (
-                  <Link
-                    href={redirectUrl}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#2a7a33] px-5 py-3 text-sm font-bold text-white !text-white shadow-sm transition hover:bg-[#1e5824]"
-                  >
-                    Return to Cocoa Offering <ArrowRight size={16} />
-                  </Link>
-                )}
+              <div className="space-y-2">
                 <Link
                   href="/dashboard"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b3528] px-5 py-3 text-sm font-bold text-white !text-white shadow-sm transition hover:bg-[#07241b]"
+                  className="w-full flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737]"
                 >
-                  Open Farmer Dashboard <ArrowRight size={16} />
+                  Go to Dashboard <ArrowRight size={14} />
                 </Link>
-                <Link
-                  href="/signup"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#b8f58b] px-5 py-3 text-sm font-bold text-[#073b2b] shadow-sm transition hover:bg-[#d0ffb0]"
-                >
-                  Register New Farm Plot <Plus size={16} />
-                </Link>
-                <Link
-                  href="/marketplace"
-                  className="inline-flex w-full items-center justify-center rounded-full border border-[#dfe7d8] bg-white px-5 py-3 text-sm font-semibold text-[#10251d] transition hover:bg-[#f7f8f3]"
-                >
-                  Explore Marketplace Lots
-                </Link>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await logout();
-                    setMode("signup");
-                    setError(null);
-                    setErrorDetails(null);
-                  }}
-                  className="w-full rounded-full border border-[#dfe7d8] bg-white px-5 py-2.5 text-xs font-semibold text-[#10251d] transition hover:bg-[#f7f8f3] cursor-pointer"
-                >
-                  + Sign Out & Register New Account
-                </button>
                 <button
                   type="button"
                   onClick={() => logout()}
@@ -317,41 +272,39 @@ function LoginContent() {
               </div>
             </div>
           ) : (
-            /* Auth Form (Sign In / Sign Up) */
-            <div className="mt-5 space-y-4">
-              {/* Tab Selector */}
+            /* Sign In Form */
+            <div className="mt-6 space-y-4">
+              {/* Identifier Type Switcher */}
               <div className="flex rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-1.5 shadow-inner">
                 <button
                   type="button"
-                  id="tab-btn-signin"
                   onClick={() => {
-                    setMode("signin");
+                    setIdentifierType("email");
+                    setIdentifier("");
                     setError(null);
-                    setErrorDetails(null);
                   }}
-                  className={`flex-1 rounded-xl py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                    mode === "signin"
+                  className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                    identifierType === "email"
                       ? "bg-white text-[#10251d] shadow-sm ring-1 ring-black/5"
-                      : "text-[#57655d] hover:text-[#10251d] hover:bg-white/50"
+                      : "text-[#57655d] hover:text-[#10251d]"
                   }`}
                 >
-                  Sign In
+                  Email Address
                 </button>
                 <button
                   type="button"
-                  id="tab-btn-signup"
                   onClick={() => {
-                    setMode("signup");
+                    setIdentifierType("phone");
+                    setIdentifier("");
                     setError(null);
-                    setErrorDetails(null);
                   }}
-                  className={`flex-1 rounded-xl py-2.5 text-xs font-bold transition-all cursor-pointer ${
-                    mode === "signup"
+                  className={`flex-1 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                    identifierType === "phone"
                       ? "bg-white text-[#10251d] shadow-sm ring-1 ring-black/5"
-                      : "text-[#57655d] hover:text-[#10251d] hover:bg-white/50"
+                      : "text-[#57655d] hover:text-[#10251d]"
                   }`}
                 >
-                  Sign Up (New Account)
+                  Phone Number
                 </button>
               </div>
 
@@ -386,42 +339,28 @@ function LoginContent() {
               <div className="relative my-3 flex items-center justify-center">
                 <div className="h-px w-full bg-[#dfe7d8]" />
                 <span className="absolute bg-white px-2 text-[0.68rem] uppercase font-bold text-[#6f7e73]">
-                  Or with email
+                  Or with credentials
                 </span>
               </div>
 
-              {/* Email/Password Form */}
-              <form onSubmit={handleEmailAuth} className="space-y-3">
-                {mode === "signup" && (
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-[#48574c]">
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <User size={14} className="absolute left-3.5 top-3.5 text-[#57655d]" />
-                      <input
-                        type="text"
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="e.g. Alain Nkweta"
-                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] py-2.5 pl-9 pr-3 text-xs text-[#10251d] outline-none transition focus:bg-white focus:border-[#2d6130]"
-                      />
-                    </div>
-                  </div>
-                )}
-
+              {/* Login Form */}
+              <form onSubmit={handleAuth} className="space-y-3">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-[#48574c]">
-                    Email Address *
+                    {identifierType === "email" ? "Email Address *" : "Phone Number *"}
                   </label>
                   <div className="relative">
-                    <Mail size={14} className="absolute left-3.5 top-3.5 text-[#57655d]" />
+                    {identifierType === "email" ? (
+                      <Mail size={14} className="absolute left-3.5 top-3.5 text-[#57655d]" />
+                    ) : (
+                      <Phone size={14} className="absolute left-3.5 top-3.5 text-[#57655d]" />
+                    )}
                     <input
-                      type="email"
+                      type={identifierType === "email" ? "email" : "tel"}
                       required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="farmer@cocoatrace.cm"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder={identifierType === "email" ? "farmer@cocoatrace.cm" : "+237 600 000 000"}
                       className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] py-2.5 pl-9 pr-3 text-xs text-[#10251d] outline-none transition focus:bg-white focus:border-[#2d6130]"
                     />
                   </div>
@@ -444,72 +383,26 @@ function LoginContent() {
                   </div>
                 </div>
 
-                {mode === "signup" && (
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-[#48574c]">
-                      Confirm Password *
-                    </label>
-                    <div className="relative">
-                      <Lock size={14} className="absolute left-3.5 top-3.5 text-[#57655d]" />
-                      <input
-                        type="password"
-                        required
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] py-2.5 pl-9 pr-3 text-xs text-[#10251d] outline-none transition focus:bg-white focus:border-[#2d6130]"
-                      />
-                    </div>
-                  </div>
-                )}
-
                 <button
                   type="submit"
                   disabled={loading}
-                  className="mt-2 w-full flex items-center justify-center gap-2 rounded-2xl bg-[#0b3528] px-4 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#07241b] disabled:opacity-50 cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] disabled:opacity-50 cursor-pointer mt-2"
                 >
                   <LogIn size={15} />
-                  {loading
-                    ? "Authenticating..."
-                    : mode === "signin"
-                    ? "Sign In with Email"
-                    : "Create Account"}
+                  {loading ? "Signing In..." : "Sign In"}
                 </button>
               </form>
 
-              <p className="mt-4 text-center text-xs text-[#57655d]">
-                {mode === "signin" ? (
-                  <>
-                    Don&apos;t have an account?{" "}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode("signup");
-                        setError(null);
-                        setErrorDetails(null);
-                      }}
-                      className="font-bold text-[#2d6130] hover:underline cursor-pointer"
-                    >
-                      Sign Up here
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    Already have an account?{" "}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMode("signin");
-                        setError(null);
-                        setErrorDetails(null);
-                      }}
-                      className="font-bold text-[#2d6130] hover:underline cursor-pointer"
-                    >
-                      Sign In here
-                    </button>
-                  </>
-                )}
-              </p>
+              {/* Redirect to Get Started */}
+              <div className="mt-6 border-t border-[#edf1ea] pt-4 text-center text-xs text-[#57655d]">
+                Don't have an account?{" "}
+                <Link
+                  href="/get-started"
+                  className="font-bold text-[#2d6130] underline hover:text-[#10251d]"
+                >
+                  Sign up here
+                </Link>
+              </div>
             </div>
           )}
         </section>

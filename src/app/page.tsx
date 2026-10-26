@@ -112,10 +112,10 @@ export default function HomePage() {
               </Link>
 
               <Link
-                href="/signup"
+                href="/get-started"
                 className="group flex items-center gap-2 rounded-full border border-white/35 bg-white/10 px-5 py-3 text-[1rem] font-semibold text-white backdrop-blur transition hover:bg-white/20 sm:gap-3 sm:px-7 sm:py-4 sm:text-base"
               >
-                Register Your Farm
+                Get Started
                 <ArrowRight size={18} className="transition group-hover:translate-x-1" />
               </Link>
 
