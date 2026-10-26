@@ -1213,6 +1213,7 @@ export default function TradeManagementPage() {
             </div>
           </div>
         )}
+      </main>
     </div>
   );
 }

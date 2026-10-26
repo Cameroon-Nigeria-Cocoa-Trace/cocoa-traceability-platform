@@ -18,11 +18,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { searchParams } = new URL(req.url);
-    const sellerUid = searchParams.get("sellerUid") || user.userId;
-
-    // Enforce that non-admins can only see their own negotiations
-    const targetUid = (user.role === "admin" || user.userId === sellerUid) ? sellerUid : user.userId;
+    // AuthenticatedUser contains only the verified UID, so scope this endpoint
+    // to that UID instead of trusting a role supplied by an unverified source.
+    const targetUid = user.userId;
 
     const negotiations = await listNegotiationsForSeller(targetUid);
 
