@@ -395,7 +395,7 @@ function LoginContent() {
 
               {/* Redirect to Get Started */}
               <div className="mt-6 border-t border-[#edf1ea] pt-4 text-center text-xs text-[#57655d]">
-                Don't have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <Link
                   href="/get-started"
                   className="font-bold text-[#2d6130] underline hover:text-[#10251d]"

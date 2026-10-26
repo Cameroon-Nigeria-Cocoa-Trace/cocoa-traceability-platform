@@ -13,6 +13,7 @@ import {
   MarketplaceListing,
   CertificateHolding,
   CertificateHolderType,
+  SellerNegotiationItem,
 } from "@/types/traceability";
 import {
   Handshake,
@@ -34,7 +35,19 @@ import {
   FileText,
   Lock,
   Star,
+  User,
+  Mail,
+  Phone,
+  Calendar,
+  XCircle,
+  AlertTriangle,
+  ShieldCheck,
+  Tag,
+  Scale,
+  Info,
 } from "lucide-react";
+import { NegotiationsView } from "@/components/trades/NegotiationsView";
+
 
 export default function TradeManagementPage() {
   const { user } = useFirebase();
@@ -46,10 +59,38 @@ export default function TradeManagementPage() {
     });
   }, [user]);
 
+  // Navigation Tab State: Completed Trades vs Active Negotiations
+  const [activeTab, setActiveTab] = useState<"trades" | "negotiations">("trades");
+
   // Trades State
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Negotiations State (Sellers viewing lots where buyers paid to access info)
+  const [negotiations, setNegotiations] = useState<SellerNegotiationItem[]>([]);
+  const [loadingNegotiations, setLoadingNegotiations] = useState(false);
+  const [negotiationsError, setNegotiationsError] = useState<string | null>(null);
+  const [negotiationFilter, setNegotiationFilter] = useState<"all" | "active" | "concluded">("all");
+  const [negotiationSearch, setNegotiationSearch] = useState("");
+
+  // Conclude Sale Modal State
+  const [concludeModalItem, setConcludeModalItem] = useState<SellerNegotiationItem | null>(null);
+  const [concludeQuantityKg, setConcludeQuantityKg] = useState<number | "">("");
+  const [concludeAgreedPricePerKg, setConcludeAgreedPricePerKg] = useState<number | "">("");
+  const [concludeBuyerId, setConcludeBuyerId] = useState("");
+  const [concludeBuyerHolderType, setConcludeBuyerHolderType] = useState<CertificateHolderType>("cooperative");
+  const [concludeNotes, setConcludeNotes] = useState("");
+  const [concludeSubmitting, setConcludeSubmitting] = useState(false);
+  const [concludeError, setConcludeError] = useState<string | null>(null);
+  const [concludeSuccess, setConcludeSuccess] = useState<string | null>(null);
+
+  // Deal Fell Through Modal State
+  const [fellThroughModalItem, setFellThroughModalItem] = useState<SellerNegotiationItem | null>(null);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [fellThroughSubmitting, setFellThroughSubmitting] = useState(false);
+  const [fellThroughError, setFellThroughError] = useState<string | null>(null);
+  const [fellThroughSuccess, setFellThroughSuccess] = useState<string | null>(null);
 
   // Filters State
   const [roleFilter, setRoleFilter] = useState<"all" | "buyer" | "seller">("all");
@@ -172,6 +213,196 @@ export default function TradeManagementPage() {
     loadTrades();
   }, [loadTrades]);
 
+  // Load Negotiations
+  const loadNegotiations = useCallback(async () => {
+    if (!user) return;
+    setLoadingNegotiations(true);
+    setNegotiationsError(null);
+
+    try {
+      const res = await apiClient.get<{ success: boolean; negotiations: SellerNegotiationItem[] }>(
+        "/api/marketplace/negotiations"
+      );
+      if (res && res.success && Array.isArray(res.negotiations)) {
+        setNegotiations(res.negotiations);
+      } else {
+        setNegotiations([]);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError) {
+        setNegotiationsError(err.message);
+      } else {
+        setNegotiationsError("Failed to fetch buyer inquiries.");
+      }
+      setNegotiations([]);
+    } finally {
+      setLoadingNegotiations(false);
+    }
+  }, [user, apiClient]);
+
+  useEffect(() => {
+    loadNegotiations();
+  }, [loadNegotiations]);
+
+  // Open Conclude Sale Modal
+  const openConcludeModal = (item: SellerNegotiationItem) => {
+    setConcludeModalItem(item);
+    setConcludeQuantityKg(item.listing.quantityAvailableKg);
+    setConcludeAgreedPricePerKg(item.listing.pricePerKg);
+    setConcludeBuyerId(item.accessRecord.buyerUid || item.accessRecord.buyerId || "");
+    setConcludeBuyerHolderType("cooperative");
+    setConcludeNotes("");
+    setConcludeError(null);
+    setConcludeSuccess(null);
+  };
+
+  // Open Fell Through Modal
+  const openFellThroughModal = (item: SellerNegotiationItem) => {
+    setFellThroughModalItem(item);
+    setCancellationReason("");
+    setFellThroughError(null);
+    setFellThroughSuccess(null);
+  };
+
+  // Handle Conclude Sale
+  const handleConcludeSale = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!concludeModalItem) return;
+    setConcludeError(null);
+    setConcludeSuccess(null);
+
+    const qty = Number(concludeQuantityKg);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setConcludeError("Please enter a valid amount bought greater than 0 kg.");
+      return;
+    }
+    if (qty > concludeModalItem.listing.quantityAvailableKg) {
+      setConcludeError(
+        `Amount bought (${qty} kg) cannot exceed the available quantity of this lot (${concludeModalItem.listing.quantityAvailableKg} kg).`
+      );
+      return;
+    }
+
+    const price = Number(concludeAgreedPricePerKg);
+    if (!Number.isFinite(price) || price <= 0) {
+      setConcludeError("Please enter a valid negotiated price per kg.");
+      return;
+    }
+
+    setConcludeSubmitting(true);
+    try {
+      const res = await apiClient.post<{
+        success: boolean;
+        message: string;
+        listing: MarketplaceListing;
+        trade?: TradeRecord;
+      }>("/api/marketplace/negotiations/conclude", {
+        listingId: concludeModalItem.listing.listingId,
+        accessId: concludeModalItem.accessRecord.accessId,
+        dealOutcome: "sold",
+        quantityKg: qty,
+        agreedPricePerKg: price,
+        buyerId: concludeBuyerId.trim() || concludeModalItem.accessRecord.buyerUid || concludeModalItem.accessRecord.buyerId,
+        buyerHolderType: concludeBuyerHolderType,
+        notes: concludeNotes.trim() || undefined,
+      });
+
+      if (res && res.success) {
+        setConcludeSuccess(res.message || "Sale successfully recorded!");
+        loadTrades();
+        loadNegotiations();
+        setTimeout(() => {
+          setConcludeModalItem(null);
+          setConcludeSuccess(null);
+        }, 1500);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError) {
+        setConcludeError(err.message);
+      } else if (err instanceof Error) {
+        setConcludeError(err.message);
+      } else {
+        setConcludeError("Failed to record negotiated sale.");
+      }
+    } finally {
+      setConcludeSubmitting(false);
+    }
+  };
+
+  // Handle Deal Fell Through
+  const handleFellThrough = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fellThroughModalItem) return;
+    setFellThroughError(null);
+    setFellThroughSuccess(null);
+    setFellThroughSubmitting(true);
+
+    try {
+      const res = await apiClient.post<{
+        success: boolean;
+        message: string;
+        listing: MarketplaceListing;
+      }>("/api/marketplace/negotiations/conclude", {
+        listingId: fellThroughModalItem.listing.listingId,
+        accessId: fellThroughModalItem.accessRecord.accessId,
+        dealOutcome: "deal_fell_through",
+        cancellationReason: cancellationReason.trim() || "Negotiation deal fell through with buyer",
+      });
+
+      if (res && res.success) {
+        setFellThroughSuccess(res.message || "Lot released back to market!");
+        loadTrades();
+        loadNegotiations();
+        setTimeout(() => {
+          setFellThroughModalItem(null);
+          setFellThroughSuccess(null);
+        }, 1200);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError) {
+        setFellThroughError(err.message);
+      } else if (err instanceof Error) {
+        setFellThroughError(err.message);
+      } else {
+        setFellThroughError("Failed to release lot back to market.");
+      }
+    } finally {
+      setFellThroughSubmitting(false);
+    }
+  };
+
+  // Filtered Negotiations
+  const filteredNegotiations = useMemo(() => {
+    return negotiations.filter((item) => {
+      const isUnderNegotiation = item.listing.listingStatus === "under_negotiation";
+      const isConcluded =
+        item.accessRecord.accessStatus === "concluded_sold" ||
+        item.accessRecord.accessStatus === "deal_fell_through";
+
+      if (negotiationFilter === "active" && !isUnderNegotiation) return false;
+      if (negotiationFilter === "concluded" && !isConcluded) return false;
+
+      if (negotiationSearch.trim()) {
+        const q = negotiationSearch.toLowerCase();
+        const matchesTitle = item.listing.title?.toLowerCase().includes(q);
+        const matchesNum = item.listing.listingNumber?.toLowerCase().includes(q);
+        const matchesLot = item.listing.lotId?.toLowerCase().includes(q);
+        const matchesBuyer = (
+          item.buyerProfile?.displayName ||
+          item.accessRecord.buyerUid ||
+          item.accessRecord.buyerId ||
+          ""
+        ).toLowerCase().includes(q);
+        const matchesEmail = (item.buyerProfile?.email || "").toLowerCase().includes(q);
+        if (!matchesTitle && !matchesNum && !matchesLot && !matchesBuyer && !matchesEmail) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [negotiations, negotiationFilter, negotiationSearch]);
+
   // Load user listings for off-platform sale declaration
   useEffect(() => {
     if (showDeclareModal && user) {
@@ -240,6 +471,13 @@ export default function TradeManagementPage() {
       if (declareQuantityKg <= 0) throw new Error("Quantity in kilograms must be greater than 0.");
       if (declarePricePerKg <= 0) throw new Error("Price per kilogram must be greater than 0.");
 
+      const selListing = myListings.find((l) => l.listingId === declareListingId);
+      if (selListing && Number(declareQuantityKg) > selListing.quantityAvailableKg) {
+        throw new Error(
+          `Amount bought (${declareQuantityKg} kg) cannot exceed available quantity of this lot (${selListing.quantityAvailableKg} kg).`
+        );
+      }
+
       const res = await apiClient.post<{ success: boolean; trade: TradeRecord }>(
         "/api/marketplace/trades/declare-off-platform-sale",
         {
@@ -261,6 +499,7 @@ export default function TradeManagementPage() {
           setShowDeclareModal(false);
           setDeclareSuccess(null);
           loadTrades();
+          loadNegotiations();
         }, 1200);
       }
     } catch (err: unknown) {
@@ -326,44 +565,85 @@ export default function TradeManagementPage() {
           </div>
         </section>
 
-        {/* Filter Bar */}
-        <section className="mb-6 rounded-[24px] border border-[#dfe7d8] bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            {/* Role Filter Tabs */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setRoleFilter("all")}
-                className={`rounded-full px-4 py-2 text-xs font-bold transition ${
-                  roleFilter === "all"
-                    ? "bg-[#0b3528] text-white"
-                    : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
-                }`}
-              >
-                All Roles ({trades.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setRoleFilter("buyer")}
-                className={`rounded-full px-4 py-2 text-xs font-bold transition ${
-                  roleFilter === "buyer"
-                    ? "bg-[#0b3528] text-white"
-                    : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
-                }`}
-              >
-                As Buyer
-              </button>
-              <button
-                type="button"
-                onClick={() => setRoleFilter("seller")}
-                className={`rounded-full px-4 py-2 text-xs font-bold transition ${
-                  roleFilter === "seller"
-                    ? "bg-[#0b3528] text-white"
-                    : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
-                }`}
-              >
-                As Seller
-              </button>
+        {/* Main View Switcher: Completed Trades vs Negotiations (Seller Info Unlocked) */}
+        <div className="mb-6 flex border-b border-[#dfe7d8] gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("trades")}
+            className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-bold transition cursor-pointer ${
+              activeTab === "trades"
+                ? "border-[#2d6130] text-[#0b3528]"
+                : "border-transparent text-[#57655d] hover:text-[#10251d]"
+            }`}
+          >
+            <Handshake size={18} />
+            Completed Commercial Trades
+            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130]">
+              {trades.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("negotiations")}
+            className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-bold transition cursor-pointer ${
+              activeTab === "negotiations"
+                ? "border-[#2d6130] text-[#0b3528]"
+                : "border-transparent text-[#57655d] hover:text-[#10251d]"
+            }`}
+          >
+            <Lock size={18} />
+            Buyer Inquiries &amp; Negotiations
+            {negotiations.filter((n) => n.listing.listingStatus === "under_negotiation").length > 0 && (
+              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold animate-pulse">
+                {negotiations.filter((n) => n.listing.listingStatus === "under_negotiation").length} Active
+              </span>
+            )}
+            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130]">
+              {negotiations.length}
+            </span>
+          </button>
+        </div>
+
+        {activeTab === "trades" && (
+            {/* Filter Bar */}
+            <section className="mb-6 rounded-[24px] border border-[#dfe7d8] bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                {/* Role Filter Tabs */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter("all")}
+                    className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+                      roleFilter === "all"
+                        ? "bg-[#0b3528] text-white"
+                        : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
+                    }`}
+                  >
+                    All Roles ({trades.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter("buyer")}
+                    className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+                      roleFilter === "buyer"
+                        ? "bg-[#0b3528] text-white"
+                        : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
+                    }`}
+                  >
+                    As Buyer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter("seller")}
+                    className={`rounded-full px-4 py-2 text-xs font-bold transition ${
+                      roleFilter === "seller"
+                        ? "bg-[#0b3528] text-white"
+                        : "bg-[#f1f4ec] text-[#57655d] hover:bg-[#e4ebd9]"
+                    }`}
+                  >
+                    As Seller
+                  </button>
             </div>
 
             {/* Search Input */}
@@ -580,6 +860,17 @@ export default function TradeManagementPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+        {activeTab === "negotiations" && (
+          <div className="mt-8">
+            <NegotiationsView
+              negotiations={filteredNegotiations}
+              loading={loadingNegotiations}
+              error={negotiationsError}
+              onConclude={openConcludeModal}
+              onFellThrough={openFellThroughModal}
+            />
           </div>
         )}
 

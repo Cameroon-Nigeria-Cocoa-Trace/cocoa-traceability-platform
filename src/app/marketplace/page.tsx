@@ -424,6 +424,9 @@ export default function MarketplacePage() {
 
   // Open Purchase Modal
   const openPurchaseModal = async (listing: MarketplaceListing) => {
+    if (listing.listingStatus === "under_negotiation") {
+      return;
+    }
     setPurchaseListing(listing);
     setPurchaseError(null);
     setPurchaseSuccess(null);
@@ -456,6 +459,10 @@ export default function MarketplacePage() {
   // Execute Purchase
   const handleExecutePurchase = async () => {
     if (!purchaseListing) return;
+    if (purchaseListing.listingStatus === "under_negotiation") {
+      setPurchaseError("This cocoa offering is currently under negotiation and cannot be purchased.");
+      return;
+    }
     setPurchaseSubmitting(true);
     setPurchaseError(null);
 
@@ -889,10 +896,30 @@ export default function MarketplacePage() {
                       {!isSold && !isOwner && (
                         <button
                           type="button"
-                          onClick={() => openPurchaseModal(item)}
-                          className="flex-1 inline-flex items-center justify-center rounded-full bg-[#0b3528] py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] cursor-pointer"
+                          onClick={() => {
+                            if (!isUnderNegotiation) {
+                              openPurchaseModal(item);
+                            }
+                          }}
+                          disabled={isUnderNegotiation}
+                          title={
+                            isUnderNegotiation
+                              ? "This cocoa offering is currently under negotiation and cannot be purchased."
+                              : "Buy Cocoa"
+                          }
+                          className={`flex-1 inline-flex items-center justify-center rounded-full py-2 text-xs font-bold transition ${
+                            isUnderNegotiation
+                              ? "bg-amber-100 text-amber-800 border border-amber-300 opacity-80 cursor-not-allowed shadow-none"
+                              : "bg-[#0b3528] text-white hover:bg-[#144737] shadow-sm cursor-pointer"
+                          }`}
                         >
-                          Buy Cocoa
+                          {isUnderNegotiation ? (
+                            <span className="flex items-center gap-1">
+                              <Lock size={12} /> Under Negotiation
+                            </span>
+                          ) : (
+                            "Buy Cocoa"
+                          )}
                         </button>
                       )}
                     </div>
@@ -1369,6 +1396,13 @@ export default function MarketplacePage() {
                 certificate transfer.
               </p>
 
+              {purchaseListing.listingStatus === "under_negotiation" && (
+                <div className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-300 flex items-start gap-2">
+                  <Lock size={15} className="shrink-0 mt-0.5 text-amber-600" />
+                  <span>This cocoa offering is currently under negotiation. Purchases are temporarily locked.</span>
+                </div>
+              )}
+
               {purchaseError && (
                 <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2 border border-red-200">
                   <AlertCircle size={15} className="shrink-0 mt-0.5" />
@@ -1548,10 +1582,14 @@ export default function MarketplacePage() {
                     <button
                       type="button"
                       onClick={handleExecutePurchase}
-                      disabled={purchaseSubmitting}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                      disabled={purchaseSubmitting || purchaseListing.listingStatus === "under_negotiation"}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
-                      {purchaseSubmitting ? "Finalizing Transaction..." : "Confirm & Execute Trade"}
+                      {purchaseSubmitting
+                        ? "Finalizing Transaction..."
+                        : purchaseListing.listingStatus === "under_negotiation"
+                        ? "Under Negotiation"
+                        : "Confirm & Execute Trade"}
                     </button>
                   )}
                 </div>

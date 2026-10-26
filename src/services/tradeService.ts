@@ -34,7 +34,9 @@ import {
   PaymentMechanism,
   AppliedFeeRecord,
   SellerAccessRecord,
+  SellerNegotiationItem,
   MarketplaceListing,
+  MarketplaceListingStatus,
   CertificateHolding,
   CertificateHolderType,
   QRCode,
@@ -59,6 +61,8 @@ export const COLLECTIONS = {
   CERTIFICATE_HOLDINGS: "certificateHoldings",
   CERTIFICATE_TRANSFERS: "certificateTransfers",
   QR_CODES: "qrCodes",
+  CERTIFICATES: "certificates",
+  COCOA_LOTS: "cocoaLots",
 } as const;
 
 export interface PurchaseIntentInput {
@@ -123,6 +127,28 @@ export interface DeclareOffPlatformSaleInput {
   actorUid?: string;
 }
 
+export interface ConcludeNegotiationInput {
+  listingId: string;
+  accessId?: string;
+  sellerUid: string;
+  dealOutcome: "sold" | "deal_fell_through";
+  quantityKg?: number;
+  agreedPricePerKg?: number;
+  buyerId?: string;
+  buyerHolderType?: CertificateHolderType;
+  currency?: string;
+  notes?: string;
+  cancellationReason?: string;
+}
+
+export interface ConcludeNegotiationResult {
+  success: boolean;
+  listing: MarketplaceListing;
+  trade?: TradeRecord;
+  destHolding?: CertificateHolding;
+  message: string;
+}
+
 /**
  * Generates a unique traceable Trade Number.
  * Format: TRD-CMR-YYYY-XXXXXX
@@ -150,7 +176,13 @@ export async function createPurchaseIntent(
     throw new Error(`Lookup Error: Marketplace listing "${input.listingId}" does not exist.`);
   }
 
-  if (listing.listingStatus !== "available" && listing.listingStatus !== "under_negotiation") {
+  if (listing.listingStatus === "under_negotiation") {
+    throw new Error(
+      `State Error: Cannot purchase listing "${listing.listingId}" because it is currently under negotiation.`
+    );
+  }
+
+  if (listing.listingStatus !== "available") {
     throw new Error(
       `State Error: Cannot purchase listing in "${listing.listingStatus}" status. Listing must be "available".`
     );
@@ -320,7 +352,13 @@ export async function verifyAndFinalizeOnPlatformPurchase(
     }
     const listing = listingSnap.data() as MarketplaceListing;
 
-    if (listing.listingStatus !== "available" && listing.listingStatus !== "under_negotiation") {
+    if (listing.listingStatus === "under_negotiation") {
+      throw new Error(
+        `Purchase Error: Listing "${listing.listingId}" is currently under negotiation and cannot be purchased.`
+      );
+    }
+
+    if (listing.listingStatus !== "available") {
       throw new Error(
         `Purchase Error: Listing "${listing.listingId}" is in "${listing.listingStatus}" status and cannot be purchased.`
       );
@@ -548,6 +586,12 @@ export async function paySellerInfoAccessFee(
       throw new Error(`Listing Error: Marketplace listing "${input.listingId}" does not exist.`);
     }
     const listing = listingSnap.data() as MarketplaceListing;
+
+    if (listing.listingStatus === "under_negotiation") {
+      throw new Error(
+        "State Error: This cocoa lot is currently under negotiation. Seller contact access is locked."
+      );
+    }
 
     if (listing.listingStatus !== "available") {
       throw new Error(
@@ -812,6 +856,8 @@ export async function getSellerInfoForListing(
 
 /**
  * Declares an off-platform trade negotiation settlement.
+ * Deducts available listing quantity, transitions status to available (if partial) or sold (if complete),
+ * and executes certificate transfer / holding splitting if the listing is certified.
  */
 export async function declareOffPlatformSale(
   input: DeclareOffPlatformSaleInput
@@ -822,47 +868,464 @@ export async function declareOffPlatformSale(
   if (!input.listingId || !input.listingId.trim()) {
     throw new Error("Validation Error: listingId is required.");
   }
-
-  const listing = await getMarketplaceListing(input.listingId);
-  if (!listing) {
-    throw new Error(`Lookup Error: Marketplace listing "${input.listingId}" does not exist.`);
+  if (!input.quantityKg || input.quantityKg <= 0) {
+    throw new Error("Validation Error: Quantity in kilograms must be greater than 0.");
+  }
+  if (!input.negotiatedPricePerKg || input.negotiatedPricePerKg <= 0) {
+    throw new Error("Validation Error: Negotiated price per kilogram must be greater than 0.");
   }
 
-  const now = new Date().toISOString();
-  const tradeId = input.tradeId?.trim() || `trade_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const tradeNumber = generateTradeNumber();
-  const tradeValue = input.quantityKg * input.negotiatedPricePerKg;
+  const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, input.listingId.trim());
 
-  const tradeRecord: TradeRecord = {
-    tradeId,
-    tradeNumber,
-    listingId: listing.listingId,
-    certificationType: listing.certificationType,
-    lotId: listing.lotId,
-    certificateId: listing.certificateId,
-    sourceHoldingId: listing.sourceHoldingId,
-    sellerId: input.sellerHolderId.trim(),
-    sellerHolderId: input.sellerHolderId.trim(),
-    sellerHolderType: input.sellerHolderType,
-    buyerId: input.buyerId.trim(),
-    buyerHolderType: input.buyerHolderType,
-    quantityKg: input.quantityKg,
-    negotiatedPricePerKg: input.negotiatedPricePerKg,
-    totalAmount: tradeValue,
-    currency: (input.currency || listing.currency || "XAF").toUpperCase(),
-    paymentChannel: "off_platform",
-    tradeStatus: "completed",
-    tradeDate: now,
-    createdAt: now,
-    updatedAt: now,
-  };
+  return await runTransaction(db, async (tx) => {
+    const listingSnap = await tx.get(listingRef);
+    if (!listingSnap.exists()) {
+      throw new Error(`Lookup Error: Marketplace listing "${input.listingId}" does not exist.`);
+    }
 
-  const tradeRef = doc(db, COLLECTIONS.TRADES, tradeId);
-  await runTransaction(db, async (tx) => {
+    const listing = listingSnap.data() as MarketplaceListing;
+
+    // Quantity validation rule: cannot buy more than available quantity
+    if (input.quantityKg > listing.quantityAvailableKg) {
+      throw new Error(
+        `Validation Error: Purchased quantity (${input.quantityKg} kg) cannot exceed the available listing quantity (${listing.quantityAvailableKg} kg).`
+      );
+    }
+
+    const now = new Date().toISOString();
+    const tradeId = input.tradeId?.trim() || `trade_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const tradeNumber = generateTradeNumber();
+    const tradeValue = input.quantityKg * input.negotiatedPricePerKg;
+    const transferId = `trans_${tradeId}`;
+
+    const remainingQuantity = Math.max(0, listing.quantityAvailableKg - input.quantityKg);
+    const newListingStatus: MarketplaceListingStatus = remainingQuantity <= 0 ? "sold" : "available";
+
+    // 1. Certificate Transfer and Holding Splitting if certified
+    let destHoldingResult: CertificateHolding | undefined = undefined;
+    let transferFeeRecord: AppliedFeeRecord | undefined = undefined;
+
+    if (listing.certificationType === "certified" && listing.sourceHoldingId) {
+      const sourceHoldingRef = doc(db, COLLECTIONS.CERTIFICATE_HOLDINGS, listing.sourceHoldingId);
+      const sourceHoldingSnap = await tx.get(sourceHoldingRef);
+      if (!sourceHoldingSnap.exists()) {
+        throw new Error(`Custody Error: Source holding "${listing.sourceHoldingId}" does not exist.`);
+      }
+      const sourceHolding = sourceHoldingSnap.data() as CertificateHolding;
+
+      const buyerHolderType = input.buyerHolderType || "cooperative";
+      const route = validateTransferRoute(sourceHolding.holderType, buyerHolderType);
+      transferFeeRecord = calculateTransferFee(route, input.quantityKg, listing.currency, sourceHolding.holderId);
+
+      const transferResult = executeCertificateTransferInTransaction({
+        tx,
+        transferId,
+        sourceHolding,
+        destinationHolderId: input.buyerId.trim(),
+        destinationHolderType: buyerHolderType,
+        quantityKg: input.quantityKg,
+        actorUid: input.sellerHolderId.trim(),
+        feeApplied: transferFeeRecord,
+        route,
+        now,
+      });
+
+      destHoldingResult = transferResult.destHolding;
+    }
+
+    // 2. Update Marketplace Listing
+    tx.update(listingRef, {
+      quantityAvailableKg: remainingQuantity,
+      listingStatus: newListingStatus,
+      pendingAccessIntent: null,
+      updatedAt: now,
+    });
+
+    // 3. Record Trade Record
+    const tradeRecord: TradeRecord = {
+      tradeId,
+      tradeNumber,
+      listingId: listing.listingId,
+      certificationType: listing.certificationType,
+      lotId: listing.lotId,
+      certificateId: listing.certificateId,
+      sourceHoldingId: listing.sourceHoldingId,
+      destHoldingId: destHoldingResult?.holdingId,
+      transferId: listing.certificationType === "certified" ? transferId : undefined,
+      sellerId: input.sellerHolderId.trim(),
+      sellerHolderId: input.sellerHolderId.trim(),
+      sellerHolderType: input.sellerHolderType,
+      buyerId: input.buyerId.trim(),
+      buyerHolderType: input.buyerHolderType,
+      quantityKg: input.quantityKg,
+      negotiatedPricePerKg: input.negotiatedPricePerKg,
+      totalAmount: tradeValue,
+      currency: (input.currency || listing.currency || "XAF").toUpperCase(),
+      paymentChannel: "off_platform",
+      tradeStatus: "completed",
+      notes: input.notes?.trim() || "Negotiated settlement after contact access",
+      tradeDate: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const tradeRef = doc(db, COLLECTIONS.TRADES, tradeId);
     tx.set(tradeRef, tradeRecord);
-  });
 
-  return tradeRecord;
+    // 4. Update any matching Seller Access Record for this buyer & listing
+    const candidateAccessId1 = `SAR-${listing.listingId}-${input.buyerId.trim()}`;
+    const candidateAccessId2 = `acc_${listing.listingId}_${input.buyerId.trim()}`;
+
+    for (const accId of [candidateAccessId1, candidateAccessId2]) {
+      const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, accId);
+      const accSnap = await tx.get(accRef);
+      if (accSnap.exists()) {
+        tx.update(accRef, {
+          accessStatus: "concluded_sold",
+          dealOutcome: "sold",
+          soldQuantityKg: input.quantityKg,
+          agreedPricePerKg: input.negotiatedPricePerKg,
+          tradeId,
+          concludedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    return tradeRecord;
+  });
+}
+
+/**
+ * Concludes a buyer-seller negotiation on a cocoa listing.
+ * Handles:
+ * - Deal Fell Through: Restores listing to "available" and releases negotiation lock.
+ * - Deal Succeeded (Sold): Validates purchased weight (cannot exceed lot stock), handles bargained price per kg,
+ *   transfers certificate holdings, creates trade record, and updates listing to "available" (if partial) or "sold" (if complete).
+ */
+export async function concludeNegotiationDeal(
+  input: ConcludeNegotiationInput
+): Promise<ConcludeNegotiationResult> {
+  if (!input.listingId || !input.listingId.trim()) {
+    throw new Error("Validation Error: listingId is required.");
+  }
+  if (!input.sellerUid || !input.sellerUid.trim()) {
+    throw new Error("Authentication Error: sellerUid is required.");
+  }
+
+  const cleanListingId = input.listingId.trim();
+  const cleanSellerUid = input.sellerUid.trim();
+  const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, cleanListingId);
+
+  return await runTransaction(db, async (tx) => {
+    const listingSnap = await tx.get(listingRef);
+    if (!listingSnap.exists()) {
+      throw new Error(`Lookup Error: Marketplace listing "${cleanListingId}" does not exist.`);
+    }
+
+    const listing = listingSnap.data() as MarketplaceListing;
+
+    // Verify ownership
+    const isOwner = listing.sellerHolderId === cleanSellerUid || listing.createdByUid === cleanSellerUid;
+    if (!isOwner) {
+      throw new Error("Security Error: Only the owner/seller of this listing can conclude negotiations.");
+    }
+
+    const now = new Date().toISOString();
+
+    // BRANCH 1: Deal Fell Through
+    if (input.dealOutcome === "deal_fell_through") {
+      tx.update(listingRef, {
+        listingStatus: "available",
+        pendingAccessIntent: null,
+        updatedAt: now,
+      });
+
+      // Update specific access record if provided
+      if (input.accessId && input.accessId.trim()) {
+        const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, input.accessId.trim());
+        const accSnap = await tx.get(accRef);
+        if (accSnap.exists()) {
+          tx.update(accRef, {
+            accessStatus: "deal_fell_through",
+            dealOutcome: "deal_fell_through",
+            cancellationReason: input.cancellationReason?.trim() || "Deal fell through after negotiation",
+            concludedAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+
+      const updatedListing: MarketplaceListing = {
+        ...listing,
+        listingStatus: "available",
+        pendingAccessIntent: undefined,
+        updatedAt: now,
+      };
+
+      return {
+        success: true,
+        listing: updatedListing,
+        message: "Deal marked as fell through. Cocoa lot is listed back as available on the marketplace.",
+      };
+    }
+
+    // BRANCH 2: Deal Succeeded / Sold
+    const quantityKg = Number(input.quantityKg);
+    if (!Number.isFinite(quantityKg) || quantityKg <= 0) {
+      throw new Error("Validation Error: Amount bought must be greater than 0 kg.");
+    }
+
+    // Explicit constraint: cannot buy more than available quantity of that lot
+    if (quantityKg > listing.quantityAvailableKg) {
+      throw new Error(
+        `Validation Error: Amount bought (${quantityKg} kg) cannot exceed the available quantity of this lot (${listing.quantityAvailableKg} kg).`
+      );
+    }
+
+    // Price per kg: if bargained and less was paid, record the bargained price
+    const agreedPricePerKg = Number(
+      input.agreedPricePerKg !== undefined && input.agreedPricePerKg > 0
+        ? input.agreedPricePerKg
+        : listing.pricePerKg
+    );
+    if (!Number.isFinite(agreedPricePerKg) || agreedPricePerKg <= 0) {
+      throw new Error("Validation Error: Negotiated price per kg must be greater than 0.");
+    }
+
+    const tradeId = `trade_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const tradeNumber = generateTradeNumber();
+    const tradeValue = quantityKg * agreedPricePerKg;
+    const transferId = `trans_${tradeId}`;
+
+    const remainingQuantity = Math.max(0, listing.quantityAvailableKg - quantityKg);
+    const newListingStatus: MarketplaceListingStatus = remainingQuantity <= 0 ? "sold" : "available";
+
+    // Certificate Transfer & Holding Splitting if certified
+    let destHoldingResult: CertificateHolding | undefined = undefined;
+    let transferFeeRecord: AppliedFeeRecord | undefined = undefined;
+
+    if (listing.certificationType === "certified" && listing.sourceHoldingId) {
+      const sourceHoldingRef = doc(db, COLLECTIONS.CERTIFICATE_HOLDINGS, listing.sourceHoldingId);
+      const sourceHoldingSnap = await tx.get(sourceHoldingRef);
+      if (!sourceHoldingSnap.exists()) {
+        throw new Error(`Custody Error: Source holding "${listing.sourceHoldingId}" does not exist.`);
+      }
+      const sourceHolding = sourceHoldingSnap.data() as CertificateHolding;
+
+      const buyerHolderType = input.buyerHolderType || "cooperative";
+      const route = validateTransferRoute(sourceHolding.holderType, buyerHolderType);
+      transferFeeRecord = calculateTransferFee(route, quantityKg, listing.currency, sourceHolding.holderId);
+
+      const transferResult = executeCertificateTransferInTransaction({
+        tx,
+        transferId,
+        sourceHolding,
+        destinationHolderId: (input.buyerId?.trim()) || "buyer_off_platform",
+        destinationHolderType: buyerHolderType,
+        quantityKg,
+        actorUid: cleanSellerUid,
+        feeApplied: transferFeeRecord,
+        route,
+        now,
+      });
+
+      destHoldingResult = transferResult.destHolding;
+    }
+
+    // Update Listing: listed back as available if partial, or sold if complete
+    tx.update(listingRef, {
+      quantityAvailableKg: remainingQuantity,
+      listingStatus: newListingStatus,
+      pendingAccessIntent: null,
+      updatedAt: now,
+    });
+
+    // Record Trade Record
+    const buyerIdentifier = input.buyerId?.trim() || "buyer_off_platform";
+    const tradeRecord: TradeRecord = {
+      tradeId,
+      tradeNumber,
+      listingId: listing.listingId,
+      certificationType: listing.certificationType,
+      lotId: listing.lotId,
+      certificateId: listing.certificateId,
+      sourceHoldingId: listing.sourceHoldingId,
+      destHoldingId: destHoldingResult?.holdingId,
+      transferId: listing.certificationType === "certified" ? transferId : undefined,
+      sellerId: listing.sellerHolderId,
+      sellerHolderId: listing.sellerHolderId,
+      sellerHolderType: listing.sellerHolderType,
+      buyerId: buyerIdentifier,
+      buyerHolderType: input.buyerHolderType || "cooperative",
+      quantityKg,
+      negotiatedPricePerKg: agreedPricePerKg,
+      totalAmount: tradeValue,
+      currency: (input.currency || listing.currency || "XAF").toUpperCase(),
+      paymentChannel: "off_platform",
+      tradeStatus: "completed",
+      notes: input.notes?.trim() || "Negotiated settlement after seller contact access",
+      tradeDate: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const tradeRef = doc(db, COLLECTIONS.TRADES, tradeId);
+    tx.set(tradeRef, tradeRecord);
+
+    // Update Seller Access Record
+    if (input.accessId && input.accessId.trim()) {
+      const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, input.accessId.trim());
+      const accSnap = await tx.get(accRef);
+      if (accSnap.exists()) {
+        tx.update(accRef, {
+          accessStatus: "concluded_sold",
+          dealOutcome: "sold",
+          soldQuantityKg: quantityKg,
+          agreedPricePerKg,
+          tradeId,
+          concludedAt: now,
+          updatedAt: now,
+        });
+      }
+    } else {
+      // Look up candidate access records
+      const c1 = `SAR-${listing.listingId}-${buyerIdentifier}`;
+      const c2 = `acc_${listing.listingId}_${buyerIdentifier}`;
+      for (const cid of [c1, c2]) {
+        const cRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, cid);
+        const cSnap = await tx.get(cRef);
+        if (cSnap.exists()) {
+          tx.update(cRef, {
+            accessStatus: "concluded_sold",
+            dealOutcome: "sold",
+            soldQuantityKg: quantityKg,
+            agreedPricePerKg,
+            tradeId,
+            concludedAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    }
+
+    const updatedListing: MarketplaceListing = {
+      ...listing,
+      quantityAvailableKg: remainingQuantity,
+      listingStatus: newListingStatus,
+      pendingAccessIntent: undefined,
+      updatedAt: now,
+    };
+
+    const statusNote = remainingQuantity <= 0
+      ? "All available cocoa was bought. Listing marked as SOLD."
+      : `Partial sale recorded (${quantityKg.toLocaleString()} kg). Remaining ${remainingQuantity.toLocaleString()} kg listed back as AVAILABLE on marketplace.`;
+
+    return {
+      success: true,
+      listing: updatedListing,
+      trade: tradeRecord,
+      destHolding: destHoldingResult,
+      message: `Sale successfully recorded! ${statusNote}`,
+    };
+  });
+}
+
+/**
+ * Lists all cocoa lots where buyers have paid to access seller information
+ * for a specific seller, enriched with listing data and buyer profiles.
+ */
+export async function listNegotiationsForSeller(
+  sellerUid: string
+): Promise<SellerNegotiationItem[]> {
+  const cleanSellerUid = sellerUid.trim();
+
+  // 1. Fetch all marketplace listings owned/created by this seller
+  const listingsCol = collection(db, COLLECTIONS.MARKETPLACE_LISTINGS);
+  const listingsSnap = await getDocs(listingsCol);
+  const sellerListingsMap = new Map<string, MarketplaceListing>();
+
+  for (const d of listingsSnap.docs) {
+    const l = d.data() as MarketplaceListing;
+    if (l.sellerHolderId === cleanSellerUid || l.createdByUid === cleanSellerUid) {
+      sellerListingsMap.set(l.listingId, l);
+    }
+  }
+
+  // 2. Fetch all seller access records for this seller or their listings
+  const accessCol = collection(db, COLLECTIONS.SELLER_ACCESS_RECORDS);
+  const accessSnap = await getDocs(accessCol);
+  const relevantAccessRecords: SellerAccessRecord[] = [];
+
+  for (const d of accessSnap.docs) {
+    const r = d.data() as SellerAccessRecord;
+    const isDirectSeller = r.sellerHolderId === cleanSellerUid || r.sellerId === cleanSellerUid;
+    const isSellerListing = sellerListingsMap.has(r.listingId);
+    if (isDirectSeller || isSellerListing) {
+      relevantAccessRecords.push(r);
+    }
+  }
+
+  // 3. Fallback: if a listing is currently "under_negotiation" without an explicit access record doc
+  const coveredListingIds = new Set(relevantAccessRecords.map((r) => r.listingId));
+  for (const [lid, l] of sellerListingsMap.entries()) {
+    if (l.listingStatus === "under_negotiation" && !coveredListingIds.has(lid)) {
+      relevantAccessRecords.push({
+        accessId: `SAR-${lid}-active`,
+        listingId: lid,
+        lotId: l.lotId,
+        buyerId: l.pendingAccessIntent?.buyerUid || "prospective_buyer",
+        buyerUid: l.pendingAccessIntent?.buyerUid || "prospective_buyer",
+        sellerHolderId: l.sellerHolderId,
+        sellerId: l.sellerHolderId,
+        feePaid: 0,
+        currency: l.currency,
+        accessStatus: "active",
+        accessGrantedAt: l.updatedAt || new Date().toISOString(),
+      });
+    }
+  }
+
+  // 4. Enrich each record with buyer profile & full listing details
+  const results: SellerNegotiationItem[] = [];
+
+  for (const rec of relevantAccessRecords) {
+    const listing = sellerListingsMap.get(rec.listingId) || (await getMarketplaceListing(rec.listingId));
+    if (!listing) continue;
+
+    let buyerProfile: SellerNegotiationItem["buyerProfile"] = undefined;
+    const bId = rec.buyerUid || rec.buyerId;
+    if (bId && bId !== "prospective_buyer" && bId !== "buyer_off_platform") {
+      try {
+        const uSnap = await getDoc(doc(db, "users", bId));
+        if (uSnap.exists()) {
+          const u = uSnap.data();
+          buyerProfile = {
+            userId: bId,
+            displayName: u.displayName || u.name,
+            email: u.email,
+            phone: u.phone || u.phoneNumber,
+            role: u.role,
+          };
+        }
+      } catch {
+        // Continue
+      }
+    }
+
+    results.push({
+      accessRecord: rec,
+      listing,
+      buyerProfile,
+    });
+  }
+
+  // Sort by date (most recent first)
+  return results.sort((a, b) => {
+    const timeA = new Date(a.accessRecord.accessGrantedAt || a.accessRecord.createdAt || 0).getTime();
+    const timeB = new Date(b.accessRecord.accessGrantedAt || b.accessRecord.createdAt || 0).getTime();
+    return timeB - timeA;
+  });
 }
 
 /**

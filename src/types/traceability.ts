@@ -464,12 +464,31 @@ export interface SellerAccessRecord {
   feePaid: number; // Snapshot of fee paid
   amountPaid?: number; // Snapshot of amount paid (NGN)
   currency: string;
-  accessStatus: "active" | "expired" | "revoked" | (string & {});
+  accessStatus: "active" | "expired" | "revoked" | "concluded_sold" | "deal_fell_through" | (string & {});
   status?: "active" | "revoked";
   accessGrantedAt: string; // ISO 8601 Timestamp
   expiresAt?: string; // Optional configurable expiration
   createdAt?: string;
   updatedAt?: string;
+  // Negotiation tracking fields:
+  dealOutcome?: "sold" | "deal_fell_through";
+  soldQuantityKg?: number;
+  agreedPricePerKg?: number;
+  tradeId?: string;
+  cancellationReason?: string;
+  concludedAt?: string;
+}
+
+export interface SellerNegotiationItem {
+  accessRecord: SellerAccessRecord;
+  listing: MarketplaceListing;
+  buyerProfile?: {
+    userId: string;
+    displayName?: string;
+    email?: string;
+    phone?: string;
+    role?: string;
+  };
 }
 
 // ============================================================================

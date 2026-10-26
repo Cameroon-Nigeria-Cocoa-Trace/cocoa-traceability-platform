@@ -294,7 +294,10 @@ service cloud.firestore {
     match /trades/{tradeId} {
       allow read: if isSignedIn() && (
         resource.data.buyerUid == request.auth.uid
+        || resource.data.buyerId == request.auth.uid
         || resource.data.sellerUid == request.auth.uid
+        || resource.data.sellerId == request.auth.uid
+        || resource.data.sellerHolderId == request.auth.uid
         || isAdmin()
       );
       allow create, update: if isSignedIn();
@@ -304,7 +307,9 @@ service cloud.firestore {
     match /payments/{paymentId} {
       allow read: if isSignedIn() && (
         resource.data.buyerUid == request.auth.uid
+        || resource.data.buyerId == request.auth.uid
         || resource.data.sellerUid == request.auth.uid
+        || resource.data.sellerId == request.auth.uid
         || isAdmin()
       );
       allow create, update: if isSignedIn();
@@ -314,7 +319,10 @@ service cloud.firestore {
     match /sellerAccessRecords/{recordId} {
       allow read: if isSignedIn() && (
         resource.data.buyerUid == request.auth.uid
+        || resource.data.buyerId == request.auth.uid
         || resource.data.sellerUid == request.auth.uid
+        || resource.data.sellerId == request.auth.uid
+        || resource.data.sellerHolderId == request.auth.uid
         || isAdmin()
       );
       allow write: if isSignedIn();

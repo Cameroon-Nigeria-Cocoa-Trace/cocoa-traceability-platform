@@ -269,6 +269,18 @@ export async function initiateSellerInfoAccessPayment(
   const preflightListing =
     preflightListingSnap.data() as MarketplaceListing;
 
+  if (preflightListing.listingStatus === "under_negotiation") {
+    throw new Error(
+      "State Error: This cocoa lot is currently under negotiation. Seller contact access is locked."
+    );
+  }
+
+  if (preflightListing.listingStatus !== "available") {
+    throw new Error(
+      `State Error: Cannot initiate payment for listing in "${preflightListing.listingStatus}" status. Listing must be "available".`
+    );
+  }
+
   const preflightIntentExpiry = preflightListing.pendingAccessIntent?.expiresAt;
   const preflightExpiryMs = preflightIntentExpiry
     ? Date.parse(preflightIntentExpiry)
@@ -369,6 +381,11 @@ export async function initiateSellerInfoAccessPayment(
     }
 
     // Invariant 1: Listing must be strictly "available"
+    if (listing.listingStatus === "under_negotiation") {
+      throw new Error(
+        "State Error: This cocoa lot is currently under negotiation. Seller contact access is locked."
+      );
+    }
     if (listing.listingStatus !== "available") {
       throw new Error(
         `State Error: Cannot initiate payment for listing in "${listing.listingStatus}" status. Listing must be "available".`

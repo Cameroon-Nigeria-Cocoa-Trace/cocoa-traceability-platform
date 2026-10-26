@@ -290,6 +290,10 @@ export default function ProductDetailPage() {
   // Handle Flutterwave Seller Information Access Payment Initiation
   const handleInitiateSellerPayment = async () => {
     if (!listing) return;
+    if (listing.listingStatus === "under_negotiation" || isUnderNegotiation) {
+      setSellerPayError("This listing is currently under negotiation. Contact access fee payment is disabled.");
+      return;
+    }
     setSellerPaySubmitting(true);
     setSellerPayError(null);
 
@@ -440,6 +444,7 @@ export default function ProductDetailPage() {
 
   const isCertified = listing.certificationType === "certified";
   const isSold = listing.listingStatus === "sold" || listing.quantityAvailableKg <= 0;
+  const isUnderNegotiation = listing.listingStatus === "under_negotiation";
 
   return (
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
@@ -472,8 +477,14 @@ export default function ProductDetailPage() {
             )}
             <div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-[#eefbf3] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#1d6a45]">
-                  {listing.listingStatus.toUpperCase()}
+                <span className={`rounded-full px-2.5 py-0.5 text-[0.68rem] font-bold ${
+                  isUnderNegotiation
+                    ? "bg-amber-100 text-amber-800 border border-amber-300"
+                    : isSold
+                    ? "bg-red-50 text-red-700 border border-red-200"
+                    : "bg-[#eefbf3] text-[#1d6a45]"
+                }`}>
+                  {listing.listingStatus.replace("_", " ").toUpperCase()}
                 </span>
                 {user && (listing.createdByUid === user.uid || listing.sellerHolderId === user.uid) && (
                   <span className="rounded-full bg-[#e8effd] border border-[#c5d9f8] px-2.5 py-0.5 text-[0.68rem] font-bold text-[#1e4bb5]">
@@ -536,6 +547,23 @@ export default function ProductDetailPage() {
                   return (
                     <div className="w-full py-2.5 text-center text-xs font-bold text-[#2d6130] bg-[#edf7e8] rounded-full">
                       Your Offering (Owned by You)
+                    </div>
+                  );
+                }
+                if (isUnderNegotiation) {
+                  return (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-amber-100 border border-amber-300 py-3 text-sm font-bold text-amber-900 shadow-none opacity-80 cursor-not-allowed"
+                        title="This cocoa offering is currently under negotiation and cannot be purchased."
+                      >
+                        <Lock size={16} /> Under Negotiation (Purchase Disabled)
+                      </button>
+                      <p className="text-[11px] text-center text-amber-800 font-medium leading-relaxed">
+                        A buyer is actively negotiating this cocoa offering. Direct purchase is disabled.
+                      </p>
                     </div>
                   );
                 }
@@ -934,6 +962,31 @@ export default function ProductDetailPage() {
                     </div>
                   );
                 }
+                if (isUnderNegotiation) {
+                  return (
+                    <div className="mt-4 space-y-3 text-xs text-gray-600">
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 space-y-1.5">
+                        <div className="flex items-center gap-2 font-bold text-sm text-amber-800">
+                          <Lock size={16} /> Contact Access Locked
+                        </div>
+                        <p className="text-[11px] text-amber-700 leading-relaxed">
+                          This cocoa lot is currently <strong>under active negotiation</strong> with a verified buyer. Access to seller contact information is temporarily suspended until negotiations conclude or the lot returns to market.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
+                        <Lock size={14} /> Protected Entity: {listing.sellerHolderType.toUpperCase()}
+                      </div>
+                      <button
+                        type="button"
+                        disabled
+                        className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full border border-amber-300 bg-amber-100 py-3 text-xs font-bold text-amber-800 shadow-none cursor-not-allowed opacity-80"
+                        title="This cocoa offering is currently under negotiation. Contact access cannot be purchased."
+                      >
+                        <Lock size={14} /> Under Negotiation (Contact Access Disabled)
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                   <div className="mt-4 space-y-3 text-xs text-gray-600">
                     <p>
@@ -976,6 +1029,16 @@ export default function ProductDetailPage() {
                 <span>Seller Access Fee:</span>
                 <span>Calculated in XAF (Converted to NGN at checkout)</span>
               </div>
+
+              {isUnderNegotiation && (
+                <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
+                  <Lock size={16} className="text-amber-700 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block font-bold">Contact Access Payment Disabled</strong>
+                    This cocoa lot is currently under negotiation. Payment to unlock seller details cannot be initiated at this time.
+                  </div>
+                </div>
+              )}
 
               {sellerPayError && (
                 <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 border border-red-200">
@@ -1033,7 +1096,7 @@ export default function ProductDetailPage() {
                     <button
                       type="button"
                       onClick={handleGoogleSignInToPay}
-                      disabled={sellerPaySubmitting}
+                      disabled={sellerPaySubmitting || isUnderNegotiation}
                       className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-xs text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
                     >
                       <span className="flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-[#0b3528]">
@@ -1055,10 +1118,10 @@ export default function ProductDetailPage() {
                   <button
                     type="button"
                     onClick={handleInitiateSellerPayment}
-                    disabled={sellerPaySubmitting}
+                    disabled={sellerPaySubmitting || isUnderNegotiation}
                     className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-xs text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
                   >
-                    {sellerPaySubmitting ? "Initializing Checkout..." : "Pay via Flutterwave"}
+                    {isUnderNegotiation ? "Disabled (Under Negotiation)" : sellerPaySubmitting ? "Initializing Checkout..." : "Pay via Flutterwave"}
                   </button>
                 </div>
               )}
@@ -1082,6 +1145,13 @@ export default function ProductDetailPage() {
                 <CreditCard size={14} /> Execute Cocoa Purchase
               </div>
               <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Confirm Trade Order</h2>
+
+              {isUnderNegotiation && (
+                <div className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-300 flex items-start gap-2">
+                  <Lock size={15} className="shrink-0 mt-0.5 text-amber-600" />
+                  <span>This cocoa offering is currently under negotiation. Purchases are temporarily locked.</span>
+                </div>
+              )}
 
               {purchaseError && (
                 <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 border border-red-200">
@@ -1170,10 +1240,10 @@ export default function ProductDetailPage() {
                     <button
                       type="button"
                       onClick={handlePurchase}
-                      disabled={purchaseSubmitting}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                      disabled={purchaseSubmitting || isUnderNegotiation}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
-                      {purchaseSubmitting ? "Finalizing Trade..." : "Confirm & Pay"}
+                      {purchaseSubmitting ? "Finalizing Trade..." : isUnderNegotiation ? "Under Negotiation" : "Confirm & Pay"}
                     </button>
                   )}
                 </div>
