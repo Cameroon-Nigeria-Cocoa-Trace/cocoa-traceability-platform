@@ -163,6 +163,8 @@ export interface CertificateApplication {
   rejectionReason?: string;
   reviewedBy?: string; // Firebase UID of the authenticated reviewer
   reviewedAt?: string;
+  targetCooperativeOrgId?: string; // Optional target cooperative for automatic transfer upon issuance
+  targetCooperativeName?: string;
   createdAt: string; // ISO 8601 Timestamp
   updatedAt: string; // ISO 8601 Timestamp
 }

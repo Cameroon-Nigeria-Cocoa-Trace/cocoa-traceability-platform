@@ -39,7 +39,7 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
   {
     id: "farm-management",
     title: "Farm Management",
-    subtitle: "Registered plots, GPS polygons & EUDR compliance",
+    subtitle: "Registered plots, GPS polygons & cooperative member directory",
     items: [
       {
         name: "Overview",
@@ -48,13 +48,6 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
         isReady: true,
         description: "Farmer plots, geofencing map, and EUDR compliance overview",
       },
-    ],
-  },
-  {
-    id: "cooperative-management",
-    title: "Cooperative & Supply Chain Hub",
-    subtitle: "Farmer membership roster, collection centers & hierarchies",
-    items: [
       {
         name: "Cooperative Hub",
         href: "/dashboard/cooperative",
@@ -63,6 +56,13 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
         stageBadge: "Role 4",
         description: "Cooperative member directory, onboarding, status history & sub-cooperative hierarchy",
       },
+    ],
+  },
+  {
+    id: "cooperative-management",
+    title: "Production & Inventory",
+    subtitle: "Seasonal production periods, collection centers & harvest batches",
+    items: [
       {
         name: "Production Records",
         href: "/dashboard/production",
@@ -167,9 +167,15 @@ export function DashboardWorkflowNav({
   currentTab = "farm-management",
   onSelectTab,
 }: DashboardWorkflowNavProps) {
-  const [selectedGroupOverride, setSelectedGroupOverride] = useState<string | null>(null);
+  const normalizedTab = currentTab === "production-inventory" ? "cooperative-management" : currentTab;
+  const [selectedGroupOverride, setSelectedGroupOverride] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("active_workflow_group") || null;
+    }
+    return null;
+  });
 
-  const activeGroupId = selectedGroupOverride ?? currentTab;
+  const activeGroupId = selectedGroupOverride ?? normalizedTab;
   const activeIndexCalculated = WORKFLOW_GROUPS.findIndex((g) => g.id === activeGroupId);
   const activeGroupIndex = activeIndexCalculated >= 0 ? activeIndexCalculated : 0;
 
@@ -204,6 +210,9 @@ export function DashboardWorkflowNav({
                 type="button"
                 onClick={() => {
                   setSelectedGroupOverride(group.id);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("active_workflow_group", group.id);
+                  }
                   if (onSelectTab) onSelectTab(group.id);
                 }}
                 className={`

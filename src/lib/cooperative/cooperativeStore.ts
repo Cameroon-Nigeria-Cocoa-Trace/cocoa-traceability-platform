@@ -4,9 +4,11 @@ import {
   CooperativeFarmerMembership,
   MembershipHistoryRecord,
   SubordinateCooperativeRelationship,
+  FarmerCooperativeAssociation,
 } from "@/types/cooperative";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+
 
 function cleanData<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -231,6 +233,55 @@ export class CooperativeStore {
       (s) => s.parentCooperativeId === parentCoopId && s.status === "active"
     );
   }
+
+  // Associations
+  async searchOrganizations(queryStr: string): Promise<CooperativeOrganization[]> {
+    const q = queryStr.trim().toLowerCase();
+    const orgs = Array.from(memoryStore.organizations.values());
+    try {
+      const snap = await getDocs(collection(db, "cooperative_organizations"));
+      if (!snap.empty) {
+        snap.forEach((d) => {
+          const org = d.data() as CooperativeOrganization;
+          memoryStore.organizations.set(org.id, org);
+        });
+      }
+    } catch {
+      // Use memory store fallback
+    }
+    const allOrgs = Array.from(memoryStore.organizations.values());
+    return allOrgs.filter(
+      (o) =>
+        o.name.toLowerCase().includes(q) ||
+        o.contactEmail.toLowerCase().includes(q) ||
+        o.contactPhone.toLowerCase().includes(q) ||
+        o.id.toLowerCase().includes(q)
+    );
+  }
+
+  async saveAssociation(assoc: FarmerCooperativeAssociation): Promise<FarmerCooperativeAssociation> {
+    const key = `${assoc.farmerId}_${assoc.cooperativeOrgId}`;
+    try {
+      await setDoc(doc(db, "farmerCooperativeAssociations", key), cleanData(assoc as unknown as Record<string, unknown>));
+    } catch (err) {
+      console.warn("Firestore notice saving farmerCooperativeAssociation:", err);
+    }
+    return assoc;
+  }
+
+  async listAssociationsForFarmer(farmerId: string): Promise<FarmerCooperativeAssociation[]> {
+    try {
+      const q = query(collection(db, "farmerCooperativeAssociations"), where("farmerId", "==", farmerId));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs.map((d) => d.data() as FarmerCooperativeAssociation);
+      }
+    } catch {
+      // Fallback
+    }
+    return [];
+  }
 }
 
 export const cooperativeStore = new CooperativeStore();
+

@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { DashboardWorkflowNav } from "@/components/DashboardWorkflowNav";
@@ -12,6 +12,7 @@ import {
   CertificateApplication,
   CocoaLot,
 } from "@/types/traceability";
+import { FarmerCooperativeAssociation } from "@/types/cooperative";
 import { PublicCertificateLineage } from "@/services/certificateService";
 import {
   BadgeCheck,
@@ -35,6 +36,112 @@ import {
   Sparkles,
   ChevronRight,
 } from "lucide-react";
+
+function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasSigned, setHasSigned] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.strokeStyle = "#0b3528";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  }, []);
+
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    setIsDrawing(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const { x, y } = getCoordinates(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const { x, y } = getCoordinates(e);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    setHasSigned(true);
+    onSign(canvas.toDataURL());
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSigned(false);
+    onSign("");
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="relative rounded-2xl border border-[#dfe7d8] bg-white overflow-hidden shadow-2xs">
+        <canvas
+          ref={canvasRef}
+          width={500}
+          height={110}
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          className="w-full h-[100px] cursor-crosshair touch-none select-none bg-white"
+        />
+        {!hasSigned && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-xs text-[#8e9d92] italic">
+            Draw signature here...
+          </div>
+        )}
+      </div>
+      <div className="flex justify-between items-center text-[11px]">
+        <span className={hasSigned ? "text-[#2d6130] font-semibold" : "text-[#6f7e73]"}>
+          {hasSigned ? "✓ Signature captured" : "Draw your signature above using mouse or touch"}
+        </span>
+        <button
+          type="button"
+          onClick={clearCanvas}
+          className="text-red-600 font-bold hover:underline cursor-pointer"
+        >
+          Clear Signature
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function OriginCertificatesPage() {
   const { user, farms, loading: authLoading } = useFirebase();
@@ -66,10 +173,15 @@ export default function OriginCertificatesPage() {
   // Application Form State
   const [formLotId, setFormLotId] = useState("");
   const [formApplicantType, setFormApplicantType] = useState<string>("farmer");
+  const [associatedCooperatives, setAssociatedCooperatives] = useState<FarmerCooperativeAssociation[]>([]);
+  const [selectedTargetCoopId, setSelectedTargetCoopId] = useState("");
+  const [declarationAgreed, setDeclarationAgreed] = useState(false);
+  const [signatureDataUrl, setSignatureDataUrl] = useState("");
   const [submittingApp, setSubmittingApp] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+  const isCooperativeAccount = Boolean(user?.email?.toLowerCase().includes("coop"));
   const selectedFormLot = lots.find((l) => l.lotId === formLotId);
 
   // Authority quick-issue modal state (if applicable)
@@ -148,6 +260,14 @@ export default function OriginCertificatesPage() {
       loadCertificates();
       loadApplications();
       loadLots();
+      fetch(`/api/cooperative/associations?farmerId=${user.uid}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.associations)) {
+            setAssociatedCooperatives(data.associations);
+          }
+        })
+        .catch(() => {});
     }
   }, [user, loadCertificates, loadApplications, loadLots]);
 
@@ -188,6 +308,29 @@ export default function OriginCertificatesPage() {
       return;
     }
 
+    if (!declarationAgreed) {
+      setFormError("You must read and agree to the Farmer's Cocoa Origin and EUDR Declaration before submitting.");
+      return;
+    }
+
+    if (!signatureDataUrl) {
+      setFormError("Please provide your signature in the signature canvas.");
+      return;
+    }
+
+    const effectiveApplicantType = isCooperativeAccount ? "cooperative" : formApplicantType;
+
+    if (effectiveApplicantType === "cooperative") {
+      if (associatedCooperatives.length === 0) {
+        setFormError("You have no associated cooperatives. Please search and associate with your cooperative in the Cooperative Hub first.");
+        return;
+      }
+      if (!selectedTargetCoopId) {
+        setFormError("Please select an associated cooperative for automatic transfer.");
+        return;
+      }
+    }
+
     const targetLot = lots.find((l) => l.lotId === formLotId);
     if (!targetLot) {
       setFormError("Selected Cocoa Lot was not found.");
@@ -205,10 +348,13 @@ export default function OriginCertificatesPage() {
     setFormSuccess(null);
 
     try {
+      const selectedCoop = associatedCooperatives.find((c) => c.cooperativeOrgId === selectedTargetCoopId);
       const payload = {
         lotId: formLotId,
         requestedQuantityKg: totalLotKg,
-        applicantType: formApplicantType,
+        applicantType: effectiveApplicantType,
+        targetCooperativeOrgId: effectiveApplicantType === "cooperative" ? selectedTargetCoopId : undefined,
+        targetCooperativeName: effectiveApplicantType === "cooperative" ? selectedCoop?.cooperativeOrgName : undefined,
       };
 
       const res = await apiClient.post<{
@@ -644,9 +790,10 @@ export default function OriginCertificatesPage() {
 
       {/* Application Creation Modal */}
       {showApplyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-3xl border border-[#dfe7d8] bg-white p-6 sm:p-8 shadow-2xl">
-            <div className="flex items-center justify-between pb-4 border-b border-[#edf1ea]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto">
+          <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-[#dfe7d8] bg-white shadow-2xl overflow-hidden my-auto">
+            {/* Modal Sticky Header */}
+            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-[#edf1ea] shrink-0 bg-white">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edf7e8] text-[#2d6130]">
                   <BadgeCheck size={22} />
@@ -663,106 +810,215 @@ export default function OriginCertificatesPage() {
               <button
                 type="button"
                 onClick={() => setShowApplyModal(false)}
-                className="p-1.5 text-[#57655d] hover:text-[#10251d] rounded-lg cursor-pointer"
+                className="p-1.5 text-[#57655d] hover:text-[#10251d] hover:bg-[#fafcf9] rounded-lg transition cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleApply} className="mt-5 space-y-4">
-              {formError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
-                  {formError}
-                </div>
-              )}
-              {formSuccess && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 flex items-center gap-2">
-                  <CheckCircle2 size={16} /> {formSuccess}
-                </div>
-              )}
-
-              {/* Lot Selector */}
-              <div>
-                <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
-                  Backing Cocoa Lot <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formLotId}
-                  onChange={(e) => setFormLotId(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
-                >
-                  <option value="">-- Select a registered Cocoa Lot --</option>
-                  {lots.map((l) => (
-                    <option key={l.lotId} value={l.lotId}>
-                      {l.lotNumber} — {l.quantityKg.toLocaleString()} kg ({l.productionPeriod})
-                    </option>
-                  ))}
-                </select>
-                {lots.length === 0 && (
-                  <p className="mt-1 text-[11px] text-[#8e9d92]">
-                    No lots found. <Link href="/dashboard/lots" className="underline font-bold text-[#2d6130]">Create a cocoa lot</Link> first.
-                  </p>
+            {/* Modal Form with Scrollable Content Body */}
+            <form onSubmit={handleApply} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
+                {formError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                    {formError}
+                  </div>
                 )}
-              </div>
+                {formSuccess && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800 flex items-center gap-2">
+                    <CheckCircle2 size={16} /> {formSuccess}
+                  </div>
+                )}
 
-              {/* Automatic Certification Quantity (Read-only total kg of the selected lot) */}
-              <div>
-                <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
-                  Certification Quantity (Total Lot Weight)
-                </label>
-                {selectedFormLot ? (
-                  <div className="rounded-xl border border-[#c4ebb0] bg-[#eefae6] p-3 text-xs text-[#0c392b]">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold">Total Physical Lot Weight:</span>
-                      <span className="font-mono text-base font-black text-[#2a7a33]">
-                        {selectedFormLot.quantityKg.toLocaleString()} kg
-                      </span>
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-[#2a5933] border-t border-[#c4ebb0]/60 pt-1.5">
-                      ✓ Automatically certified for <strong>100% of the lot ({selectedFormLot.quantityKg.toLocaleString()} kg)</strong>. Under Cameroon traceability and EUDR regulations, only whole lots can be certified—partial lot certification is not permitted.
+                {/* Lot Selector */}
+                <div>
+                  <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
+                    Backing Cocoa Lot <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formLotId}
+                    onChange={(e) => setFormLotId(e.target.value)}
+                    required
+                    className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
+                  >
+                    <option value="">-- Select a registered Cocoa Lot --</option>
+                    {lots.map((l) => (
+                      <option key={l.lotId} value={l.lotId}>
+                        {l.lotNumber} — {l.quantityKg.toLocaleString()} kg ({l.productionPeriod})
+                      </option>
+                    ))}
+                  </select>
+                  {lots.length === 0 && (
+                    <p className="mt-1 text-[11px] text-[#8e9d92]">
+                      No lots found. <Link href="/dashboard/lots" className="underline font-bold text-[#2d6130]">Create a cocoa lot</Link> first.
                     </p>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-3 text-center text-xs text-[#8e9d92]">
-                    Select a backing cocoa lot above to automatically populate the complete lot certification weight.
+                  )}
+                </div>
+
+                {/* Automatic Certification Quantity (Read-only total kg of the selected lot) */}
+                <div>
+                  <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
+                    Certification Quantity (Total Lot Weight)
+                  </label>
+                  {selectedFormLot ? (
+                    <div className="rounded-xl border border-[#c4ebb0] bg-[#eefae6] p-3 text-xs text-[#0c392b]">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">Total Physical Lot Weight:</span>
+                        <span className="font-mono text-base font-black text-[#2a7a33]">
+                          {selectedFormLot.quantityKg.toLocaleString()} kg
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-[#2a5933] border-t border-[#c4ebb0]/60 pt-1.5">
+                        ✓ Automatically certified for <strong>100% of the lot ({selectedFormLot.quantityKg.toLocaleString()} kg)</strong>. Under Cameroon traceability and EUDR regulations, only whole lots can be certified—partial lot certification is not permitted.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-3 text-center text-xs text-[#8e9d92]">
+                      Select a backing cocoa lot above to automatically populate the complete lot certification weight.
+                    </div>
+                  )}
+                </div>
+
+                {/* Applicant Type */}
+                <div>
+                  <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
+                    Applicant Entity Type
+                  </label>
+                  <select
+                    value={isCooperativeAccount ? "cooperative" : formApplicantType}
+                    onChange={(e) => setFormApplicantType(e.target.value)}
+                    disabled={isCooperativeAccount}
+                    className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer disabled:opacity-75"
+                  >
+                    <option value="farmer">Farmer (Primary Producer)</option>
+                    <option value="cooperative">Cooperative Organization</option>
+                  </select>
+                </div>
+
+                {(isCooperativeAccount || formApplicantType === "cooperative") && (
+                  <div>
+                    <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
+                      Select Associated Cooperative for Automatic Transfer <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedTargetCoopId}
+                      onChange={(e) => setSelectedTargetCoopId(e.target.value)}
+                      required
+                      className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
+                    >
+                      <option value="">-- Select associated cooperative --</option>
+                      {associatedCooperatives.map((c) => (
+                        <option key={c.cooperativeOrgId} value={c.cooperativeOrgId}>
+                          {c.cooperativeOrgName} ({c.cooperativeEmail})
+                        </option>
+                      ))}
+                    </select>
+                    {associatedCooperatives.length === 0 && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        You have no associated cooperatives yet. Visit the{" "}
+                        <Link href="/dashboard/cooperative" className="underline font-bold text-[#2d6130]">
+                          Cooperative Hub
+                        </Link>{" "}
+                        to search and associate with your cooperative.
+                      </p>
+                    )}
                   </div>
                 )}
+
+                {/* EUDR Declaration Section */}
+                <div className="rounded-2xl border border-[#c4ebb0] bg-[#fafcf9] p-4 text-xs space-y-3">
+                  <div className="border-b border-[#edf1ea] pb-2">
+                    <h4 className="font-extrabold text-[#10251d] text-sm uppercase tracking-wider text-center">
+                      FARMER&apos;S COCOA ORIGIN AND EUDR DECLARATION
+                    </h4>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto space-y-2 text-[11px] text-[#394a41] leading-relaxed pr-2 bg-white/70 p-3 rounded-xl border border-[#dfe7d8]/60">
+                    <p>I, the undersigned farmer, hereby declare and confirm that:</p>
+                    <p><strong>1. Truthfulness of Information:</strong> All information and documents I have provided concerning the cocoa lot registered on TraceTrade Network are true, accurate, and complete to the best of my knowledge.</p>
+                    <p><strong>2. Authentic Origin:</strong> The cocoa originates from the farm registered under my profile on TraceTrade Network, and its declared origin is genuine.</p>
+                    <p><strong>3. Deforestation Compliance:</strong> To the best of my knowledge, the cocoa was not produced on land that was subject to deforestation after 31 December 2020, in accordance with the applicable requirements of the EU Deforestation Regulation (EUDR).</p>
+                    <p><strong>4. Legal Production:</strong> The cocoa was produced in compliance with applicable laws of the country of production, to the best of my knowledge.</p>
+                    <p><strong>5. No Undeclared Mixing:</strong> The cocoa lot has not been deliberately mixed with cocoa from unknown, undeclared, or unverified sources.</p>
+                    <p><strong>6. Verification and Cooperation:</strong> I authorise the verification of the information provided and agree to cooperate with TraceTrade Network, its authorised partners, and relevant competent authorities when legally required.</p>
+                    <p>I understand that providing false or misleading information may result in rejection of the cocoa lot, suspension from TraceTrade Network, or other consequences under applicable law.</p>
+                    <p>I make this declaration in good faith and accept responsibility for the truthfulness of the information supplied.</p>
+                  </div>
+
+                  {/* Automatically filled declaration metadata */}
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#edf1ea] text-[11px] text-[#10251d]">
+                    <div>
+                      <span className="text-[#6f7e73] block text-[10px]">Farmer&apos;s Name:</span>
+                      <strong>{user?.displayName || "Alain Nkweta"}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[#6f7e73] block text-[10px]">TraceTrade Farmer ID:</span>
+                      <strong className="font-mono">{user?.uid || "CMR-FRM-2026-XXXX"}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[#6f7e73] block text-[10px]">Cocoa Lot Reference:</span>
+                      <strong className="font-mono">{selectedFormLot?.lotNumber || selectedFormLot?.lotId || "LOT-PENDING"}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[#6f7e73] block text-[10px]">Date:</span>
+                      <strong>{new Date().toLocaleDateString()}</strong>
+                    </div>
+                  </div>
+
+                  {/* Cooperative Submission Indicator */}
+                  {isCooperativeAccount && (
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-900 font-semibold flex items-center gap-1.5">
+                      <Building2 size={14} className="shrink-0 text-amber-700" />
+                      <span>Submitted by Cooperative Account on behalf of Farmer. Applicant type locked to Cooperative.</span>
+                    </div>
+                  )}
+
+                  {/* Drawable Signature Field */}
+                  <div className="pt-2 border-t border-[#edf1ea]">
+                    <label className="block text-[11px] font-bold text-[#10251d] uppercase mb-1">
+                      Signature <span className="text-red-500">*</span>
+                    </label>
+                    <SignatureCanvas onSign={(url) => setSignatureDataUrl(url)} />
+                  </div>
+
+                  {/* Agree Checkbox */}
+                  <div className="pt-2 border-t border-[#edf1ea]">
+                    <label className="flex items-start gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={declarationAgreed}
+                        onChange={(e) => setDeclarationAgreed(e.target.checked)}
+                        className="mt-0.5 rounded text-[#2d6130] focus:ring-[#2d6130]"
+                      />
+                      <span className="text-[11px] font-bold text-[#10251d]">
+                        I have read, understood, and agreed to the Farmer&apos;s Cocoa Origin and EUDR Declaration above.
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="text-[10px] text-[#6f7e73] italic pt-1">
+                    TraceTrade Network — A product of Slite Solutions Ltd, Cameroon.
+                  </div>
+                </div>
+
+                {/* Notice */}
+                <div className="rounded-xl bg-[#edf7e8] p-3 text-[11px] text-[#2d6130] leading-relaxed">
+                  <strong>EUDR Traceability Guarantee:</strong> Submission validates that the backing Cocoa Lot links strictly to verified Cameroon farm boundaries and seasonal harvest records.
+                </div>
               </div>
 
-              {/* Applicant Type */}
-              <div>
-                <label className="block text-xs font-bold text-[#6f7e73] uppercase mb-1">
-                  Applicant Entity Type
-                </label>
-                <select
-                  value={formApplicantType}
-                  onChange={(e) => setFormApplicantType(e.target.value)}
-                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
-                >
-                  <option value="farmer">Farmer (Primary Producer)</option>
-                  <option value="cooperative">Cooperative Organization</option>
-                </select>
-              </div>
-
-              {/* Notice */}
-              <div className="rounded-xl bg-[#edf7e8] p-3 text-[11px] text-[#2d6130] leading-relaxed">
-                <strong>EUDR Traceability Guarantee:</strong> Submission validates that the backing Cocoa Lot links strictly to verified Cameroon farm boundaries and seasonal harvest records.
-              </div>
-
-              {/* Action Buttons */}
-              <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
+              {/* Modal Sticky Action Footer */}
+              <div className="p-4 sm:px-6 border-t border-[#edf1ea] bg-[#fafcf9] flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowApplyModal(false)}
-                  className="rounded-full px-4 py-2 text-xs font-bold text-[#57655d] hover:bg-slate-100 cursor-pointer"
+                  className="rounded-full px-4 py-2 text-xs font-bold text-[#57655d] hover:bg-slate-200 transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingApp}
-                  className="rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#07241b] disabled:opacity-50 cursor-pointer"
+                  disabled={submittingApp || !declarationAgreed || !signatureDataUrl}
+                  className="rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#07241b] disabled:opacity-50 transition cursor-pointer"
                 >
                   {submittingApp ? "Submitting..." : "Submit Application"}
                 </button>

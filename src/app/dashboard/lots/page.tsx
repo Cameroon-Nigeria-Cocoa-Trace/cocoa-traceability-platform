@@ -154,7 +154,7 @@ export default function CocoaLotsPage() {
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
-        <DashboardWorkflowNav currentTab="production-inventory" />
+        <DashboardWorkflowNav currentTab="cooperative-management" />
 
         {/* Top Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">

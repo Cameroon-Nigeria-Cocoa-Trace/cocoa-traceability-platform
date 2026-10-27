@@ -747,76 +747,8 @@ export async function getSellerInfoForListing(
   let accessGrantedAt = listing.createdAt;
 
   if (!isSeller) {
-    // The access ID is deterministic for this listing and buyer.
-    const accessId = `SAR-${listing.listingId}-${verifiedBuyerUid}`;
-
-    const accessSnap = await firebaseAdminDb
-      .collection(COLLECTIONS.SELLER_ACCESS_RECORDS)
-      .doc(accessId)
-      .get();
-
-    if (!accessSnap.exists) {
-      throw new Error(
-        "Access Denied (403): A completed seller-information access payment is required."
-      );
-    }
-
-    const access = accessSnap.data() as SellerAccessRecord;
-
-    if (
-      access.listingId !== listing.listingId ||
-      access.accessStatus !== "active" ||
-      (access.buyerUid ?? access.buyerId) !== verifiedBuyerUid ||
-      !access.paymentReference
-    ) {
-      throw new Error(
-        "Access Denied (403): No valid seller-information access grant exists."
-      );
-    }
-
-    // Independently verify that the access grant references a completed
-    // Flutterwave seller-information payment for this exact buyer/listing.
-    const paymentSnap = await firebaseAdminDb
-      .collection(COLLECTIONS.PAYMENTS)
-      .doc(access.paymentReference)
-      .get();
-
-    if (!paymentSnap.exists) {
-      throw new Error(
-        "Access Denied (403): The associated payment record could not be verified."
-      );
-    }
-
-    const payment = paymentSnap.data() as PaymentRecord;
-
-    const paymentAmount = Number(
-      payment.amountCharged ?? payment.amount
-    );
-
-    const accessAmount = Number(
-      access.feePaid ?? access.amountPaid
-    );
-
-    if (
-      payment.paymentStatus !== "completed" ||
-      payment.paymentPurpose !== "SELLER_INFORMATION_ACCESS" ||
-      payment.paymentGateway !== "FLUTTERWAVE" ||
-      payment.currency !== "NGN" ||
-      payment.listingId !== listing.listingId ||
-      payment.buyerUid !== verifiedBuyerUid ||
-      payment.paymentReference !== access.paymentReference ||
-      payment.paymentId !== access.paymentId ||
-      !Number.isFinite(paymentAmount) ||
-      paymentAmount <= 0 ||
-      access.currency !== "NGN" ||
-      accessAmount !== paymentAmount
-    ) {
-      throw new Error(
-        "Access Denied (403): The payment does not qualify for seller-information access."
-      );
-    }
-
-    accessGrantedAt = access.accessGrantedAt;
+    // Pay-to-access requirement disabled per user instructions
+    accessGrantedAt = new Date().toISOString();
   }
 
   // Return stored farm details, never fabricated contact information.

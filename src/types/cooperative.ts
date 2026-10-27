@@ -96,3 +96,22 @@ export interface CooperativeDashboardData {
   recentMembershipHistory: MembershipHistoryRecord[];
   subordinates: SubordinateCooperativeRelationship[];
 }
+
+export interface FarmerCooperativeAssociation {
+  associationId: string;
+  farmerId: string;
+  farmerName?: string;
+  cooperativeOrgId: string;
+  cooperativeOrgName: string;
+  cooperativeEmail: string;
+  cooperativePhone: string;
+  permissions: {
+    farmsManagement: boolean;
+    certificatesManagement: boolean;
+    productionInventory: boolean;
+    tradingManagement: boolean;
+  };
+  status: "active" | "suspended";
+  associatedAt: string;
+  updatedAt: string;
+}

@@ -41,6 +41,7 @@ interface CocoaTrackerProps {
   farmId?: string;
   farmName?: string;
   initialPolygon?: [number, number][]; // [lng, lat][]
+  initialCenter?: [number, number]; // [lng, lat]
   onGeofenceComplete?: (data: {
     polygon: [number, number][];
     areaHectares: number;
@@ -53,6 +54,7 @@ export default function CocoaTracker({
   farmId = "farm_canopy_temp",
   farmName = "Cocoa Farm Plot",
   initialPolygon = [],
+  initialCenter,
   onGeofenceComplete,
   onContinue,
 }: CocoaTrackerProps) {
@@ -608,8 +610,8 @@ export default function CocoaTracker({
         {/* ===================================================================== */}
         <div className={`relative ${isFullScreen ? "flex-1 w-full h-full" : "w-full"}`}>
           <MapboxGeofenceMap
-            initialCenter={activePolygon.length > 0 ? activePolygon[0] : [11.2, 5.0]}
-            initialZoom={activePolygon.length > 0 ? 15.5 : 6.8}
+            initialCenter={initialCenter || (activePolygon.length > 0 ? activePolygon[0] : [11.2, 5.0])}
+            initialZoom={initialCenter ? 15.5 : (activePolygon.length > 0 ? 15.5 : 6.8)}
             activePolygon={activePolygon}
             breadcrumbs={breadcrumbs}
             isWalking={isTracking}

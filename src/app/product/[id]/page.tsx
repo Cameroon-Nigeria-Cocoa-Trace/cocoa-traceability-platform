@@ -990,18 +990,40 @@ export default function ProductDetailPage() {
                 return (
                   <div className="mt-4 space-y-3 text-xs text-gray-600">
                     <p>
-                      Seller direct contact information is protected. Request access to unlock direct seller credentials via Flutterwave secure payment.
+                      Seller direct contact information is open for direct communication and negotiation.
                     </p>
                     <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
-                      <Lock size={14} /> Protected Entity: {listing.sellerHolderType.toUpperCase()}
+                      <ShieldCheck size={14} /> Verified Entity: {listing.sellerHolderType.toUpperCase()}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowSellerPayModal(true)}
-                      className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                    >
-                      <CreditCard size={14} /> Unlock Seller Contact (Fee in XAF, Converted to NGN at checkout)
-                    </button>
+                    {user ? (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await apiClient.get<{ success: boolean; sellerInfo: any }>(
+                              `/api/marketplace/seller-info/${listing.listingId}`
+                            );
+                            if (res && res.success && res.sellerInfo) {
+                              setSellerInfo(res.sellerInfo);
+                              setHasSellerAccess(true);
+                            }
+                          } catch (e: unknown) {
+                            setError(e instanceof Error ? e.message : "Failed to load seller contact");
+                          }
+                        }}
+                        className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                      >
+                        <ShieldCheck size={14} /> View Seller Contact (Free Access)
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleGoogleSignInToPay}
+                        className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                      >
+                        <ShieldCheck size={14} /> Sign in to View Seller Contact
+                      </button>
+                    )}
                   </div>
                 );
               })()}

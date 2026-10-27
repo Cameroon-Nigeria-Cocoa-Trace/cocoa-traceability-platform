@@ -53,6 +53,35 @@ export default function SignupPage() {
   );
 }
 
+const parseGeolocationToCenter = (geoStr: string): [number, number] | undefined => {
+  if (!geoStr) return undefined;
+  try {
+    const parts = geoStr.split(/[,]/);
+    if (parts.length >= 2) {
+      const latPart = parts[0].trim();
+      const lngPart = parts[1].trim();
+
+      const latMatch = latPart.match(/([+-]?\d+(\.\d+)?)/);
+      const lngMatch = lngPart.match(/([+-]?\d+(\.\d+)?)/);
+
+      if (latMatch && lngMatch) {
+        let lat = parseFloat(latMatch[1]);
+        let lng = parseFloat(lngMatch[1]);
+
+        if (latPart.toUpperCase().includes("S")) lat = -Math.abs(lat);
+        if (lngPart.toUpperCase().includes("W")) lng = -Math.abs(lng);
+
+        if (!isNaN(lat) && !isNaN(lng)) {
+          return [lng, lat];
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Could not parse geolocation:", e);
+  }
+  return undefined;
+};
+
 function SignupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -895,6 +924,7 @@ function SignupContent() {
                           farmId={farmName ? `farm_${farmName.toLowerCase().replace(/\s+/g, "_")}` : "farm_canopy_temp"}
                           farmName={farmName || "Cocoa Farm Plot"}
                           initialPolygon={geofencePolygon}
+                          initialCenter={parseGeolocationToCenter(geolocation)}
                           onGeofenceComplete={({ polygon, areaHectares, pointCount }) => {
                             setGeofencePolygon(polygon);
                             setGeofenceAreaHa(areaHectares);

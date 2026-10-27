@@ -120,6 +120,7 @@ export default function MapboxGeofenceMap({
       map.remove();
       mapRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle Style Switch
@@ -144,6 +145,17 @@ export default function MapboxGeofenceMap({
       });
     }
   }, [currentPosition, isWalking, mapLoaded, autoFollowUser]);
+
+  // Fly to initialCenter when it changes and map is loaded
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded || !initialCenter) return;
+    mapRef.current.flyTo({
+      center: initialCenter,
+      zoom: Math.max(mapRef.current.getZoom(), 15.5),
+      essential: true,
+      duration: 1000,
+    });
+  }, [initialCenter, mapLoaded]);
 
   // Map Click Handler for Interactive Point Placement
   useEffect(() => {

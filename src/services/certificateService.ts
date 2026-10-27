@@ -38,6 +38,7 @@ import {
   ProductionRecord,
   Harvest,
   CloudinaryImageReference,
+  CertificateHolding,
 } from "@/types/traceability";
 import { resolveAuthenticatedUserUid, getProductionRecord } from "./productionService";
 import { getHarvestRecord } from "./harvestService";
@@ -45,6 +46,12 @@ import { getCocoaLot } from "./cocoaLotService";
 import {
   assertAuthorizedForCertificateOperation,
 } from "@/lib/certificateAuthorization";
+import {
+  validateTransferRoute,
+  calculateTransferFee,
+  executeCertificateTransferInTransaction,
+} from "./transferService";
+
 
 // Top-level Firestore collections
 export const COLLECTIONS = {
@@ -632,7 +639,7 @@ export async function issueTraceCertificate(
     // 8. Atomically provision initial CertificateHolding for the certified quantity
     const initialHoldingId = `holding_init_${certificateId}`;
     const initialHoldingRef = doc(db, COLLECTIONS.CERTIFICATE_HOLDINGS, initialHoldingId);
-    const initialHolding = {
+    const initialHolding: CertificateHolding = {
       holdingId: initialHoldingId,
       certificateId,
       certificateNumber,
@@ -649,6 +656,33 @@ export async function issueTraceCertificate(
     };
     tx.set(initialHoldingRef, initialHolding);
 
+    let finalCertificate = certificate;
+    if (application.targetCooperativeOrgId) {
+      const transferId = `trans_auto_${certificateId}`;
+      const route = validateTransferRoute(initialHolding.holderType, "cooperative");
+      const feeRecord = calculateTransferFee(route, certifiedQuantityKg, "USD", initialHolding.holderId);
+      executeCertificateTransferInTransaction({
+        tx,
+        transferId,
+        sourceHolding: initialHolding,
+        destinationHolderId: application.targetCooperativeOrgId,
+        destinationHolderType: "cooperative",
+        quantityKg: certifiedQuantityKg,
+        actorUid: issuerUid,
+        feeApplied: feeRecord,
+        route,
+        now,
+      });
+
+      finalCertificate = {
+        ...certificate,
+        holderId: application.targetCooperativeOrgId,
+        holderType: "cooperative",
+        updatedAt: now,
+      };
+      tx.set(certRef, finalCertificate);
+    }
+
     // 9. Atomically update certifiedQuantityKg and lotStatus on the Cocoa Lot document
     const newTotalCertified = currentCertifiedKg + certifiedQuantityKg;
     const newLotStatus: CocoaLotStatus =
@@ -660,7 +694,7 @@ export async function issueTraceCertificate(
       updatedAt: now,
     });
 
-    return certificate;
+    return finalCertificate;
   });
 }
 

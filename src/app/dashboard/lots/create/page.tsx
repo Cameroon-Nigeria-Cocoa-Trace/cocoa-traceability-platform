@@ -531,7 +531,7 @@ function CreateCocoaLotContent() {
       <Navbar />
 
       <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
-        <DashboardWorkflowNav currentTab="production-inventory" />
+        <DashboardWorkflowNav currentTab="cooperative-management" />
 
         <div className="max-w-4xl">
           <Link
