@@ -574,6 +574,81 @@
         }
       },
       "required": ["lotId", "lotNumber", "farmId", "productionRecordId", "harvestId", "originCountry", "quantityKg", "pricePerKg", "cocoaImage", "lotStatus", "createdBy", "createdAt"]
+    },
+    "TradeRecord": {
+      "title": "TradeRecord",
+      "description": "On-platform and declared off-platform cocoa commercial trade exchange record.",
+      "type": "object",
+      "properties": {
+        "tradeId": { "type": "string", "description": "Unique trade ID" },
+        "tradeNumber": { "type": "string", "description": "Human-readable trade reference" },
+        "lotId": { "type": "string", "description": "Backing cocoa lot ID" },
+        "listingId": { "type": "string", "description": "Originating marketplace listing ID" },
+        "certificateId": { "type": "string", "description": "Origin trace certificate reference" },
+        "sellerHolderId": { "type": "string", "description": "UID of selling entity" },
+        "buyerId": { "type": "string", "description": "UID of buying entity" },
+        "quantityKg": { "type": "number", "description": "Traded cocoa weight in kilograms" },
+        "negotiatedPricePerKg": { "type": "number", "description": "Agreed price per kg" },
+        "totalAmount": { "type": "number", "description": "Total traded transaction value" },
+        "currency": { "type": "string", "description": "Transaction currency code" },
+        "paymentChannel": { "type": "string", "description": "on_platform or off_platform" },
+        "tradeStatus": { "type": "string", "description": "Status of the trade" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tradeId", "tradeNumber", "lotId", "sellerHolderId", "buyerId", "quantityKg", "negotiatedPricePerKg", "totalAmount", "tradeStatus", "createdAt"]
+    },
+    "CertificateTransfer": {
+      "title": "CertificateTransfer",
+      "description": "Atomic certificate custody handoff across the 6 verified supply chain routes.",
+      "type": "object",
+      "properties": {
+        "transferId": { "type": "string", "description": "Unique transfer transaction ID" },
+        "certificateId": { "type": "string", "description": "Origin certificate reference" },
+        "certificateNumber": { "type": "string", "description": "Certificate number" },
+        "sourceHoldingId": { "type": "string", "description": "Originating custody unit ID" },
+        "destinationHoldingId": { "type": "string", "description": "Resulting destination custody unit ID" },
+        "sourceHolderId": { "type": "string", "description": "Dispathing entity UID" },
+        "destinationHolderId": { "type": "string", "description": "Receiving entity UID" },
+        "route": { "type": "string", "description": "One of the 6 supported transfer routes" },
+        "quantityKg": { "type": "number", "description": "Transferred cocoa weight in kg" },
+        "transferStatus": { "type": "string", "description": "Transfer execution state" },
+        "initiatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["transferId", "certificateId", "sourceHoldingId", "destinationHoldingId", "sourceHolderId", "destinationHolderId", "route", "quantityKg", "transferStatus", "initiatedAt"]
+    },
+    "CertificateHolding": {
+      "title": "CertificateHolding",
+      "description": "Discrete certified cocoa custody unit holding verifiable balance.",
+      "type": "object",
+      "properties": {
+        "holdingId": { "type": "string", "description": "Unique holding ID" },
+        "certificateId": { "type": "string", "description": "Associated trace certificate ID" },
+        "certificateNumber": { "type": "string", "description": "Certificate number" },
+        "lotId": { "type": "string", "description": "Cocoa lot ID" },
+        "farmId": { "type": "string", "description": "Farm plot ID" },
+        "holderId": { "type": "string", "description": "Current custody holder UID" },
+        "holderType": { "type": "string", "description": "farmer, cooperative, agent, or warehouse" },
+        "quantityKg": { "type": "number", "description": "Total original weight" },
+        "availableQuantityKg": { "type": "number", "description": "Current available uncommitted weight" },
+        "status": { "type": "string", "description": "active, partially_transferred, or depleted" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["holdingId", "certificateId", "lotId", "holderId", "holderType", "quantityKg", "availableQuantityKg", "status", "createdAt"]
+    },
+    "FarmerCooperativeAssociation": {
+      "title": "FarmerCooperativeAssociation",
+      "description": "Granular delegation and management permissions granted by farmer to cooperative.",
+      "type": "object",
+      "properties": {
+        "associationId": { "type": "string", "description": "Unique association ID" },
+        "farmerId": { "type": "string", "description": "Farmer UID" },
+        "farmerName": { "type": "string", "description": "Farmer full name" },
+        "cooperativeOrgId": { "type": "string", "description": "Cooperative organization ID" },
+        "cooperativeOrgName": { "type": "string", "description": "Cooperative organization name" },
+        "status": { "type": "string", "description": "Association status" },
+        "associatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["associationId", "farmerId", "cooperativeOrgId", "status", "associatedAt"]
     }
   },
   "firestore": {
@@ -608,6 +683,22 @@
     "/cocoaLots/{lotId}": {
       "schema": "CocoaLot",
       "description": "Traceable cocoa lots with mandatory Cloudinary imagery and upstream provenance."
+    },
+    "/trades/{tradeId}": {
+      "schema": "TradeRecord",
+      "description": "Commercial exchange records between buyers and sellers."
+    },
+    "/certificateTransfers/{transferId}": {
+      "schema": "CertificateTransfer",
+      "description": "Atomic certificate custody handoffs across supply chain routes."
+    },
+    "/certificateHoldings/{holdingId}": {
+      "schema": "CertificateHolding",
+      "description": "Custody holding balances for certified cocoa."
+    },
+    "/farmerCooperativeAssociations/{assocId}": {
+      "schema": "FarmerCooperativeAssociation",
+      "description": "Delegated farm, certificate, and trade management permissions."
     }
   }
 }

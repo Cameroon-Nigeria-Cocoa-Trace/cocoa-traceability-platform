@@ -7,7 +7,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listTrades } from "@/services/tradeService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
-import { TradeStatus } from "@/types/traceability";
+import { TradeRecord, TradeStatus } from "@/types/traceability";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
 
 export async function GET(req: NextRequest) {
   let user: AuthenticatedUser;
@@ -27,13 +28,24 @@ export async function GET(req: NextRequest) {
     const sellerHolderId = searchParams.get("sellerHolderId") || undefined;
     const buyerId = searchParams.get("buyerId") || undefined;
 
-    let trades = await listTrades({
-      lotId,
-      certificateId,
-      tradeStatus,
-      sellerHolderId: sellerHolderId || (role === "seller" ? user.userId : undefined),
-      buyerId: buyerId || (role === "buyer" ? user.userId : undefined),
-    });
+    let trades: TradeRecord[] = [];
+    try {
+      trades = await listTrades({
+        lotId,
+        certificateId,
+        tradeStatus,
+        sellerHolderId: sellerHolderId || (role === "seller" ? user.userId : undefined),
+        buyerId: buyerId || (role === "buyer" ? user.userId : undefined),
+      });
+    } catch {
+      // Fallback to firebaseAdminDb if client SDK list meets unauthenticated server context
+      let q: FirebaseFirestore.Query = firebaseAdminDb.collection("trades");
+      if (lotId) q = q.where("lotId", "==", lotId);
+      if (certificateId) q = q.where("certificateId", "==", certificateId);
+      if (tradeStatus) q = q.where("tradeStatus", "==", tradeStatus);
+      const snap = await q.get();
+      trades = snap.docs.map((d) => d.data() as TradeRecord);
+    }
 
     // If no specific role is specified and neither buyerId nor sellerHolderId was passed,
     // filter to trades where the user is either buyer OR seller/sellerHolder

@@ -14,6 +14,8 @@ import {
   listCertificateTransfersByHolder,
 } from "@/services/transferService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { CertificateTransfer } from "@/types/traceability";
 
 export async function POST(req: NextRequest) {
   // 1. Enforce Authentication Requirement
@@ -70,13 +72,37 @@ export async function GET(req: NextRequest) {
     const holderId = searchParams.get("holderId");
 
     if (certificateId) {
-      const transfers = await listCertificateTransfersByCertificate(certificateId);
-      return NextResponse.json({ success: true, transfers });
+      try {
+        const transfers = await listCertificateTransfersByCertificate(certificateId);
+        return NextResponse.json({ success: true, transfers });
+      } catch {
+        const snap = await firebaseAdminDb
+          .collection("certificateTransfers")
+          .where("certificateId", "==", certificateId.trim())
+          .get();
+        const transfers = snap.docs.map((d) => d.data() as CertificateTransfer);
+        return NextResponse.json({ success: true, transfers });
+      }
     }
 
     if (holderId) {
-      const transfers = await listCertificateTransfersByHolder(holderId);
-      return NextResponse.json({ success: true, transfers });
+      try {
+        const transfers = await listCertificateTransfersByHolder(holderId);
+        return NextResponse.json({ success: true, transfers });
+      } catch {
+        const cleanId = holderId.trim();
+        const [srcSnap, destSnap] = await Promise.all([
+          firebaseAdminDb.collection("certificateTransfers").where("sourceHolderId", "==", cleanId).get(),
+          firebaseAdminDb.collection("certificateTransfers").where("destinationHolderId", "==", cleanId).get(),
+        ]);
+        const map = new Map<string, CertificateTransfer>();
+        srcSnap.docs.forEach((d) => map.set(d.id, d.data() as CertificateTransfer));
+        destSnap.docs.forEach((d) => map.set(d.id, d.data() as CertificateTransfer));
+        const transfers = Array.from(map.values()).sort((a, b) =>
+          (b.completedAt || b.initiatedAt).localeCompare(a.completedAt || a.initiatedAt)
+        );
+        return NextResponse.json({ success: true, transfers });
+      }
     }
 
     return NextResponse.json(

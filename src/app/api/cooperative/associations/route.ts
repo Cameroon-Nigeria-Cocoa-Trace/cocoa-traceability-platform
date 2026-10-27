@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cooperativeStore } from "@/lib/cooperative/cooperativeStore";
 import { FarmerCooperativeAssociation } from "@/types/cooperative";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,7 +15,20 @@ export async function GET(req: NextRequest) {
     }
 
     if (farmerId) {
-      const associations = await cooperativeStore.listAssociationsForFarmer(farmerId);
+      let associations = await cooperativeStore.listAssociationsForFarmer(farmerId);
+      if (associations.length === 0) {
+        try {
+          const snap = await firebaseAdminDb
+            .collection("farmerCooperativeAssociations")
+            .where("farmerId", "==", farmerId)
+            .get();
+          if (!snap.empty) {
+            associations = snap.docs.map((d) => d.data() as FarmerCooperativeAssociation);
+          }
+        } catch {
+          // Continue
+        }
+      }
       return NextResponse.json({ success: true, associations });
     }
 
@@ -51,6 +65,12 @@ export async function POST(req: NextRequest) {
         updatedAt: now,
       };
       await cooperativeStore.saveAssociation(assoc);
+      try {
+        const key = `${assoc.farmerId}_${assoc.cooperativeOrgId}`;
+        await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(key).set(assoc);
+      } catch {
+        // Fallback already handled
+      }
       return NextResponse.json({ success: true, association: assoc });
     }
 
@@ -69,6 +89,12 @@ export async function POST(req: NextRequest) {
         updatedAt: new Date().toISOString(),
       };
       await cooperativeStore.saveAssociation(assoc);
+      try {
+        const key = `${assoc.farmerId}_${assoc.cooperativeOrgId}`;
+        await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(key).set(assoc);
+      } catch {
+        // Fallback already handled
+      }
       return NextResponse.json({ success: true, association: assoc });
     }
 

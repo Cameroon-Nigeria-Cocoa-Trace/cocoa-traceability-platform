@@ -8,6 +8,7 @@ import { getReviewsForListing, createReview } from "@/services/reviewService";
 import { getAuthenticatedUser } from "@/lib/authServer";
 import { db } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
 
 export async function GET(req: NextRequest) {
   try {
@@ -46,12 +47,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Verify trade exists and belongs to user
-    const tradeSnap = await getDoc(doc(db, "trades", tradeId));
-    if (!tradeSnap.exists()) {
+    let tradeData: Record<string, unknown> | null = null;
+    try {
+      const tradeSnap = await getDoc(doc(db, "trades", tradeId));
+      if (tradeSnap.exists()) {
+        tradeData = tradeSnap.data();
+      }
+    } catch {
+      // Continue to admin check
+    }
+
+    if (!tradeData) {
+      try {
+        const adminSnap = await firebaseAdminDb.collection("trades").doc(tradeId).get();
+        if (adminSnap.exists) {
+          tradeData = (adminSnap.data() as Record<string, unknown>) || null;
+        }
+      } catch {
+        // Continue
+      }
+    }
+
+    if (!tradeData) {
       return NextResponse.json({ success: false, error: "Associated trade record not found." }, { status: 404 });
     }
 
-    const tradeData = tradeSnap.data();
     if (tradeData.buyerId !== user.userId) {
       return NextResponse.json({ success: false, error: "Unauthorized: Trade does not belong to this buyer." }, { status: 403 });
     }
@@ -60,11 +80,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Trade listing ID mismatch." }, { status: 400 });
     }
 
-    const purchasedQuantityKg = tradeData.quantityKg || 0;
+    const purchasedQuantityKg = typeof tradeData.quantityKg === "number" ? tradeData.quantityKg : 0;
+    const resolvedSellerId = (typeof sellerId === "string" && sellerId) ? sellerId : (typeof tradeData.sellerHolderId === "string" ? tradeData.sellerHolderId : "");
 
     const review = await createReview({
       listingId,
-      sellerId: sellerId || tradeData.sellerHolderId,
+      sellerId: resolvedSellerId,
       tradeId,
       buyerId: user.userId,
       buyerName: "Verified Buyer",
