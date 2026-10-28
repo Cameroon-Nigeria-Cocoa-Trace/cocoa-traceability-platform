@@ -232,17 +232,20 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
           if (userSnap.exists()) {
             const existingData = userSnap.data();
-            if (
-              existingData.role === "cooperative" ||
-              existingData.accountType === "cooperative" ||
-              coopProf ||
-              coopOrgId ||
-              cachedRole === "cooperative" ||
-              currentUser.email === "afumbomboyo@gmail.com"
-            ) {
+
+            // Specifically repair user account if it was previously corrupted to cooperative
+            if (currentUser.email === "afumbomboyo@gmail.com") {
+              roleToSet = "farmer";
+            } else if (existingData.role === "farmer" || existingData.accountType === "farmer") {
+              roleToSet = "farmer";
+            } else if (existingData.role === "cooperative" || existingData.accountType === "cooperative") {
               roleToSet = "cooperative";
             } else if (existingData.role) {
               roleToSet = existingData.role as "farmer" | "cooperative" | "buyer" | "admin";
+            } else if (coopProf || coopOrgId) {
+              roleToSet = "cooperative";
+            } else {
+              roleToSet = "farmer";
             }
 
             if (
@@ -271,13 +274,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               cooperativeOrgName: existingData.cooperativeOrgName || coopProf?.cooperativeOrgName || coopOrgName,
             });
           } else {
-            if (
-              coopProf ||
-              coopOrgId ||
-              cachedRole === "cooperative" ||
-              currentUser.email === "afumbomboyo@gmail.com"
-            ) {
+            if (currentUser.email === "afumbomboyo@gmail.com") {
+              roleToSet = "farmer";
+            } else if (cachedRole === "cooperative" && (coopProf || coopOrgId)) {
               roleToSet = "cooperative";
+            } else {
+              roleToSet = "farmer";
             }
 
             const newProf: UserProfileData = {

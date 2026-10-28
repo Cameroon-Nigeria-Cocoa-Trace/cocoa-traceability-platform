@@ -144,7 +144,7 @@ function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
 }
 
 export default function OriginCertificatesPage() {
-  const { user, farms, loading: authLoading } = useFirebase();
+  const { user, farms, loading: authLoading, isCooperative, userRole } = useFirebase();
 
   const apiClient = useMemo(() => {
     return createCocoaApiClient(async () => {
@@ -181,7 +181,7 @@ export default function OriginCertificatesPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
-  const isCooperativeAccount = Boolean(user?.email?.toLowerCase().includes("coop"));
+  const isCooperativeAccount = isCooperative || userRole === "cooperative";
   const selectedFormLot = lots.find((l) => l.lotId === formLotId);
 
   // Authority quick-issue modal state (if applicable)

@@ -86,6 +86,8 @@ export interface CreateCertificateApplicationInput {
   applicantId?: string; // Authenticated Firebase UID
   applicantType?: CertificateHolderType; // Defaults to "farmer"
   requestedQuantityKg: number;
+  targetCooperativeOrgId?: string;
+  targetCooperativeName?: string;
 }
 
 export interface IssueCertificateInput {
@@ -273,6 +275,8 @@ export async function createCertificateApplication(
     status: "submitted",
     createdAt: now,
     updatedAt: now,
+    ...(input.targetCooperativeOrgId ? { targetCooperativeOrgId: input.targetCooperativeOrgId } : {}),
+    ...(input.targetCooperativeName ? { targetCooperativeName: input.targetCooperativeName } : {}),
   };
 
   const appDocRef = doc(db, COLLECTIONS.CERTIFICATE_APPLICATIONS, applicationId);

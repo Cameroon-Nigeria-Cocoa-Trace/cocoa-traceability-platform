@@ -12,7 +12,7 @@ import { CooperativeAccountType } from "@/types/cooperative";
 
 export default function CooperativeSignupPage() {
   const router = useRouter();
-  const { signUpWithEmail, user } = useFirebase();
+  const { signUpWithEmail, user, setUserRole } = useFirebase();
 
   // Account Type Selection
   const [accountType, setAccountType] = useState<CooperativeAccountType>("organizational");
@@ -165,6 +165,11 @@ export default function CooperativeSignupPage() {
       const profJson = await profRes.json();
       if (!profJson.success || !profJson.profile) {
         throw new Error(profJson.error || "Failed to link user profile to cooperative organization.");
+      }
+
+      setUserRole("cooperative");
+      if (typeof window !== "undefined") {
+        localStorage.setItem("cocoatrace_user_role", "cooperative");
       }
 
       setSuccess("Cooperative registration completed successfully! Redirecting to dashboard...");

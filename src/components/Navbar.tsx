@@ -9,11 +9,12 @@ import { useFirebase } from "@/context/FirebaseContext";
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const { user, logout, isCooperative, userRole } = useFirebase();
+  const { user, logout, isCooperative, userRole, setUserRole } = useFirebase();
 
-  const dashboardHref = isCooperative ? "/dashboard/cooperative" : "/dashboard";
-  const forEntityLabel = isCooperative ? "Cooperative Hub" : "For Farmers";
-  const forEntityHref = isCooperative ? "/dashboard/cooperative" : user ? "/dashboard" : "/signup";
+  const isCoop = isCooperative || userRole === "cooperative";
+  const dashboardHref = isCoop ? "/dashboard/cooperative" : "/dashboard";
+  const forEntityLabel = isCoop ? "Cooperative Hub" : "For Farmers";
+  const forEntityHref = isCoop ? "/dashboard/cooperative" : user ? "/dashboard" : "/signup";
 
   const links = [
     ["Home", "/"],
@@ -95,11 +96,15 @@ export function Navbar() {
 
             {user ? (
               <div className="flex items-center gap-2">
-                {isCooperative && (
-                  <span className="rounded-full bg-[#b8f58b]/20 px-2 py-0.5 text-[10px] font-bold text-[#b8f58b] border border-[#b8f58b]/30 whitespace-nowrap">
-                    Cooperative
-                  </span>
-                )}
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border whitespace-nowrap ${
+                    isCoop
+                      ? "bg-[#b8f58b]/20 text-[#b8f58b] border-[#b8f58b]/30"
+                      : "bg-[#2d6130]/40 text-[#b8f58b] border-[#2d6130]"
+                  }`}
+                >
+                  {isCoop ? "Cooperative" : "Farmer"}
+                </span>
                 <span className="text-xs font-semibold text-white/80 max-w-[110px] truncate whitespace-nowrap">
                   {user.displayName || user.email}
                 </span>
@@ -117,10 +122,16 @@ export function Navbar() {
               </Link>
             )}
 
-            {isCooperative ? (
-              <Link href="/dashboard/cooperative" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                Cooperative Workspace
-              </Link>
+            {user ? (
+              isCoop ? (
+                <Link href="/dashboard/cooperative" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
+                  Cooperative Workspace
+                </Link>
+              ) : (
+                <Link href="/dashboard" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
+                  Farmer Workspace
+                </Link>
+              )
             ) : (
               <Link href="/signup" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
                 Register Your Farm

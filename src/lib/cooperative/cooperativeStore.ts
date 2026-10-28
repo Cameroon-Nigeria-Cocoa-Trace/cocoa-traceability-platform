@@ -103,6 +103,28 @@ export class CooperativeStore {
         doc(db, "cooperative_profiles", profile.id),
         cleanData(profile as unknown as Record<string, unknown>)
       );
+      await setDoc(
+        doc(db, "cooperative_profiles", `coop_usr_${profile.userId}`),
+        cleanData(profile as unknown as Record<string, unknown>),
+        { merge: true }
+      );
+      // Persist directly into users collection
+      await setDoc(
+        doc(db, "users", profile.userId),
+        cleanData({
+          id: profile.userId,
+          displayName: profile.fullName,
+          email: profile.email,
+          phone: profile.phone,
+          role: "cooperative",
+          accountType: "cooperative",
+          cooperativeOrgId: profile.cooperativeOrgId,
+          cooperativeOrgName: profile.cooperativeOrgName,
+          cooperativeRole: profile.role,
+          updatedAt: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
     } catch (err) {
       console.warn("Firestore notice saving cooperative_profile:", err);
     }
