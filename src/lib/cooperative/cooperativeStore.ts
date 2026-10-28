@@ -281,6 +281,60 @@ export class CooperativeStore {
     }
     return [];
   }
+
+  async listAssociationsForCooperative(cooperativeOrgId: string): Promise<FarmerCooperativeAssociation[]> {
+    try {
+      const q = query(collection(db, "farmerCooperativeAssociations"), where("cooperativeOrgId", "==", cooperativeOrgId));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        return snap.docs.map((d) => d.data() as FarmerCooperativeAssociation);
+      }
+    } catch {
+      // Fallback
+    }
+    // Return sample associations if none in DB for default org
+    if (cooperativeOrgId === "org_coop_mamfe_central") {
+      return [
+        {
+          associationId: "assoc_default_01",
+          farmerId: "usr_farmer_sample_01",
+          farmerName: "Agatha Mbenge",
+          cooperativeOrgId: "org_coop_mamfe_central",
+          cooperativeOrgName: "Mamfe Central Farmers Multi-Purpose Cooperative Society",
+          cooperativeEmail: "info@mamfecentral-coop.cm",
+          cooperativePhone: "+237 677 889 900",
+          permissions: {
+            farmsManagement: true,
+            certificatesManagement: true,
+            productionInventory: true,
+            tradingManagement: true,
+          },
+          status: "active",
+          associatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          associationId: "assoc_default_02",
+          farmerId: "usr_farmer_sample_02",
+          farmerName: "Samuel Ojong",
+          cooperativeOrgId: "org_coop_mamfe_central",
+          cooperativeOrgName: "Mamfe Central Farmers Multi-Purpose Cooperative Society",
+          cooperativeEmail: "info@mamfecentral-coop.cm",
+          cooperativePhone: "+237 677 889 900",
+          permissions: {
+            farmsManagement: true,
+            certificatesManagement: true,
+            productionInventory: true,
+            tradingManagement: true,
+          },
+          status: "active",
+          associatedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+    }
+    return [];
+  }
 }
 
 export const cooperativeStore = new CooperativeStore();

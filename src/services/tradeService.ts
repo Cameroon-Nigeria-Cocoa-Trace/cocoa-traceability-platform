@@ -450,12 +450,12 @@ export async function verifyAndFinalizeOnPlatformPurchase(
     }
 
     // 3. Update Marketplace Listing inside Transaction
-    tx.update(listingRef, {
+    tx.update(listingRef, cleanData({
       currentQrPackageIds: updatedQrPackageIds !== undefined ? updatedQrPackageIds : listing.currentQrPackageIds,
       quantityAvailableKg: newQuantityAvailableKg,
       listingStatus: newListingStatus,
       updatedAt: now,
-    });
+    }));
 
     // 4. Calculate Financials & Fees
     const tradeValue = input.purchasedQuantityKg * listing.pricePerKg;
@@ -540,7 +540,7 @@ export async function verifyAndFinalizeOnPlatformPurchase(
     };
 
     const tradeRef = doc(db, COLLECTIONS.TRADES, tradeId);
-    tx.set(tradeRef, tradeRecord);
+    tx.set(tradeRef, cleanData(tradeRecord));
 
     // 7. Record Completed PaymentRecord
     const paymentRecord: PaymentRecord = {
@@ -560,7 +560,7 @@ export async function verifyAndFinalizeOnPlatformPurchase(
       paidAt: now,
       createdAt: now,
     };
-    tx.set(payRefDoc, paymentRecord);
+    tx.set(payRefDoc, cleanData(paymentRecord));
 
     // 8. Automatically Grant Seller Access Record to Buyer
     const accessId = `acc_${tradeId}`;
@@ -576,7 +576,7 @@ export async function verifyAndFinalizeOnPlatformPurchase(
       accessStatus: "active",
       accessGrantedAt: now,
     };
-    tx.set(accessRef, accessRecord);
+    tx.set(accessRef, cleanData(accessRecord));
 
     return { trade: tradeRecord, destHolding: destHoldingResult };
   });
@@ -634,13 +634,13 @@ export async function paySellerInfoAccessFee(
       accessGrantedAt: now,
     };
 
-    tx.set(accessRef, accessRecord);
+    tx.set(accessRef, cleanData(accessRecord));
 
     // Lock listing status to under_negotiation
-    tx.update(listingRef, {
+    tx.update(listingRef, cleanData({
       listingStatus: "under_negotiation",
       updatedAt: now,
-    });
+    }));
 
     // Record Payment
     const paymentId = `pay_access_${accessId}`;
@@ -660,7 +660,7 @@ export async function paySellerInfoAccessFee(
       paidAt: now,
       createdAt: now,
     };
-    tx.set(paymentRef, paymentRecord);
+    tx.set(paymentRef, cleanData(paymentRecord));
 
     return accessRecord;
   });
@@ -883,12 +883,12 @@ export async function declareOffPlatformSale(
     }
 
     // 2. Update Marketplace Listing
-    tx.update(listingRef, {
+    tx.update(listingRef, cleanData({
       quantityAvailableKg: remainingQuantity,
       listingStatus: newListingStatus,
       pendingAccessIntent: null,
       updatedAt: now,
-    });
+    }));
 
     // 3. Record Trade Record
     const tradeRecord: TradeRecord = {
@@ -1126,12 +1126,12 @@ export async function concludeNegotiationDeal(
     }
 
     // Update Listing: listed back as available if partial, or sold if complete
-    tx.update(listingRef, {
+    tx.update(listingRef, cleanData({
       quantityAvailableKg: remainingQuantity,
       listingStatus: newListingStatus,
       pendingAccessIntent: null,
       updatedAt: now,
-    });
+    }));
 
     // Record Trade Record
     const buyerIdentifier = input.buyerId?.trim() || "buyer_off_platform";
@@ -1165,14 +1165,14 @@ export async function concludeNegotiationDeal(
     };
 
     const tradeRef = doc(db, COLLECTIONS.TRADES, tradeId);
-    tx.set(tradeRef, tradeRecord);
+    tx.set(tradeRef, cleanData(tradeRecord));
 
     // Update Seller Access Record
     if (input.accessId && input.accessId.trim()) {
       const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, input.accessId.trim());
       const accSnap = await tx.get(accRef);
       if (accSnap.exists()) {
-        tx.update(accRef, {
+        tx.update(accRef, cleanData({
           accessStatus: "concluded_sold",
           dealOutcome: "sold",
           soldQuantityKg: quantityKg,
@@ -1180,17 +1180,17 @@ export async function concludeNegotiationDeal(
           tradeId,
           concludedAt: now,
           updatedAt: now,
-        });
+        }));
       }
     } else {
       // Look up candidate access records
       const c1 = `SAR-${listing.listingId}-${buyerIdentifier}`;
-      const c2 = `acc_${listing.listingId}_${buyerIdentifier}`;
+      const c2 = `acc_${listing.listingId}-${buyerIdentifier}`;
       for (const cid of [c1, c2]) {
         const cRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, cid);
         const cSnap = await tx.get(cRef);
         if (cSnap.exists()) {
-          tx.update(cRef, {
+          tx.update(cRef, cleanData({
             accessStatus: "concluded_sold",
             dealOutcome: "sold",
             soldQuantityKg: quantityKg,
@@ -1198,7 +1198,7 @@ export async function concludeNegotiationDeal(
             tradeId,
             concludedAt: now,
             updatedAt: now,
-          });
+          }));
         }
       }
     }
@@ -1489,12 +1489,12 @@ export async function rejectTradeByBuyer(
       updatedAt: now,
     };
 
-    tx.update(tradeRef, {
+    tx.update(tradeRef, cleanData({
       tradeStatus: "cancelled",
       buyerConfirmed: false,
       notes: updatedTrade.notes,
       updatedAt: now,
-    });
+    }));
 
     return updatedTrade;
   });

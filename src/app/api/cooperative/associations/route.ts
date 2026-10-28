@@ -7,11 +7,30 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const farmerId = searchParams.get("farmerId");
+    const cooperativeOrgId = searchParams.get("cooperativeOrgId");
     const searchQuery = searchParams.get("search");
 
     if (searchQuery) {
       const orgs = await cooperativeStore.searchOrganizations(searchQuery);
       return NextResponse.json({ success: true, organizations: orgs });
+    }
+
+    if (cooperativeOrgId) {
+      let associations = await cooperativeStore.listAssociationsForCooperative(cooperativeOrgId);
+      if (associations.length === 0) {
+        try {
+          const snap = await firebaseAdminDb
+            .collection("farmerCooperativeAssociations")
+            .where("cooperativeOrgId", "==", cooperativeOrgId)
+            .get();
+          if (!snap.empty) {
+            associations = snap.docs.map((d) => d.data() as FarmerCooperativeAssociation);
+          }
+        } catch {
+          // Continue
+        }
+      }
+      return NextResponse.json({ success: true, associations });
     }
 
     if (farmerId) {
@@ -32,7 +51,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, associations });
     }
 
-    return NextResponse.json({ success: false, error: "farmerId or search query is required." }, { status: 400 });
+    return NextResponse.json({ success: false, error: "farmerId, cooperativeOrgId, or search query is required." }, { status: 400 });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ success: false, error: msg }, { status: 400 });
