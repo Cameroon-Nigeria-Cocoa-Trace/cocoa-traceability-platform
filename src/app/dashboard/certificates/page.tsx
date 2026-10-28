@@ -185,8 +185,13 @@ export default function OriginCertificatesPage() {
   
   const uncertifiedLots = useMemo(() => {
     const certifiedLotIds = new Set(certificates.map(c => c.lotId));
-    return lots.filter(l => !certifiedLotIds.has(l.lotId));
-  }, [lots, certificates]);
+    const activeAppLotIds = new Set(
+      applications
+        .filter(a => a.status !== "rejected")
+        .map(a => a.lotId)
+    );
+    return lots.filter(l => !certifiedLotIds.has(l.lotId) && !activeAppLotIds.has(l.lotId));
+  }, [lots, certificates, applications]);
 
   const selectedFormLot = uncertifiedLots.find((l) => l.lotId === formLotId);
 
