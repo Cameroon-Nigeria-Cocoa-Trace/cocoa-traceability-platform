@@ -182,7 +182,13 @@ export default function OriginCertificatesPage() {
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
   const isCooperativeAccount = isCooperative || userRole === "cooperative";
-  const selectedFormLot = lots.find((l) => l.lotId === formLotId);
+  
+  const uncertifiedLots = useMemo(() => {
+    const certifiedLotIds = new Set(certificates.map(c => c.lotId));
+    return lots.filter(l => !certifiedLotIds.has(l.lotId));
+  }, [lots, certificates]);
+
+  const selectedFormLot = uncertifiedLots.find((l) => l.lotId === formLotId);
 
   // Authority quick-issue modal state (if applicable)
   const [issuingAppId, setIssuingAppId] = useState<string | null>(null);
@@ -842,7 +848,7 @@ export default function OriginCertificatesPage() {
                     className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-2 text-xs font-medium text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
                   >
                     <option value="">-- Select a registered Cocoa Lot --</option>
-                    {lots.map((l) => (
+                    {uncertifiedLots.map((l) => (
                       <option key={l.lotId} value={l.lotId}>
                         {l.lotNumber} — {l.quantityKg.toLocaleString()} kg ({l.productionPeriod})
                       </option>

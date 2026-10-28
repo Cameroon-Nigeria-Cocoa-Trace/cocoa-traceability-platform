@@ -607,30 +607,24 @@ export async function GET(req: NextRequest) {
     const harvestId = searchParams.get("harvestId")?.trim();
 
     if (!farmId && !productionRecordId && !harvestId) {
-      const snapshot = await firebaseAdminDb
+      // Find lots where the creator is the user
+      const snapshotByCreator = await firebaseAdminDb
         .collection("cocoaLots")
         .where("createdBy", "==", user.userId)
         .get();
 
-      let lots = snapshot.docs
-        .map((document) => document.data() as CocoaLot);
+      // Find lots where the farmerId is the user (if different)
+      const snapshotByFarmer = await firebaseAdminDb
+        .collection("cocoaLots")
+        .where("farmerId", "==", user.userId)
+        .get();
 
-      if (lots.length === 0) {
-        const farmerSnap = await firebaseAdminDb
-          .collection("cocoaLots")
-          .where("farmerId", "==", user.userId)
-          .get();
-        lots = farmerSnap.docs.map((document) => document.data() as CocoaLot);
-      }
+      const lotsMap = new Map<string, CocoaLot>();
+      snapshotByCreator.docs.forEach((doc) => lotsMap.set(doc.id, doc.data() as CocoaLot));
+      snapshotByFarmer.docs.forEach((doc) => lotsMap.set(doc.id, doc.data() as CocoaLot));
 
-      if (lots.length === 0) {
-        const allSnap = await firebaseAdminDb
-          .collection("cocoaLots")
-          .get();
-        lots = allSnap.docs.map((document) => document.data() as CocoaLot);
-      }
-
-      lots.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const lots = Array.from(lotsMap.values())
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
       return NextResponse.json({
         success: true,
