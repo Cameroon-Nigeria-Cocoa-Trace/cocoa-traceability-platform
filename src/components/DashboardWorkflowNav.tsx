@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useFirebase } from "@/context/FirebaseContext";
 import {
   Compass,
   Sprout,
@@ -167,6 +168,7 @@ export function DashboardWorkflowNav({
   currentTab = "farm-management",
   onSelectTab,
 }: DashboardWorkflowNavProps) {
+  const { isCooperative } = useFirebase();
   const normalizedTab = currentTab === "production-inventory" ? "cooperative-management" : currentTab;
   const [selectedGroupOverride, setSelectedGroupOverride] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
@@ -254,10 +256,11 @@ export function DashboardWorkflowNav({
                   const Icon = item.icon;
 
                   if (item.isReady) {
+                    const itemHref = item.href === "/dashboard" && isCooperative ? "/dashboard/cooperative" : item.href;
                     return (
                       <Link
                         key={item.name}
-                        href={item.href}
+                        href={itemHref}
                         className="group flex flex-col justify-between rounded-2xl border border-[#dfe7d8] bg-[#fafcf9] p-4 sm:p-5 transition-all hover:border-[#2d6130] hover:bg-white hover:shadow-lg"
                       >
                         <div className="flex items-start gap-3.5">

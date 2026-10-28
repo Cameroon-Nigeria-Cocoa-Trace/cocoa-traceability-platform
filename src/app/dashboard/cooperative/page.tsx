@@ -1,4 +1,4 @@
-/* eslint-disable react-hooks/set-state-in-effect, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
+/* eslint-disable react-hooks/set-state-in-effect, @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
@@ -31,12 +31,16 @@ import {
   ExternalLink,
   Trees,
   Truck,
+  Check,
+  Filter,
+  Info,
 } from "lucide-react";
 import {
   FarmerCooperativeAssociation,
-  CooperativeOrganization,
 } from "@/types/cooperative";
 import { TradeRecord, CertificateHolding } from "@/types/traceability";
+import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 const MapboxGeofenceMap = dynamic(
   () => import("@/components/MapboxGeofenceMap"),
@@ -62,32 +66,57 @@ export default function CooperativeDashboardPage() {
 }
 
 function CooperativeDashboardContent() {
-  const { user } = useFirebase();
+  const { user, userProfile, cooperativeProfile } = useFirebase();
 
-  // Active Tab State
+  // Active Subsection Tab State
   const [activeTab, setActiveTab] = useState<
-    "farmers" | "farms" | "production" | "lots" | "certificates" | "trades"
-  >("farmers");
+    "farms" | "farmers" | "production" | "lots" | "certificates" | "trades"
+  >("farms");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Cooperative Identity
+  const coopOrgId = useMemo(() => {
+    return (
+      cooperativeProfile?.cooperativeOrgId ||
+      userProfile?.cooperativeOrgId ||
+      (user ? `org_coop_${user.uid.slice(0, 8)}` : "org_coop_mamfe_central")
+    );
+  }, [cooperativeProfile, userProfile, user]);
+
+  const coopOrgName = useMemo(() => {
+    return (
+      cooperativeProfile?.cooperativeOrgName ||
+      userProfile?.cooperativeOrgName ||
+      (user?.displayName ? `${user.displayName} Cooperative Society` : "Mamfe Central Farmers Multi-Purpose Cooperative Society")
+    );
+  }, [cooperativeProfile, userProfile, user]);
+
   // Cooperative Associations & Farmers
-  const [coopOrgId] = useState("org_coop_mamfe_central");
-  const [coopOrgName] = useState(
-    "Mamfe Central Farmers Multi-Purpose Cooperative Society"
-  );
   const [associations, setAssociations] = useState<FarmerCooperativeAssociation[]>([]);
   const [selectedFarmerIdFilter, setSelectedFarmerIdFilter] = useState<string>("ALL");
 
-  // Farms / Plots State
+  // Farms / Plots State (Scoped to associations & permissions)
   const [farms, setFarms] = useState<FarmRecord[]>([]);
   const [selectedFarm, setSelectedFarm] = useState<FarmRecord | null>(null);
   const [certificateModalFarm, setCertificateModalFarm] = useState<FarmRecord | null>(null);
   const [highlightedPlotId, setHighlightedPlotId] = useState<string | null>(null);
+  const [plotSearchTerm, setPlotSearchTerm] = useState("");
 
-  // Modal: Register Farm Plot
+  // Modal: Link / Create Farmer Association
+  const [showAssociateModal, setShowAssociateModal] = useState(false);
+  const [assocFarmerId, setAssocFarmerId] = useState("");
+  const [assocFarmerName, setAssocFarmerName] = useState("");
+  const [assocFarmerPhone, setAssocFarmerPhone] = useState("+237 677 000 000");
+  const [assocFarmScope, setAssocFarmScope] = useState<"all" | "single_farm">("all");
+  const [assocSingleFarmName, setAssocSingleFarmName] = useState("");
+  const [assocSingleFarmId, setAssocSingleFarmId] = useState("");
+  const [assocManageEverything, setAssocManageEverything] = useState(true);
+  const [assocSubmitting, setAssocSubmitting] = useState(false);
+
+  // Modal: Register Farm Plot (delegated)
   const [showRegisterFarmModal, setShowRegisterFarmModal] = useState(false);
   const [farmNameInput, setFarmNameInput] = useState("");
   const [farmFarmerIdInput, setFarmFarmerIdInput] = useState("");
@@ -99,6 +128,7 @@ function CooperativeDashboardContent() {
   // Modal: Record Production Harvest
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [prodFarmerIdInput, setProdFarmerIdInput] = useState("");
+  const [prodFarmIdInput, setProdFarmIdInput] = useState("");
   const [prodBatchInput, setProdBatchInput] = useState("");
   const [prodQtyInput, setProdQtyInput] = useState<number | "">(1000);
   const [prodSubmitting, setProdSubmitting] = useState(false);
@@ -106,113 +136,85 @@ function CooperativeDashboardContent() {
   // Modal: Create Cocoa Lot
   const [showLotModal, setShowLotModal] = useState(false);
   const [lotFarmerIdInput, setLotFarmerIdInput] = useState("");
+  const [lotFarmIdInput, setLotFarmIdInput] = useState("");
   const [lotQtyInput, setLotQtyInput] = useState<number | "">(1000);
   const [lotSubmitting, setLotSubmitting] = useState(false);
 
   // Modal: Apply Certificate
   const [showCertModal, setShowCertModal] = useState(false);
   const [certFarmerIdInput, setCertFarmerIdInput] = useState("");
+  const [certFarmIdInput, setCertFarmIdInput] = useState("");
   const [certSubmitting, setCertSubmitting] = useState(false);
 
   // Trades & Holdings State
   const [trades, setTrades] = useState<TradeRecord[]>([]);
-  const [holdings, setHoldings] = useState<CertificateHolding[]>([]);
 
+  // Load Cooperative Associations & Delegated Farms
   const loadCooperativeData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch Associated Farmers
+      // 1. Fetch real associations from Firestore API
       const res = await fetch(`/api/cooperative/associations?cooperativeOrgId=${coopOrgId}`);
       const json = await res.json();
       let assocs: FarmerCooperativeAssociation[] = [];
       if (json.success && Array.isArray(json.associations)) {
         assocs = json.associations;
       }
-      if (assocs.length === 0) {
-        assocs = [
-          {
-            associationId: "assoc_default_01",
-            farmerId: "usr_farmer_sample_01",
-            farmerName: "Agatha Mbenge",
-            cooperativeOrgId: coopOrgId,
-            cooperativeOrgName: coopOrgName,
-            cooperativeEmail: "info@mamfecentral-coop.cm",
-            cooperativePhone: "+237 677 889 900",
-            permissions: { farmsManagement: true, certificatesManagement: true, productionInventory: true, tradingManagement: true },
-            status: "active",
-            associatedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          {
-            associationId: "assoc_default_02",
-            farmerId: "usr_farmer_sample_02",
-            farmerName: "Samuel Ojong",
-            cooperativeOrgId: coopOrgId,
-            cooperativeOrgName: coopOrgName,
-            cooperativeEmail: "info@mamfecentral-coop.cm",
-            cooperativePhone: "+237 677 889 900",
-            permissions: { farmsManagement: true, certificatesManagement: true, productionInventory: true, tradingManagement: true },
-            status: "active",
-            associatedAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        ];
-      }
+
       setAssociations(assocs);
 
-      // 2. Fetch Farms
-      const sampleFarms: FarmRecord[] = [
-        {
-          id: "farm_sample_01",
-          farmName: "Mbenge Family Cocoa Plot",
-          farmerId: "usr_farmer_sample_01",
-          farmerName: "Agatha Mbenge",
-          region: "South-West Region",
-          village: "Ossing",
-          lga: "Manyu",
-          cooperative: coopOrgName,
-          geolocation: "5.4521° N, 9.2431° E",
-          sizeHectares: 3.2,
-          geofenceAreaHa: 3.2,
-          cocoaVariety: "F1 Hybrid Trinitario",
-          quantityHarvestedKg: 1450,
-          batchNumber: "BATCH-MBO-01",
-          eudrCompliant: true,
-          geofencePolygon: [
-            [9.243, 5.452],
-            [9.245, 5.453],
-            [9.246, 5.451],
-            [9.243, 5.452],
-          ] as any,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "farm_sample_02",
-          farmName: "Ojong Agro Plantation",
-          farmerId: "usr_farmer_sample_02",
-          farmerName: "Samuel Ojong",
-          region: "South-West Region",
-          village: "Ekok",
-          lga: "Manyu",
-          cooperative: coopOrgName,
-          geolocation: "5.6812° N, 8.9823° E",
-          sizeHectares: 5.0,
-          geofenceAreaHa: 5.0,
-          cocoaVariety: "Amelonado High-Yield",
-          quantityHarvestedKg: 2800,
-          batchNumber: "BATCH-OJO-02",
-          eudrCompliant: true,
-          geofencePolygon: [
-            [8.982, 5.681],
-            [8.985, 5.683],
-            [8.986, 5.680],
-            [8.982, 5.681],
-          ] as any,
-          createdAt: new Date().toISOString(),
-        },
-      ];
-      setFarms(sampleFarms);
+      // 2. Fetch Farms for all active associations with management permissions
+      const loadedFarms: FarmRecord[] = [];
+      for (const a of assocs) {
+        if (a.status !== "active") continue;
+        // Check permission to manage everything or farmsManagement
+        if (!a.manageEverything && !a.permissions?.farmsManagement) continue;
+
+        try {
+          const q = query(collection(db, "farms"), where("farmerId", "==", a.farmerId));
+          const snap = await getDocs(q);
+          const farmerFarms = snap.docs.map((d) => ({ ...d.data(), id: d.id } as FarmRecord));
+
+          // If delegated to a single farm only, filter strictly by delegatedFarmIds
+          if (a.farmScope === "single_farm" && Array.isArray(a.delegatedFarmIds) && a.delegatedFarmIds.length > 0) {
+            const singleFarms = farmerFarms.filter((f) => a.delegatedFarmIds!.includes(f.id));
+            if (singleFarms.length > 0) {
+              loadedFarms.push(...singleFarms);
+            } else if (a.delegatedFarmNames && a.delegatedFarmNames[0]) {
+              // Synthetic placeholder farm for the delegated single farm if not in Firestore yet
+              loadedFarms.push({
+                id: a.delegatedFarmIds[0],
+                farmName: a.delegatedFarmNames[0],
+                farmerId: a.farmerId,
+                farmerName: a.farmerName,
+                region: "South-West Region",
+                village: "Manyu Basin",
+                cooperative: coopOrgName,
+                geolocation: "5.7142° N, 9.2891° E",
+                sizeHectares: 2.8,
+                geofenceAreaHa: 2.8,
+                cocoaVariety: "Trinitario F1",
+                quantityHarvestedKg: 950,
+                eudrCompliant: true,
+                createdAt: a.associatedAt,
+                geofencePolygon: [
+                  [9.288, 5.713],
+                  [9.291, 5.715],
+                  [9.292, 5.712],
+                  [9.288, 5.713],
+                ] as any,
+              });
+            }
+          } else {
+            loadedFarms.push(...farmerFarms);
+          }
+        } catch (e) {
+          console.warn("Could not load farms for farmer:", a.farmerId, e);
+        }
+      }
+
+      setFarms(loadedFarms);
 
       // 3. Fetch Trades
       const tradesRes = await fetch("/api/marketplace/trades");
@@ -231,80 +233,188 @@ function CooperativeDashboardContent() {
     loadCooperativeData();
   }, [loadCooperativeData]);
 
+  // Selected association based on filter
+  const activeAssociation = useMemo(() => {
+    if (selectedFarmerIdFilter === "ALL") return null;
+    return associations.find((a) => a.farmerId === selectedFarmerIdFilter) || null;
+  }, [associations, selectedFarmerIdFilter]);
+
   // Filtered Farms based on selected Farmer Filter
   const filteredFarms = useMemo(() => {
-    if (selectedFarmerIdFilter === "ALL") return farms;
-    return farms.filter((f: any) => f.farmerId === selectedFarmerIdFilter);
-  }, [farms, selectedFarmerIdFilter]);
+    let result = farms;
+    if (selectedFarmerIdFilter !== "ALL") {
+      result = result.filter((f: any) => f.farmerId === selectedFarmerIdFilter);
+    }
+    if (plotSearchTerm.trim()) {
+      const term = plotSearchTerm.toLowerCase();
+      result = result.filter(
+        (f) =>
+          f.farmName.toLowerCase().includes(term) ||
+          (f.farmerName || "").toLowerCase().includes(term) ||
+          (f.village || "").toLowerCase().includes(term) ||
+          (f.region || "").toLowerCase().includes(term)
+      );
+    }
+    return result;
+  }, [farms, selectedFarmerIdFilter, plotSearchTerm]);
 
-  // Cooperative Metrics
+  // Metrics
   const totalAssociatedFarmers = associations.length;
+  const hasActiveAssociations = totalAssociatedFarmers > 0;
   const totalPlots = filteredFarms.length;
-  const totalHectares = filteredFarms.reduce((acc: number, f: any) => acc + (f.geofenceAreaHa ?? f.sizeHectares ?? 0), 0).toFixed(1);
+  const totalHectares = filteredFarms
+    .reduce((acc: number, f: any) => acc + (f.geofenceAreaHa ?? f.sizeHectares ?? 0), 0)
+    .toFixed(1);
   const totalHarvestKg = filteredFarms.reduce((acc: number, f: any) => acc + (f.quantityHarvestedKg || 0), 0);
   const compliantCount = filteredFarms.filter((f: any) => f.eudrCompliant).length;
 
   // Map plots
-  const mapPlots = filteredFarms.flatMap((farm: any, idx: number) => {
-    const poly = Array.isArray(farm.geofencePolygon) ? farm.geofencePolygon : [];
-    const coords: [number, number][] = poly.map((p: any) => [p.lng || p[0] || 0, p.lat || p[1] || 0]);
-    if (coords.length < 3) return [];
-    return [
-      {
-        id: farm.id,
-        name: `${farm.farmName} (${farm.farmerName || "Farmer"})`,
-        polygon: coords,
-        areaHa: farm.geofenceAreaHa ?? farm.sizeHectares ?? 0,
-        region: farm.region,
-        color: highlightedPlotId === farm.id ? "#b8f58b" : idx % 2 === 0 ? "#2a7a33" : "#10b981",
-      },
-    ];
-  });
+  const mapPlots = useMemo(() => {
+    return filteredFarms.flatMap((farm: any, idx: number) => {
+      const poly = Array.isArray(farm.geofencePolygon) ? farm.geofencePolygon : [];
+      const coords: [number, number][] = poly.map((p: any) => [
+        p.lng || p[0] || 0,
+        p.lat || p[1] || 0,
+      ]);
+      if (coords.length < 3) return [];
+      return [
+        {
+          id: farm.id,
+          name: `${farm.farmName} (${farm.farmerName || "Member Plot"})`,
+          polygon: coords,
+          areaHa: farm.geofenceAreaHa ?? farm.sizeHectares ?? 0,
+          region: farm.region || "South-West Region",
+          color: highlightedPlotId === farm.id ? "#b8f58b" : idx === 0 ? "#2a7a33" : "#10b981",
+        },
+      ];
+    });
+  }, [filteredFarms, highlightedPlotId]);
 
-  // Handle Register Farm Plot on behalf of associated farmer
+  // Handle Linking a New Association
+  const handleCreateAssociation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assocFarmerId.trim() || !assocFarmerName.trim()) {
+      setError("Please provide both Farmer ID and Farmer Name.");
+      return;
+    }
+
+    if (assocFarmScope === "single_farm" && (!assocSingleFarmName.trim() || !assocSingleFarmId.trim())) {
+      setError("Please specify the single farm name and farm ID for single-farm delegation.");
+      return;
+    }
+
+    setAssocSubmitting(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/cooperative/associations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "associate",
+          farmerId: assocFarmerId.trim(),
+          farmerName: assocFarmerName.trim(),
+          cooperativeOrgId: coopOrgId,
+          cooperativeOrgName: coopOrgName,
+          cooperativeEmail: user?.email || "info@mamfecentral-coop.cm",
+          cooperativePhone: assocFarmerPhone.trim() || "+237 677 000 000",
+          farmScope: assocFarmScope,
+          delegatedFarmIds: assocFarmScope === "single_farm" ? [assocSingleFarmId.trim()] : ["ALL"],
+          delegatedFarmNames: assocFarmScope === "single_farm" ? [assocSingleFarmName.trim()] : ["All Farms"],
+          manageEverything: assocManageEverything,
+          permissions: {
+            farmsManagement: true,
+            certificatesManagement: true,
+            productionInventory: true,
+            tradingManagement: true,
+          },
+        }),
+      });
+
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || "Failed to create farmer association.");
+      }
+
+      setSuccessMsg(
+        `Successfully associated ${assocFarmerName} with ${assocFarmScope === "single_farm" ? `single farm "${assocSingleFarmName}"` : "all member farms"} management permissions!`
+      );
+      setShowAssociateModal(false);
+      setAssocFarmerId("");
+      setAssocFarmerName("");
+      setAssocSingleFarmName("");
+      setAssocSingleFarmId("");
+      await loadCooperativeData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAssocSubmitting(false);
+    }
+  };
+
+  // Helper check: verify if cooperative can perform actions for a farmer/farm
+  const verifyFarmManagementPermission = (farmerId: string, farmId?: string): boolean => {
+    const assoc = associations.find((a) => a.farmerId === farmerId);
+    if (!assoc || assoc.status !== "active") return false;
+    if (!assoc.manageEverything && !assoc.permissions?.farmsManagement) return false;
+    if (assoc.farmScope === "single_farm" && farmId && Array.isArray(assoc.delegatedFarmIds)) {
+      return assoc.delegatedFarmIds.includes(farmId);
+    }
+    return true;
+  };
+
+  // Handle Register Farm Plot on Behalf of Farmer
   const handleRegisterFarm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!farmFarmerIdInput) {
-      setError("Please select an associated farmer for this farm plot.");
+      setError("Please select an associated member farmer.");
       return;
     }
+
+    if (!verifyFarmManagementPermission(farmFarmerIdInput)) {
+      setError("Permission Denied: Your cooperative does not have farm management permission for this farmer.");
+      return;
+    }
+
+    const selectedAssoc = associations.find((a) => a.farmerId === farmFarmerIdInput);
+    if (selectedAssoc?.farmScope === "single_farm" && farms.some((f) => f.farmerId === farmFarmerIdInput)) {
+      setError("Permission Denied: This farmer has only delegated a single farm to this cooperative. Cannot register additional plots.");
+      return;
+    }
+
     setFarmSubmitting(true);
     setError(null);
     try {
-      const selectedAssoc = associations.find((a) => a.farmerId === farmFarmerIdInput);
-      const farmerName = selectedAssoc ? selectedAssoc.farmerName : "Associated Farmer";
-
+      const farmId = `farm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const newFarm: FarmRecord = {
-        id: `farm_coop_${Date.now()}`,
-        farmName: farmNameInput.trim() || `${farmerName}'s Cooperative Cocoa Plot`,
+        id: farmId,
+        farmName: farmNameInput.trim(),
         farmerId: farmFarmerIdInput,
-        farmerName,
+        farmerName: selectedAssoc?.farmerName || "Associated Farmer",
         region: farmRegionInput,
-        village: farmVillageInput.trim() || "Cooperative Sector",
-        lga: "Manyu",
+        village: farmVillageInput.trim() || "Manyu Basin",
         cooperative: coopOrgName,
-        geolocation: "5.4512° N, 9.2415° E",
+        geolocation: "5.4521° N, 9.2431° E",
         sizeHectares: Number(farmSizeInput) || 2.5,
         geofenceAreaHa: Number(farmSizeInput) || 2.5,
-        cocoaVariety: "F1 Hybrid Trinitario",
-        quantityHarvestedKg: 500,
-        batchNumber: `BATCH-COOP-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        cocoaVariety: "Trinitario F1",
+        quantityHarvestedKg: 0,
         eudrCompliant: true,
-        geofencePolygon: [
-          [9.241, 5.451],
-          [9.244, 5.452],
-          [9.243, 5.450],
-          [9.241, 5.451],
-        ] as any,
         createdAt: new Date().toISOString(),
+        geofencePolygon: [
+          [9.243, 5.452],
+          [9.246, 5.454],
+          [9.247, 5.451],
+          [9.243, 5.452],
+        ] as any,
       };
 
-      setFarms((prev) => [newFarm, ...prev]);
-      setSuccessMsg(`Successfully registered farm plot for ${farmerName} operated on behalf of ${coopOrgName}!`);
+      await setDoc(doc(db, "farms", farmId), newFarm);
+      setSuccessMsg(`Farm Plot "${newFarm.farmName}" successfully registered on behalf of ${newFarm.farmerName}!`);
       setShowRegisterFarmModal(false);
       setFarmNameInput("");
       setFarmVillageInput("");
-      setTimeout(() => setSuccessMsg(null), 4000);
+      await loadCooperativeData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -316,19 +426,36 @@ function CooperativeDashboardContent() {
   const handleRecordProduction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodFarmerIdInput) {
-      setError("Please select an associated farmer.");
+      setError("Please select an associated member farmer.");
       return;
     }
+
+    if (!verifyFarmManagementPermission(prodFarmerIdInput, prodFarmIdInput)) {
+      setError("Permission Denied: Your cooperative does not have management rights for this farm.");
+      return;
+    }
+
     setProdSubmitting(true);
     setError(null);
     try {
-      const selectedAssoc = associations.find((a) => a.farmerId === prodFarmerIdInput);
-      const farmerName = selectedAssoc ? selectedAssoc.farmerName : "Associated Farmer";
+      const harvestId = `harv_${Date.now()}`;
+      await setDoc(doc(db, "harvests", harvestId), {
+        harvestId,
+        farmId: prodFarmIdInput || `farm_delegated_${prodFarmerIdInput}`,
+        farmerId: prodFarmerIdInput,
+        operatorRole: "cooperative",
+        cooperativeOrgId: coopOrgId,
+        batchNumber: prodBatchInput.trim() || `BATCH-COOP-${Date.now().toString().slice(-4)}`,
+        quantityHarvestedKg: Number(prodQtyInput) || 1000,
+        harvestDate: new Date().toISOString(),
+        qualityGrade: "Grade 1 Export (Fine Cocoa)",
+        createdAt: new Date().toISOString(),
+      });
 
-      setSuccessMsg(`Recorded ${Number(prodQtyInput).toLocaleString()} kg harvest batch (${prodBatchInput || "BATCH-COOP-NEW"}) for ${farmerName} operated by ${coopOrgName}.`);
+      setSuccessMsg(`Harvest batch recorded for member farmer (${prodQtyInput} kg) under ${coopOrgName} custody!`);
       setShowProductionModal(false);
       setProdBatchInput("");
-      setTimeout(() => setSuccessMsg(null), 4000);
+      await loadCooperativeData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -340,18 +467,36 @@ function CooperativeDashboardContent() {
   const handleCreateLot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lotFarmerIdInput) {
-      setError("Please select an associated farmer.");
+      setError("Please select an associated member farmer.");
       return;
     }
+
+    if (!verifyFarmManagementPermission(lotFarmerIdInput, lotFarmIdInput)) {
+      setError("Permission Denied: Your cooperative does not have management rights for this farm.");
+      return;
+    }
+
     setLotSubmitting(true);
     setError(null);
     try {
-      const selectedAssoc = associations.find((a) => a.farmerId === lotFarmerIdInput);
-      const farmerName = selectedAssoc ? selectedAssoc.farmerName : "Associated Farmer";
+      const lotId = `lot_${Date.now()}`;
+      await setDoc(doc(db, "cocoaLots", lotId), {
+        lotId,
+        lotNumber: `LOT-COOP-${Date.now().toString().slice(-5)}`,
+        farmId: lotFarmIdInput || `farm_delegated_${lotFarmerIdInput}`,
+        farmerId: lotFarmerIdInput,
+        operatorRole: "cooperative",
+        cooperativeOrgId: coopOrgId,
+        weightKg: Number(lotQtyInput) || 1000,
+        certificationStatus: "eudr_verified",
+        qualityGrade: "Grade 1 Export",
+        originRegion: "South-West Region, Cameroon",
+        createdAt: new Date().toISOString(),
+      });
 
-      setSuccessMsg(`Successfully created traceable cocoa lot (${Number(lotQtyInput).toLocaleString()} kg) for ${farmerName} under cooperative custody (${coopOrgName}).`);
+      setSuccessMsg(`Traceable cocoa lot created (${lotQtyInput} kg) for associated member farmer!`);
       setShowLotModal(false);
-      setTimeout(() => setSuccessMsg(null), 4000);
+      await loadCooperativeData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -363,18 +508,36 @@ function CooperativeDashboardContent() {
   const handleApplyCertificate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!certFarmerIdInput) {
-      setError("Please select an associated farmer.");
+      setError("Please select an associated member farmer.");
       return;
     }
+
+    if (!verifyFarmManagementPermission(certFarmerIdInput, certFarmIdInput)) {
+      setError("Permission Denied: Your cooperative does not have management rights for this farm.");
+      return;
+    }
+
     setCertSubmitting(true);
     setError(null);
     try {
-      const selectedAssoc = associations.find((a) => a.farmerId === certFarmerIdInput);
-      const farmerName = selectedAssoc ? selectedAssoc.farmerName : "Associated Farmer";
+      const certId = `CERT-CM-${Date.now().toString().slice(-6)}`;
+      await setDoc(doc(db, "certificates", certId), {
+        certificateId: certId,
+        lotId: `lot_delegated_${certFarmerIdInput}`,
+        farmId: certFarmIdInput || `farm_delegated_${certFarmerIdInput}`,
+        farmerId: certFarmerIdInput,
+        operatorRole: "cooperative",
+        cooperativeOrgId: coopOrgId,
+        cooperativeOrgName: coopOrgName,
+        status: "active",
+        issuedAt: new Date().toISOString(),
+        eudrDueDiligenceVerified: true,
+        countryOfOrigin: "Cameroon",
+      });
 
-      setSuccessMsg(`Origin Trace & EUDR Certificate application submitted successfully for ${farmerName} operated by ${coopOrgName}.`);
+      setSuccessMsg(`Origin Trace Certificate ${certId} issued on behalf of associated farmer!`);
       setShowCertModal(false);
-      setTimeout(() => setSuccessMsg(null), 4000);
+      await loadCooperativeData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -382,161 +545,272 @@ function CooperativeDashboardContent() {
     }
   };
 
+  // Filtered farms for a chosen farmer in modals
+  const getFarmsForFarmerModal = (farmerId: string) => {
+    return farms.filter((f) => f.farmerId === farmerId);
+  };
+
   return (
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
       <Navbar />
 
-      <main className="mx-auto max-w-[1360px] px-4 pt-28 pb-20 sm:px-6 sm:pt-32 lg:px-8">
-        <div className="mb-6">
-          <DashboardWorkflowNav currentTab="cooperative" />
-        </div>
-
-        {/* Alerts */}
-        {error && (
-          <div className="mb-6 rounded-2xl bg-red-50 p-4 text-xs text-red-800 flex items-center gap-2 border border-red-200 shadow-xs">
-            <AlertCircle size={16} className="shrink-0" />
-            <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-900 font-bold">×</button>
-          </div>
-        )}
-
-        {successMsg && (
-          <div className="mb-6 rounded-2xl bg-emerald-50 p-4 text-xs text-emerald-800 flex items-center gap-2 border border-emerald-200 shadow-xs">
-            <CheckCircle2 size={16} className="shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {/* Header & Cooperative Branding */}
-        <section className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+      <main className="mx-auto max-w-7xl px-4 pb-16 pt-28 sm:px-6 sm:pt-32 lg:px-8">
+        
+        {/* Top Header Badge & Workspace Identity */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[#edf7e8] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#2d6130] border border-[#d2ecc8]">
-                Cooperative Dashboard
+              <span className="rounded-full bg-[#edf7e8] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#2d6130] border border-[#cdebc2]">
+                Cooperative Workspace
               </span>
+
               <span className="flex items-center gap-1.5 text-xs font-bold text-[#0b3528]">
                 <Building2 size={14} className="text-[#2a7a33]" />
                 {coopOrgName}
               </span>
+
+              {user && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-[#57655d]">
+                  <UserCheck size={14} className="text-[#2a7a33]" />
+                  Operator: {user.displayName || user.email}
+                </span>
+              )}
             </div>
-            <h1 className="mt-3 text-3xl font-bold tracking-tight text-[#10251d] sm:text-4xl">
-              Cooperative Operations &amp; Farmer Management Hub
+
+            <h1 className="mt-3 text-2xl font-bold tracking-tight text-[#10251d] sm:text-3xl">
+              Cooperative Farm Plots &amp; Operations Overview
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#57655d]">
-              All operations are officially recognized as <strong>cooperative-operated</strong> on behalf of associated member farmers. Manage farm plots, production harvests, cocoa lots, EUDR certificates, and commercial trade.
+            <p className="mt-1 text-sm text-[#57655d]">
+              Manage member farmer plots, georeferenced polygon boundaries, EUDR compliance, and commercial trade operations under cooperative delegation.
             </p>
           </div>
 
-          {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
+              onClick={() => setShowAssociateModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#2d6130] bg-[#edf7e8] px-4 py-2.5 text-xs font-bold text-[#2d6130] transition hover:bg-[#d8eed0] cursor-pointer"
+            >
+              <Users size={14} />
+              + Link Member Farmer
+            </button>
+
+            <button
+              type="button"
+              disabled={!hasActiveAssociations}
               onClick={() => {
+                if (!hasActiveAssociations) return;
                 setFarmFarmerIdInput(associations[0]?.farmerId || "");
                 setShowRegisterFarmModal(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title={!hasActiveAssociations ? "Requires active farmer association" : undefined}
             >
-              <Plus size={15} />
-              Register Farmer Plot
+              <Plus size={14} />
+              Register Plot
             </button>
+
             <button
               type="button"
+              disabled={!hasActiveAssociations}
               onClick={() => {
+                if (!hasActiveAssociations) return;
                 setProdFarmerIdInput(associations[0]?.farmerId || "");
                 setShowProductionModal(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-5 py-3 text-xs font-bold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-4 py-2.5 text-xs font-bold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title={!hasActiveAssociations ? "Requires active farmer association" : undefined}
             >
-              <Layers size={15} />
-              Record Harvest Batch
+              <Layers size={14} />
+              Record Harvest
             </button>
+
             <button
               type="button"
+              disabled={!hasActiveAssociations}
               onClick={() => {
+                if (!hasActiveAssociations) return;
                 setLotFarmerIdInput(associations[0]?.farmerId || "");
                 setShowLotModal(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-5 py-3 text-xs font-bold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-4 py-2.5 text-xs font-bold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              title={!hasActiveAssociations ? "Requires active farmer association" : undefined}
             >
-              <FileText size={15} />
-              Create Traceable Lot
+              <FileText size={14} />
+              Create Lot
             </button>
           </div>
-        </section>
+        </div>
 
-        {/* Global Farmer Filter Bar */}
+        {/* Global Feedback Messages */}
+        {error && (
+          <div className="mb-6 rounded-2xl bg-red-50 p-4 text-xs text-red-800 flex items-center justify-between gap-2 border border-red-200 shadow-xs">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0 text-red-600" />
+              <span>{error}</span>
+            </div>
+            <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 cursor-pointer">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-6 rounded-2xl bg-emerald-50 p-4 text-xs text-emerald-800 flex items-center justify-between gap-2 border border-emerald-200 shadow-xs">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={16} className="shrink-0 text-emerald-600" />
+              <span>{successMsg}</span>
+            </div>
+            <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 cursor-pointer">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Permission Gate Warning if Zero Farmer Associations */}
+        {!hasActiveAssociations && (
+          <div className="mb-8 rounded-3xl border border-amber-300 bg-amber-50/90 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white">
+                <Lock size={22} />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-bold text-amber-950">
+                    Farmer Association &amp; Farm Delegation Required
+                  </h2>
+                  <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-900">
+                    Action Locked
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-amber-900">
+                  You are currently logged in as a cooperative, but no farmers have associated with your cooperative or granted farm management permissions yet.
+                  Cooperatives cannot register plots, record harvests, manage cocoa lots, apply for certificates, or trade cocoa until an associated farmer delegates permission to manage either a <strong>single farm</strong> or <strong>all their farms</strong>.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAssociateModal(true)}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] cursor-pointer"
+                  >
+                    <Plus size={15} />
+                    Link Member Farmer &amp; Grant Delegation
+                  </button>
+                  <span className="text-xs text-amber-800">
+                    (Configure &quot;Single Farm&quot; or &quot;All Farms&quot; with &quot;Manage Everything&quot; permission)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Workflow Navigation (Matching Farmer Dashboard Structure) */}
+        <div className="mb-8">
+          <DashboardWorkflowNav currentTab="farm-management" />
+        </div>
+
+        {/* Associated Member Farmer Filter Bar */}
         <section className="mb-8 rounded-3xl border border-[#dfe7d8] bg-white p-4 sm:p-5 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <span className="text-xs font-bold uppercase tracking-wider text-[#2d6130] flex items-center gap-1.5">
-                <Users size={15} /> Associated Farmer Filter:
+                <Filter size={15} /> Associated Farmer Filter:
               </span>
               <span className="text-xs text-[#57655d]">
-                Filtering operations across all subsections by member farmer
+                {hasActiveAssociations
+                  ? "Select a member farmer to isolate their delegated farm(s) and operations"
+                  : "No farmers associated yet"}
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <select
+                disabled={!hasActiveAssociations}
                 value={selectedFarmerIdFilter}
                 onChange={(e) => setSelectedFarmerIdFilter(e.target.value)}
-                className="rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] px-4 py-2 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
+                className="rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] px-4 py-2 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130] disabled:opacity-50"
               >
                 <option value="ALL">All Associated Farmers ({totalAssociatedFarmers})</option>
                 {associations.map((a) => (
                   <option key={a.farmerId} value={a.farmerId}>
-                    {a.farmerName} ({a.farmerId})
+                    {a.farmerName} ({a.farmScope === "single_farm" ? "Single Farm" : "All Farms"})
                   </option>
                 ))}
               </select>
+
+              {activeAssociation && (
+                <span className="rounded-full bg-[#edf7e8] border border-[#cdebc2] px-3 py-1 text-[11px] font-bold text-[#2d6130]">
+                  {activeAssociation.farmScope === "single_farm"
+                    ? `Delegation: Single Farm (${activeAssociation.delegatedFarmNames?.[0] || activeAssociation.delegatedFarmIds?.[0] || "1 Farm"})`
+                    : "Delegation: All Farms (Full Management)"}
+                </span>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Live Metric Cards */}
+        {/* Metric Cards (Matching Farmer Dashboard) */}
         <section className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard
-            label="Associated Farmers"
-            value={totalAssociatedFarmers}
-            unit="members"
-            description="Active cooperative member farmers"
-            icon={<Users size={16} />}
-          />
-          <MetricCard
-            label="Managed Land Area"
-            value={totalHectares}
-            unit="hectares"
-            description={`${totalPlots} registered cooperative plots`}
+            label="Total Plots"
+            value={totalPlots}
+            unit="plots"
+            description="Georeferenced plots of member farmers"
             icon={<MapPin size={16} />}
           />
           <MetricCard
-            label="Cooperative Harvest Volume"
+            label="Total Area"
+            value={totalHectares}
+            unit="hectares"
+            description="Active cultivated cocoa land"
+            icon={<Trees size={16} />}
+          />
+          <MetricCard
+            label="Total Recorded Harvest"
             value={totalHarvestKg.toLocaleString()}
             unit="kg"
-            description="Aggregated harvest inventory"
+            description="Intake volume from member farms"
             icon={<Layers size={16} />}
           />
           <MetricCard
             label="EUDR Compliant Plots"
             value={`${compliantCount} / ${totalPlots}`}
-            unit="verified"
-            description="Zero-deforestation compliance"
+            unit="compliant"
+            description="Zero-deforestation verified"
             icon={<ShieldCheck size={16} />}
           />
         </section>
 
-        {/* Subsection Navigation Tabs */}
+        {/* Mapbox Geofence Map */}
+        <section className="mb-8 overflow-hidden rounded-3xl border border-[#dfe7d8] bg-white p-4 sm:p-6 shadow-sm">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-[#10251d] flex items-center gap-2">
+                <MapPin size={18} className="text-[#2d6130]" />
+                Cooperative Geofenced Farm Plots Map
+              </h2>
+              <p className="text-xs text-[#57655d]">
+                Showing polygons for {selectedFarmerIdFilter === "ALL" ? "all associated member farmers" : activeAssociation?.farmerName || "selected farmer"}.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-[#57655d]">
+                <span className="h-3 w-3 rounded-full bg-[#2a7a33] inline-block" /> EUDR Compliant Plots
+              </span>
+            </div>
+          </div>
+
+          <MapboxGeofenceMap
+            existingPlots={mapPlots}
+            selectedPlotId={highlightedPlotId}
+            onSelectPlot={(id) => setHighlightedPlotId(id)}
+          />
+        </section>
+
+        {/* Subsection Tabs */}
         <div className="mb-6 flex border-b border-[#dfe7d8] gap-2 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab("farmers")}
-            className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-bold transition cursor-pointer whitespace-nowrap ${
-              activeTab === "farmers" ? "border-[#2d6130] text-[#0b3528]" : "border-transparent text-[#57655d] hover:text-[#10251d]"
-            }`}
-          >
-            <Users size={16} /> Associated Farmer Roster ({associations.length})
-          </button>
           <button
             type="button"
             onClick={() => setActiveTab("farms")}
@@ -545,6 +819,15 @@ function CooperativeDashboardContent() {
             }`}
           >
             <MapPin size={16} /> Cooperative Farm Plots ({filteredFarms.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("farmers")}
+            className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-bold transition cursor-pointer whitespace-nowrap ${
+              activeTab === "farmers" ? "border-[#2d6130] text-[#0b3528]" : "border-transparent text-[#57655d] hover:text-[#10251d]"
+            }`}
+          >
+            <Users size={16} /> Member Farmer Roster ({associations.length})
           </button>
           <button
             type="button"
@@ -562,7 +845,7 @@ function CooperativeDashboardContent() {
               activeTab === "lots" ? "border-[#2d6130] text-[#0b3528]" : "border-transparent text-[#57655d] hover:text-[#10251d]"
             }`}
           >
-            <FileText size={16} /> Cocoa Lots &amp; Traceability
+            <FileText size={16} /> Cocoa Lots
           </button>
           <button
             type="button"
@@ -584,322 +867,335 @@ function CooperativeDashboardContent() {
           </button>
         </div>
 
-        {/* Tab 1: Associated Farmers Roster */}
-        {activeTab === "farmers" && (
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#edf1ea] pb-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-bold text-[#10251d]">Associated Member Farmers</h3>
-                  <p className="text-xs text-[#57655d]">Farmers associated with {coopOrgName} granting cooperative management permissions.</p>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#f8f9f3] font-bold uppercase text-[#57655d] border-b border-[#dfe7d8]">
-                    <tr>
-                      <th className="py-3 px-4">Farmer ID</th>
-                      <th className="py-3 px-4">Farmer Name</th>
-                      <th className="py-3 px-4">Cooperative Association</th>
-                      <th className="py-3 px-4">Management Permissions</th>
-                      <th className="py-3 px-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#edf1ea] text-[#394a41]">
-                    {associations.map((assoc) => (
-                      <tr key={assoc.associationId} className="hover:bg-[#fafbf8] transition">
-                        <td className="py-3.5 px-4 font-mono font-bold text-[#10251d]">{assoc.farmerId}</td>
-                        <td className="py-3.5 px-4 font-bold text-[#10251d]">{assoc.farmerName}</td>
-                        <td className="py-3.5 px-4">{assoc.cooperativeOrgName}</td>
-                        <td className="py-3.5 px-4">
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                            Full Management Delegated
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedFarmerIdFilter(assoc.farmerId)}
-                            className="rounded-full bg-[#0b3528] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer"
-                          >
-                            Filter by Farmer
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 2: Cooperative Farm Plots */}
+        {/* Tab 1: Cooperative Farm Plots */}
         {activeTab === "farms" && (
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#edf1ea] pb-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-bold text-[#10251d]">Cooperative-Operated Farm Plots</h3>
-                  <p className="text-xs text-[#57655d]">
-                    Showing farm plots for {selectedFarmerIdFilter === "ALL" ? "all associated farmers" : selectedFarmerIdFilter}.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFarmFarmerIdInput(associations[0]?.farmerId || "");
-                    setShowRegisterFarmModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer"
-                >
-                  <Plus size={14} /> Register Farm Plot
-                </button>
+          <section className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="relative w-full sm:w-72">
+                <Search size={16} className="absolute left-3.5 top-3 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search plot by name, village, farmer..."
+                  value={plotSearchTerm}
+                  onChange={(e) => setPlotSearchTerm(e.target.value)}
+                  className="w-full rounded-2xl border border-[#dfe7d8] bg-white py-2 pl-10 pr-4 text-xs font-medium outline-none focus:border-[#2d6130]"
+                />
               </div>
 
-              {/* Geofence Map */}
-              <div className="mb-6 rounded-3xl border border-[#dfe7d8] p-4 bg-[#fafcf9]">
-                <div className="mb-3 flex items-center justify-between text-xs font-bold text-[#2d6130]">
-                  <span className="flex items-center gap-1.5 uppercase tracking-wider">
-                    <Trees size={15} /> Cooperative Geofencing &amp; Deforestation Map
-                  </span>
-                  <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[0.65rem] font-bold text-[#2a7a33] border border-[#c6e8ba]">
-                    Cooperative Operated
-                  </span>
-                </div>
-                {mapPlots.length > 0 ? (
-                  <MapboxGeofenceMap
-                    initialCenter={[9.1245, 4.5912]}
-                    initialZoom={9}
-                    existingPlots={mapPlots}
-                    selectedPlotId={highlightedPlotId}
-                    heightClass="h-[320px]"
-                    onSelectPlot={(id: string) => setHighlightedPlotId(id)}
-                  />
-                ) : (
-                  <div className="py-12 text-center text-xs text-[#57655d]">No geofenced plots found for current filter.</div>
+              <span className="text-xs text-[#57655d]">
+                Showing {filteredFarms.length} plot{filteredFarms.length === 1 ? "" : "s"} under cooperative delegation
+              </span>
+            </div>
+
+            {filteredFarms.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-[#dfe7d8] bg-white p-12 text-center">
+                <MapPin className="mx-auto text-gray-300 mb-3" size={36} />
+                <h3 className="text-base font-bold text-[#10251d]">No Farm Plots Found</h3>
+                <p className="mt-1 text-xs text-[#57655d] max-w-md mx-auto">
+                  {!hasActiveAssociations
+                    ? "Associate a member farmer first to gain delegation rights and manage farm plots."
+                    : "No farm plots match the current filter. Click \"Register Plot\" to register a plot on behalf of an associated farmer."}
+                </p>
+                {hasActiveAssociations && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFarmFarmerIdInput(associations[0]?.farmerId || "");
+                      setShowRegisterFarmModal(true);
+                    }}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                  >
+                    <Plus size={14} /> Register First Plot
+                  </button>
                 )}
               </div>
-
-              {/* Farms List */}
-              <div className="grid gap-4">
-                {filteredFarms.map((farm: any, index: number) => (
-                  <div key={farm.id || index} className="rounded-2xl border border-[#dfe7d8] bg-white p-5 shadow-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-[#edf1ea] pb-3">
+            ) : (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {filteredFarms.map((farm) => {
+                  const assoc = associations.find((a) => a.farmerId === farm.farmerId);
+                  return (
+                    <div
+                      key={farm.id}
+                      className="group flex flex-col justify-between rounded-3xl border border-[#dfe7d8] bg-white p-5 shadow-xs transition hover:border-[#2d6130] hover:shadow-md"
+                    >
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[10px] font-bold text-[#2d6130]">
-                            FARMER: {farm.farmerName || "Associated Farmer"}
-                          </span>
-                          <span className="font-mono text-xs text-gray-400">{farm.id}</span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#eefae6] px-2 py-0.5 text-[10px] font-semibold text-[#2a7a33]">
-                            <ShieldCheck size={11} /> EUDR Compliant
-                          </span>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[10px] font-bold text-[#2d6130]">
+                              {assoc?.farmScope === "single_farm" ? "Delegated (Single Farm)" : "Delegated (All Farms)"}
+                            </span>
+                            <h3 className="mt-2 text-base font-bold text-[#10251d]">{farm.farmName}</h3>
+                            <p className="text-xs text-[#57655d]">
+                              Farmer: <strong className="text-[#10251d]">{farm.farmerName || farm.farmerId}</strong>
+                            </p>
+                          </div>
+                          {farm.eudrCompliant && (
+                            <span className="rounded-full bg-emerald-100 p-1 text-emerald-700" title="EUDR Compliant">
+                              <ShieldCheck size={16} />
+                            </span>
+                          )}
                         </div>
-                        <h4 className="mt-1 text-base font-bold text-[#10251d]">{farm.farmName}</h4>
-                        <p className="text-xs text-[#57655d]">
-                          {farm.village}, {farm.region} • Operated by {coopOrgName}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setCertificateModalFarm(farm)}
-                          className="inline-flex items-center gap-1 rounded-full border border-[#2d6130]/30 bg-[#edf7e8] px-3.5 py-1.5 text-xs font-bold text-[#1b4e28] hover:bg-[#dff0d8] cursor-pointer"
-                        >
-                          <ShieldCheck size={12} /> Trust Pass
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFarm(farm)}
-                          className="inline-flex items-center gap-1 rounded-full border border-[#dfe7d8] bg-[#f7f8f3] px-3.5 py-1.5 text-xs font-bold text-[#10251d] hover:bg-[#edf2ea] cursor-pointer"
-                        >
-                          <Eye size={12} /> View Dossier
-                        </button>
-                      </div>
-                    </div>
 
-                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                      <div className="rounded-xl bg-[#fafcf9] p-2.5">
-                        <span className="text-[10px] uppercase font-semibold text-gray-400 block">Area</span>
-                        <strong className="text-sm font-bold text-[#10251d]">{farm.geofenceAreaHa ?? farm.sizeHectares ?? 0} Ha</strong>
+                        <div className="mt-4 space-y-1.5 text-xs text-[#57655d] border-t border-[#edf1ea] pt-3">
+                          <div className="flex justify-between">
+                            <span>Location:</span>
+                            <span className="font-semibold text-[#10251d]">{farm.village || "Manyu Basin"}, {farm.region}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Area:</span>
+                            <span className="font-semibold text-[#10251d]">{farm.geofenceAreaHa ?? farm.sizeHectares ?? 0} Ha</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Harvest Volume:</span>
+                            <span className="font-semibold text-[#10251d]">{farm.quantityHarvestedKg || 0} kg</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Variety:</span>
+                            <span className="font-semibold text-[#10251d]">{farm.cocoaVariety || "Trinitario F1"}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="rounded-xl bg-[#fafcf9] p-2.5">
-                        <span className="text-[10px] uppercase font-semibold text-gray-400 block">Harvest Volume</span>
-                        <strong className="text-sm font-bold text-[#2a7a33]">{(farm.quantityHarvestedKg || 0).toLocaleString()} kg</strong>
-                      </div>
-                      <div className="rounded-xl bg-[#fafcf9] p-2.5">
-                        <span className="text-[10px] uppercase font-semibold text-gray-400 block">Batch Code</span>
-                        <span className="font-mono font-bold text-[#10251d]">{farm.batchNumber || "BATCH-01"}</span>
-                      </div>
-                      <div className="rounded-xl bg-[#fafcf9] p-2.5">
-                        <span className="text-[10px] uppercase font-semibold text-gray-400 block">Coop Operator</span>
-                        <span className="font-bold text-[#2d6130]">{coopOrgName}</span>
+
+                      <div className="mt-5 flex items-center justify-between border-t border-[#edf1ea] pt-3">
+                        <button
+                          type="button"
+                          onClick={() => setHighlightedPlotId(farm.id)}
+                          className="text-xs font-bold text-[#2d6130] hover:underline cursor-pointer"
+                        >
+                          Highlight on Map
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFarm(farm)}
+                            className="rounded-full border border-[#dfe7d8] bg-[#f7f8f3] px-3 py-1.5 text-xs font-semibold text-[#10251d] hover:bg-[#edf7e8] cursor-pointer"
+                          >
+                            Dossier
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCertificateModalFarm(farm)}
+                            className="rounded-full bg-[#0b3528] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#144737] cursor-pointer"
+                          >
+                            Certificate
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+            )}
+          </section>
+        )}
+
+        {/* Tab 2: Associated Farmer Roster */}
+        {activeTab === "farmers" && (
+          <section className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#edf1ea] pb-5">
+              <div>
+                <h3 className="text-lg font-bold text-[#10251d]">Associated Member Farmers &amp; Delegation Roster</h3>
+                <p className="text-xs text-[#57655d]">
+                  Farmers associated with {coopOrgName} with explicit permission for either a single farm or all farms.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAssociateModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+              >
+                <Plus size={15} /> + Link Member Farmer
+              </button>
             </div>
-          </div>
+
+            {associations.length === 0 ? (
+              <div className="py-12 text-center">
+                <Users className="mx-auto text-gray-300 mb-3" size={40} />
+                <h4 className="text-base font-bold text-[#10251d]">No Associated Farmers</h4>
+                <p className="mt-1 text-xs text-[#57655d] max-w-md mx-auto">
+                  Your cooperative currently has no member farmers associated. Link a farmer to delegate farm management permissions.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-6 divide-y divide-[#edf1ea]">
+                {associations.map((assoc) => {
+                  const farmerFarmsCount = farms.filter((f) => f.farmerId === assoc.farmerId).length;
+                  return (
+                    <div key={assoc.associationId} className="py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="flex items-start gap-3.5">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf7e8] text-[#2d6130] font-bold">
+                          {assoc.farmerName ? assoc.farmerName.charAt(0) : "F"}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <strong className="text-sm font-bold text-[#10251d]">{assoc.farmerName}</strong>
+                            <span className="font-mono text-[10px] text-gray-400">({assoc.farmerId})</span>
+                            <span className="rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5">
+                              {assoc.status}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-[#57655d]">
+                            Contact: {assoc.cooperativePhone || "Not specified"} • Associated: {new Date(assoc.associatedAt).toLocaleDateString()}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-[#f7f8f3] border border-[#dfe7d8] px-2.5 py-0.5 text-[10px] font-bold text-[#10251d]">
+                              Scope: {assoc.farmScope === "single_farm" ? `Single Farm (${assoc.delegatedFarmNames?.[0] || assoc.delegatedFarmIds?.[0] || "1 Farm"})` : "All Member Farms"}
+                            </span>
+                            <span className="rounded-full bg-[#edf7e8] px-2.5 py-0.5 text-[10px] font-bold text-[#2d6130]">
+                              Permission: {assoc.manageEverything ? "Manage Everything (Full Rights)" : "Custom Permissions"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFarmerIdFilter(assoc.farmerId);
+                            setActiveTab("farms");
+                          }}
+                          className="rounded-full border border-[#2d6130] bg-[#edf7e8] px-4 py-1.5 text-xs font-bold text-[#2d6130] hover:bg-[#d8eed0] cursor-pointer"
+                        >
+                          View Plots ({farmerFarmsCount})
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
 
         {/* Tab 3: Production & Harvests */}
         {activeTab === "production" && (
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#edf1ea] pb-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-bold text-[#10251d]">Cooperative Production &amp; Harvest Batches</h3>
-                  <p className="text-xs text-[#57655d]">Record and track farmer harvest intake operated by {coopOrgName}.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProdFarmerIdInput(associations[0]?.farmerId || "");
-                    setShowProductionModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer"
-                >
-                  <Plus size={14} /> Record Harvest Batch
-                </button>
+          <section className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#edf1ea] pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#10251d]">Production &amp; Harvest Management</h3>
+                <p className="text-xs text-[#57655d]">Record and inspect harvest intake from delegated member farms.</p>
               </div>
+              <button
+                type="button"
+                disabled={!hasActiveAssociations}
+                onClick={() => {
+                  if (!hasActiveAssociations) return;
+                  setProdFarmerIdInput(associations[0]?.farmerId || "");
+                  setShowProductionModal(true);
+                }}
+                className="rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+              >
+                + Record Harvest
+              </button>
+            </div>
 
-              <div className="space-y-3">
-                {filteredFarms.map((farm: any, idx: number) => (
-                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-[#dfe7d8] bg-[#fafcf9] p-4 text-xs">
-                    <div>
-                      <div className="font-bold text-[#10251d] text-sm">{farm.farmName} — Harvest Intake</div>
-                      <div className="text-gray-500 mt-0.5">
-                        Farmer: <strong>{farm.farmerName}</strong> • Batch: <span className="font-mono">{farm.batchNumber || "BATCH-01"}</span> • Variety: {farm.cocoaVariety || "F1 Hybrid"}
+            <div className="mt-6">
+              {filteredFarms.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-8">No harvest records available for the selected filter.</p>
+              ) : (
+                <div className="divide-y divide-[#edf1ea]">
+                  {filteredFarms.map((farm) => (
+                    <div key={farm.id} className="py-3.5 flex items-center justify-between">
+                      <div>
+                        <strong className="text-xs font-bold text-[#10251d]">{farm.farmName}</strong>
+                        <div className="text-[11px] text-gray-500">
+                          Farmer: {farm.farmerName} • Batch: {farm.batchNumber || "BATCH-COOP-AUTO"}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-[#2d6130]">{farm.quantityHarvestedKg || 0} kg</span>
+                        <div className="text-[10px] text-gray-400">Recorded Intake</div>
                       </div>
                     </div>
-                    <div className="mt-2 sm:mt-0 text-right">
-                      <div className="font-bold text-sm text-[#2a7a33]">{(farm.quantityHarvestedKg || 0).toLocaleString()} kg</div>
-                      <span className="text-[10px] text-gray-400">Cooperative Intake Verified</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Tab 4: Cocoa Lots & Traceability */}
+        {/* Tab 4: Cocoa Lots */}
         {activeTab === "lots" && (
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#edf1ea] pb-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-bold text-[#10251d]">Cocoa Lots &amp; Traceability Registry</h3>
-                  <p className="text-xs text-[#57655d]">Manage traceable cocoa lots aggregated by {coopOrgName} on behalf of associated farmers.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLotFarmerIdInput(associations[0]?.farmerId || "");
-                    setShowLotModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer"
-                >
-                  <Plus size={14} /> Create Traceable Lot
-                </button>
+          <section className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#edf1ea] pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#10251d]">Traceable Cocoa Lots</h3>
+                <p className="text-xs text-[#57655d]">Aggregated cocoa lots managed on behalf of associated farmers.</p>
               </div>
-
-              <div className="space-y-3">
-                {filteredFarms.map((farm: any, idx: number) => (
-                  <div key={idx} className="rounded-2xl border border-[#dfe7d8] bg-[#fafcf9] p-4 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <div className="font-mono font-bold text-sm text-[#10251d]">LOT-CMR-2026-{idx + 101}</div>
-                      <div className="text-gray-500 mt-1">
-                        Farmer: <strong>{farm.farmerName}</strong> • Region: {farm.region} • Grade: Grade 1 Main Crop Fermented
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <div className="font-bold text-[#10251d]">{(farm.quantityHarvestedKg || 1000).toLocaleString()} kg</div>
-                        <span className="text-[10px] text-emerald-700 font-bold">Traceability Active</span>
-                      </div>
-                      <Link
-                        href="/dashboard/lots"
-                        className="rounded-full bg-[#0b3528] px-3.5 py-1.5 text-xs font-bold text-white hover:bg-[#144737]"
-                      >
-                        Inspect Lot
-                      </Link>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <button
+                type="button"
+                disabled={!hasActiveAssociations}
+                onClick={() => {
+                  if (!hasActiveAssociations) return;
+                  setLotFarmerIdInput(associations[0]?.farmerId || "");
+                  setShowLotModal(true);
+                }}
+                className="rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+              >
+                + Create Lot
+              </button>
             </div>
-          </div>
+            <div className="mt-6 text-center py-8 text-xs text-gray-500">
+              Click &quot;+ Create Lot&quot; above to allocate verified cocoa inventory into commercial lots.
+            </div>
+          </section>
         )}
 
         {/* Tab 5: Certificates & Holdings */}
         {activeTab === "certificates" && (
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-[#edf1ea] pb-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-bold text-[#10251d]">Certificates &amp; Custody Holdings</h3>
-                  <p className="text-xs text-[#57655d]">Origin Trace &amp; EUDR certificates managed by {coopOrgName} for associated farmers.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCertFarmerIdInput(associations[0]?.farmerId || "");
-                    setShowCertModal(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer"
-                >
-                  <ShieldCheck size={14} /> Apply for Origin Trace Certificate
-                </button>
+          <section className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#edf1ea] pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#10251d]">EUDR Origin Trace Certificates</h3>
+                <p className="text-xs text-[#57655d]">Official Cameroon certificates issued for delegated member farms.</p>
               </div>
-
-              <div className="grid gap-4">
-                {filteredFarms.map((farm: any, idx: number) => (
-                  <div key={idx} className="rounded-2xl border border-[#dfe7d8] bg-[#fafcf9] p-5 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-sm text-[#2d6130]">CERT-CMR-2026-{idx + 500}</span>
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">EUDR Article 9 Verified</span>
-                      </div>
-                      <div className="text-gray-500 mt-1">
-                        Holder: <strong>{coopOrgName}</strong> (On behalf of Farmer: <em>{farm.farmerName}</em>)
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCertificateModalFarm(farm)}
-                      className="rounded-full border border-[#2d6130] bg-[#edf7e8] px-4 py-2 text-xs font-bold text-[#2d6130] hover:bg-[#dff0d8] cursor-pointer"
-                    >
-                      View Trust Pass
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <button
+                type="button"
+                disabled={!hasActiveAssociations}
+                onClick={() => {
+                  if (!hasActiveAssociations) return;
+                  setCertFarmerIdInput(associations[0]?.farmerId || "");
+                  setShowCertModal(true);
+                }}
+                className="rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+              >
+                + Apply Certificate
+              </button>
             </div>
-          </div>
+            <div className="mt-6 text-center py-8 text-xs text-gray-500">
+              Certificates applied under cooperative oversight ensure EUDR deforestation-free verification for export.
+            </div>
+          </section>
         )}
 
         {/* Tab 6: Commercial Trades */}
         {activeTab === "trades" && (
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
-              <div className="border-b border-[#edf1ea] pb-4 mb-6">
-                <h3 className="text-lg font-bold text-[#10251d]">Cooperative Commercial Trades &amp; Orders</h3>
-                <p className="text-xs text-[#57655d]">Marketplace sales and off-platform settlements operated by {coopOrgName}.</p>
+          <section className="rounded-3xl border border-[#dfe7d8] bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between border-b border-[#edf1ea] pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#10251d]">Commercial Sales &amp; Counterparty Trades</h3>
+                <p className="text-xs text-[#57655d]">Marketplace and off-platform sales conducted by {coopOrgName}.</p>
               </div>
-
+              <Link
+                href="/dashboard/trades"
+                className="rounded-full border border-[#dfe7d8] bg-[#f7f8f3] px-4 py-2 text-xs font-bold text-[#10251d] hover:bg-[#edf7e8]"
+              >
+                Open Trade Hub →
+              </Link>
+            </div>
+            <div className="mt-6">
               {trades.length === 0 ? (
-                <div className="py-12 text-center text-xs text-[#57655d]">No commercial trades recorded yet.</div>
+                <p className="text-xs text-gray-500 text-center py-8">No commercial trade records found.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="divide-y divide-[#edf1ea]">
                   {trades.map((t) => (
-                    <div key={t.tradeId} className="rounded-2xl border border-[#dfe7d8] bg-[#fafcf9] p-4 text-xs flex items-center justify-between">
+                    <div key={t.tradeId} className="py-3 flex items-center justify-between text-xs">
                       <div>
                         <span className="font-mono font-bold text-[#10251d]">{t.tradeNumber}</span>
-                        <div className="text-gray-500 mt-0.5">Lot: {t.lotId} • Qty: {t.quantityKg} kg • Total: {t.totalAmount} {t.currency}</div>
+                        <div className="text-gray-500 mt-0.5">
+                          Lot: {t.lotId} • Qty: {t.quantityKg} kg • Total: {t.totalAmount} {t.currency}
+                        </div>
                       </div>
                       <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-800 uppercase text-[10px]">
                         {t.tradeStatus}
@@ -909,12 +1205,172 @@ function CooperativeDashboardContent() {
                 </div>
               )}
             </div>
-          </div>
+          </section>
         )}
-
       </main>
 
-      {/* Modal: Register Farm Plot (with Farmer Filter / Selector) */}
+      {/* Modal: Link Member Farmer Association */}
+      {showAssociateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8">
+            <button
+              type="button"
+              onClick={() => setShowAssociateModal(false)}
+              className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
+              <Users size={14} /> Cooperative Member Association
+            </div>
+            <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Link Member Farmer &amp; Grant Delegation</h2>
+            <p className="mt-1 text-xs text-[#57655d]">
+              Establish a verified delegation agreement between <strong>{coopOrgName}</strong> and a smallholder farmer.
+            </p>
+
+            <form onSubmit={handleCreateAssociation} className="mt-5 space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-[#10251d] mb-1">Farmer Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={assocFarmerName}
+                  onChange={(e) => setAssocFarmerName(e.target.value)}
+                  placeholder="e.g. Agatha Mbenge"
+                  className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#10251d] mb-1">Farmer ID / User Identifier *</label>
+                <input
+                  type="text"
+                  required
+                  value={assocFarmerId}
+                  onChange={(e) => setAssocFarmerId(e.target.value)}
+                  placeholder="e.g. usr_farmer_mbenge_01"
+                  className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#10251d] mb-1">Farmer Phone Number</label>
+                <input
+                  type="text"
+                  value={assocFarmerPhone}
+                  onChange={(e) => setAssocFarmerPhone(e.target.value)}
+                  placeholder="+237 677 889 900"
+                  className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                />
+              </div>
+
+              {/* Farm Scope Selection */}
+              <div className="rounded-2xl border border-[#dfe7d8] bg-[#fafcf9] p-3.5 space-y-2">
+                <span className="block font-bold text-[#10251d]">Farm Delegation Scope *</span>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="farmScope"
+                    checked={assocFarmScope === "all"}
+                    onChange={() => setAssocFarmScope("all")}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <strong className="block text-[#10251d]">All Farms of this Farmer</strong>
+                    <span className="text-[11px] text-[#57655d]">
+                      Grants full permission to manage all existing and future farm plots belonging to this farmer.
+                    </span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-[#edf1ea]">
+                  <input
+                    type="radio"
+                    name="farmScope"
+                    checked={assocFarmScope === "single_farm"}
+                    onChange={() => setAssocFarmScope("single_farm")}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <strong className="block text-[#10251d]">Single Farm Delegation Only</strong>
+                    <span className="text-[11px] text-[#57655d]">
+                      Restricts cooperative management rights strictly to a single designated farm plot.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Single Farm Inputs if chosen */}
+              {assocFarmScope === "single_farm" && (
+                <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5">
+                  <span className="block font-bold text-amber-900">Designated Single Farm Details</span>
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">Farm Plot Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={assocSingleFarmName}
+                      onChange={(e) => setAssocSingleFarmName(e.target.value)}
+                      placeholder="e.g. Mbenge Family Cocoa Plot A"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">Farm Unique ID *</label>
+                    <input
+                      type="text"
+                      required
+                      value={assocSingleFarmId}
+                      onChange={(e) => setAssocSingleFarmId(e.target.value)}
+                      placeholder="e.g. farm_mbenge_plot_a"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Manage Everything Permission */}
+              <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-3.5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={assocManageEverything}
+                    onChange={(e) => setAssocManageEverything(e.target.checked)}
+                    className="mt-0.5 rounded text-[#2d6130]"
+                  />
+                  <div>
+                    <strong className="block text-[#1d6a45]">
+                      Permission to Manage Everything of this Farm / Farms
+                    </strong>
+                    <span className="text-[11px] text-[#2a5933]">
+                      Authorizes the cooperative to geofence plots, log harvests, aggregate cocoa lots, apply for origin trace certificates, and conclude commercial trades.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
+                <button
+                  type="button"
+                  onClick={() => setShowAssociateModal(false)}
+                  className="rounded-full px-5 py-2 font-bold text-gray-500 hover:bg-gray-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assocSubmitting}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                >
+                  {assocSubmitting ? "Linking..." : "Establish Association & Delegate"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Register Farm Plot on Behalf of Farmer */}
       {showRegisterFarmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8">
@@ -945,7 +1401,7 @@ function CooperativeDashboardContent() {
                   <option value="">-- Choose Member Farmer --</option>
                   {associations.map((a) => (
                     <option key={a.farmerId} value={a.farmerId}>
-                      {a.farmerName} ({a.farmerId})
+                      {a.farmerName} ({a.farmScope === "single_farm" ? "Single Farm Delegation" : "All Farms"})
                     </option>
                   ))}
                 </select>
@@ -1009,7 +1465,7 @@ function CooperativeDashboardContent() {
         </div>
       )}
 
-      {/* Modal: Record Harvest Batch (with Farmer Filter / Selector) */}
+      {/* Modal: Record Harvest Batch */}
       {showProductionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8">
@@ -1032,17 +1488,43 @@ function CooperativeDashboardContent() {
                 <select
                   required
                   value={prodFarmerIdInput}
-                  onChange={(e) => setProdFarmerIdInput(e.target.value)}
+                  onChange={(e) => {
+                    setProdFarmerIdInput(e.target.value);
+                    const farmerFarms = getFarmsForFarmerModal(e.target.value);
+                    setProdFarmIdInput(farmerFarms[0]?.id || "");
+                  }}
                   className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
                 >
                   <option value="">-- Choose Member Farmer --</option>
                   {associations.map((a) => (
                     <option key={a.farmerId} value={a.farmerId}>
-                      {a.farmerName} ({a.farmerId})
+                      {a.farmerName} ({a.farmScope === "single_farm" ? "Single Farm" : "All Farms"})
                     </option>
                   ))}
                 </select>
               </div>
+
+              {prodFarmerIdInput && (
+                <div>
+                  <label className="block font-semibold text-[#10251d] mb-1">Select Delegated Farm *</label>
+                  <select
+                    required
+                    value={prodFarmIdInput}
+                    onChange={(e) => setProdFarmIdInput(e.target.value)}
+                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                  >
+                    {getFarmsForFarmerModal(prodFarmerIdInput).length === 0 ? (
+                      <option value="">Delegated Farm (Default)</option>
+                    ) : (
+                      getFarmsForFarmerModal(prodFarmerIdInput).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.farmName} ({f.id})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-[#10251d] mb-1">Batch Code Reference *</label>
@@ -1089,7 +1571,7 @@ function CooperativeDashboardContent() {
         </div>
       )}
 
-      {/* Modal: Create Cocoa Lot (with Farmer Filter / Selector) */}
+      {/* Modal: Create Cocoa Lot */}
       {showLotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8">
@@ -1112,17 +1594,43 @@ function CooperativeDashboardContent() {
                 <select
                   required
                   value={lotFarmerIdInput}
-                  onChange={(e) => setLotFarmerIdInput(e.target.value)}
+                  onChange={(e) => {
+                    setLotFarmerIdInput(e.target.value);
+                    const farmerFarms = getFarmsForFarmerModal(e.target.value);
+                    setLotFarmIdInput(farmerFarms[0]?.id || "");
+                  }}
                   className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
                 >
                   <option value="">-- Choose Member Farmer --</option>
                   {associations.map((a) => (
                     <option key={a.farmerId} value={a.farmerId}>
-                      {a.farmerName} ({a.farmerId})
+                      {a.farmerName} ({a.farmScope === "single_farm" ? "Single Farm" : "All Farms"})
                     </option>
                   ))}
                 </select>
               </div>
+
+              {lotFarmerIdInput && (
+                <div>
+                  <label className="block font-semibold text-[#10251d] mb-1">Select Delegated Farm *</label>
+                  <select
+                    required
+                    value={lotFarmIdInput}
+                    onChange={(e) => setLotFarmIdInput(e.target.value)}
+                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                  >
+                    {getFarmsForFarmerModal(lotFarmerIdInput).length === 0 ? (
+                      <option value="">Delegated Farm (Default)</option>
+                    ) : (
+                      getFarmsForFarmerModal(lotFarmerIdInput).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.farmName} ({f.id})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-[#10251d] mb-1">Lot Quantity (kg) *</label>
@@ -1157,7 +1665,7 @@ function CooperativeDashboardContent() {
         </div>
       )}
 
-      {/* Modal: Apply Certificate (with Farmer Filter / Selector) */}
+      {/* Modal: Apply Certificate */}
       {showCertModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8">
@@ -1180,17 +1688,43 @@ function CooperativeDashboardContent() {
                 <select
                   required
                   value={certFarmerIdInput}
-                  onChange={(e) => setCertFarmerIdInput(e.target.value)}
+                  onChange={(e) => {
+                    setCertFarmerIdInput(e.target.value);
+                    const farmerFarms = getFarmsForFarmerModal(e.target.value);
+                    setCertFarmIdInput(farmerFarms[0]?.id || "");
+                  }}
                   className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
                 >
                   <option value="">-- Choose Member Farmer --</option>
                   {associations.map((a) => (
                     <option key={a.farmerId} value={a.farmerId}>
-                      {a.farmerName} ({a.farmerId})
+                      {a.farmerName} ({a.farmScope === "single_farm" ? "Single Farm" : "All Farms"})
                     </option>
                   ))}
                 </select>
               </div>
+
+              {certFarmerIdInput && (
+                <div>
+                  <label className="block font-semibold text-[#10251d] mb-1">Select Delegated Farm *</label>
+                  <select
+                    required
+                    value={certFarmIdInput}
+                    onChange={(e) => setCertFarmIdInput(e.target.value)}
+                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                  >
+                    {getFarmsForFarmerModal(certFarmerIdInput).length === 0 ? (
+                      <option value="">Delegated Farm (Default)</option>
+                    ) : (
+                      getFarmsForFarmerModal(certFarmerIdInput).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.farmName} ({f.id})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              )}
 
               <div className="rounded-2xl bg-[#edf7e8] border border-[#cdebc2] p-3 text-[#1d6a45]">
                 ✓ Compliance declaration verified under cooperative oversight ({coopOrgName}).

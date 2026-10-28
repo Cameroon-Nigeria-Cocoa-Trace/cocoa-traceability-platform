@@ -105,6 +105,10 @@ export interface FarmerCooperativeAssociation {
   cooperativeOrgName: string;
   cooperativeEmail: string;
   cooperativePhone: string;
+  farmScope?: "all" | "single_farm" | "specific_farms";
+  delegatedFarmIds?: string[];
+  delegatedFarmNames?: string[];
+  manageEverything?: boolean;
   permissions: {
     farmsManagement: boolean;
     certificatesManagement: boolean;
@@ -115,3 +119,4 @@ export interface FarmerCooperativeAssociation {
   associatedAt: string;
   updatedAt: string;
 }
+

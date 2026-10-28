@@ -61,7 +61,21 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, farmerId, farmerName, cooperativeOrgId, cooperativeOrgName, cooperativeEmail, cooperativePhone, permissions, associationId } = body;
+    const {
+      action,
+      farmerId,
+      farmerName,
+      cooperativeOrgId,
+      cooperativeOrgName,
+      cooperativeEmail,
+      cooperativePhone,
+      permissions,
+      associationId,
+      farmScope,
+      delegatedFarmIds,
+      delegatedFarmNames,
+      manageEverything,
+    } = body;
 
     if (action === "associate") {
       const now = new Date().toISOString();
@@ -71,8 +85,12 @@ export async function POST(req: NextRequest) {
         farmerName: farmerName || "Farmer",
         cooperativeOrgId,
         cooperativeOrgName,
-        cooperativeEmail,
-        cooperativePhone,
+        cooperativeEmail: cooperativeEmail || "",
+        cooperativePhone: cooperativePhone || "",
+        farmScope: farmScope || "all",
+        delegatedFarmIds: Array.isArray(delegatedFarmIds) ? delegatedFarmIds : ["ALL"],
+        delegatedFarmNames: Array.isArray(delegatedFarmNames) ? delegatedFarmNames : [],
+        manageEverything: manageEverything !== undefined ? Boolean(manageEverything) : true,
         permissions: permissions || {
           farmsManagement: true,
           certificatesManagement: true,
@@ -102,7 +120,16 @@ export async function POST(req: NextRequest) {
         cooperativeOrgName,
         cooperativeEmail,
         cooperativePhone,
-        permissions,
+        farmScope: farmScope || "all",
+        delegatedFarmIds: Array.isArray(delegatedFarmIds) ? delegatedFarmIds : ["ALL"],
+        delegatedFarmNames: Array.isArray(delegatedFarmNames) ? delegatedFarmNames : [],
+        manageEverything: manageEverything !== undefined ? Boolean(manageEverything) : true,
+        permissions: permissions || {
+          farmsManagement: true,
+          certificatesManagement: true,
+          productionInventory: true,
+          tradingManagement: true,
+        },
         status: "active",
         associatedAt: body.associatedAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),

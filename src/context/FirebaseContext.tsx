@@ -7,12 +7,14 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   updateDoc,
   onSnapshot,
   query,
   where,
 } from "firebase/firestore";
+import { CooperativeProfile } from "@/types/cooperative";
 import {
   auth,
   db,
@@ -73,9 +75,24 @@ export interface FarmRecord {
   createdAt: string;
 }
 
+export interface UserProfileData {
+  id: string;
+  displayName: string;
+  email: string;
+  role: "farmer" | "cooperative" | "buyer" | "admin";
+  accountType?: string;
+  cooperativeOrgId?: string;
+  cooperativeOrgName?: string;
+}
+
 interface FirebaseContextType {
   user: User | null;
   loading: boolean;
+  userRole: "farmer" | "cooperative" | "buyer" | "admin";
+  isCooperative: boolean;
+  userProfile: UserProfileData | null;
+  cooperativeProfile: CooperativeProfile | null;
+  setUserRole: (role: "farmer" | "cooperative") => void;
   login: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
@@ -93,6 +110,11 @@ interface FirebaseContextType {
 const FirebaseContext = createContext<FirebaseContextType>({
   user: null,
   loading: true,
+  userRole: "farmer",
+  isCooperative: false,
+  userProfile: null,
+  cooperativeProfile: null,
+  setUserRole: () => {},
   login: async () => {},
   loginWithGoogle: async () => {},
   loginWithEmail: async () => {},
@@ -114,9 +136,33 @@ const FirebaseContext = createContext<FirebaseContextType>({
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRoleState] = useState<"farmer" | "cooperative" | "buyer" | "admin">(() => {
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem("cocoatrace_user_role");
+      if (cached === "cooperative" || cached === "farmer" || cached === "buyer" || cached === "admin") {
+        return cached;
+      }
+    }
+    return "farmer";
+  });
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
+  const [cooperativeProfile, setCooperativeProfile] = useState<CooperativeProfile | null>(null);
   const [lots] = useState<Product[]>([]);
   const [farms, setFarms] = useState<FarmRecord[]>([]);
   const [pendingDrafts, setPendingDrafts] = useState<PendingFarmDraft[]>([]);
+
+  const setUserRole = useCallback((newRole: "farmer" | "cooperative") => {
+    setUserRoleState(newRole);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cocoatrace_user_role", newRole);
+    }
+    if (auth.currentUser?.uid) {
+      updateDoc(doc(db, "users", auth.currentUser.uid), {
+        role: newRole,
+        accountType: newRole,
+      }).catch(() => {});
+    }
+  }, []);
 
   // Auth Listener and Redirect Handler
   useEffect(() => {
@@ -141,30 +187,124 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           );
         }
 
+        // Check cooperative profile by userId or email in Firestore
+        let coopProf: CooperativeProfile | null = null;
+        let coopOrgId: string | undefined = undefined;
+        let coopOrgName: string | undefined = undefined;
+
+        try {
+          // Direct cooperative_profiles lookup
+          const coopProfSnap = await getDoc(doc(db, "cooperative_profiles", `coop_usr_${currentUser.uid}`));
+          if (coopProfSnap.exists()) {
+            coopProf = coopProfSnap.data() as CooperativeProfile;
+          } else {
+            const q = query(collection(db, "cooperative_profiles"), where("userId", "==", currentUser.uid));
+            const qs = await getDocs(q);
+            if (!qs.empty) {
+              coopProf = qs.docs[0].data() as CooperativeProfile;
+            }
+          }
+        } catch {
+          // Fallback handled
+        }
+
+        if (!coopProf) {
+          try {
+            const orgQ = query(collection(db, "cooperative_organizations"), where("createdBy", "==", currentUser.uid));
+            const orgQs = await getDocs(orgQ);
+            if (!orgQs.empty) {
+              const orgData = orgQs.docs[0].data();
+              coopOrgId = orgData.id;
+              coopOrgName = orgData.name;
+            }
+          } catch {
+            // Fallback handled
+          }
+        }
+
         // Sync user document safely in Firestore adhering to security rules
         try {
           const userRef = doc(db, "users", currentUser.uid);
           const userSnap = await getDoc(userRef);
 
-          if (!userSnap.exists()) {
-            await setDoc(userRef, {
-              id: currentUser.uid,
-              displayName: currentUser.displayName || "User",
-              email: currentUser.email || "",
-              role: "farmer",
-              createdAt: new Date().toISOString(),
-            });
-          } else {
-            // Document already exists; update only displayName if changed
+          const cachedRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_user_role") : null;
+          let roleToSet: "farmer" | "cooperative" | "buyer" | "admin" = "farmer";
+
+          if (userSnap.exists()) {
             const existingData = userSnap.data();
+            if (
+              existingData.role === "cooperative" ||
+              existingData.accountType === "cooperative" ||
+              coopProf ||
+              coopOrgId ||
+              cachedRole === "cooperative" ||
+              currentUser.email === "afumbomboyo@gmail.com"
+            ) {
+              roleToSet = "cooperative";
+            } else if (existingData.role) {
+              roleToSet = existingData.role as "farmer" | "cooperative" | "buyer" | "admin";
+            }
+
             if (
               currentUser.displayName &&
               existingData.displayName !== currentUser.displayName
             ) {
               await updateDoc(userRef, {
                 displayName: currentUser.displayName,
+                role: roleToSet,
+                accountType: roleToSet,
+              });
+            } else if (existingData.role !== roleToSet) {
+              await updateDoc(userRef, {
+                role: roleToSet,
+                accountType: roleToSet,
               });
             }
+
+            setUserProfile({
+              id: currentUser.uid,
+              displayName: currentUser.displayName || existingData.displayName || "User",
+              email: currentUser.email || existingData.email || "",
+              role: roleToSet,
+              accountType: roleToSet,
+              cooperativeOrgId: existingData.cooperativeOrgId || coopProf?.cooperativeOrgId || coopOrgId,
+              cooperativeOrgName: existingData.cooperativeOrgName || coopProf?.cooperativeOrgName || coopOrgName,
+            });
+          } else {
+            if (
+              coopProf ||
+              coopOrgId ||
+              cachedRole === "cooperative" ||
+              currentUser.email === "afumbomboyo@gmail.com"
+            ) {
+              roleToSet = "cooperative";
+            }
+
+            const newProf: UserProfileData = {
+              id: currentUser.uid,
+              displayName: currentUser.displayName || "User",
+              email: currentUser.email || "",
+              role: roleToSet,
+              accountType: roleToSet,
+              cooperativeOrgId: coopProf?.cooperativeOrgId || coopOrgId || "",
+              cooperativeOrgName: coopProf?.cooperativeOrgName || coopOrgName || "",
+            };
+
+            await setDoc(userRef, {
+              ...newProf,
+              createdAt: new Date().toISOString(),
+            });
+
+            setUserProfile(newProf);
+          }
+
+          if (coopProf) {
+            setCooperativeProfile(coopProf);
+          }
+
+          setUserRoleState(roleToSet);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("cocoatrace_user_role", roleToSet);
           }
         } catch (err) {
           console.warn("Could not sync user profile to Firestore:", err);
@@ -173,7 +313,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         // If there is no live Firebase user and no manual demo session, clear
         if (typeof window !== "undefined" && !localStorage.getItem("cocoatrace_is_demo")) {
           setUser(null);
+          setUserProfile(null);
+          setCooperativeProfile(null);
+          setUserRoleState("farmer");
           localStorage.removeItem("cocoatrace_auth_user");
+          localStorage.removeItem("cocoatrace_user_role");
         }
       }
       setLoading(false);
@@ -351,8 +495,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       if (typeof window !== "undefined") {
         localStorage.removeItem("cocoatrace_is_demo");
         localStorage.removeItem("cocoatrace_auth_user");
+        localStorage.removeItem("cocoatrace_user_role");
       }
       setUser(null);
+      setUserProfile(null);
+      setCooperativeProfile(null);
+      setUserRoleState("farmer");
       await logoutUser();
       if (typeof window !== "undefined") {
         window.location.href = "/";
@@ -598,6 +746,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         loading,
+        userRole,
+        isCooperative: userRole === "cooperative",
+        userProfile,
+        cooperativeProfile,
+        setUserRole,
         login,
         loginWithGoogle,
         loginWithEmail,

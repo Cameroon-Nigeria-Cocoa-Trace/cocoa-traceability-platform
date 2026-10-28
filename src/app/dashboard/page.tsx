@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase, FarmRecord } from "@/context/FirebaseContext";
 import FarmCertificateModal from "@/components/FarmCertificateModal";
@@ -63,6 +63,7 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const onboarded = searchParams.get("onboarded") === "true";
   const newFarmName = searchParams.get("newFarm");
@@ -71,7 +72,15 @@ function DashboardContent() {
     user,
     farms,
     loading: authLoading,
+    isCooperative,
+    userRole,
   } = useFirebase();
+
+  useEffect(() => {
+    if (!authLoading && (isCooperative || userRole === "cooperative")) {
+      router.replace("/dashboard/cooperative");
+    }
+  }, [authLoading, isCooperative, userRole, router]);
 
   const [selectedFarm, setSelectedFarm] =
     useState<FarmRecord | null>(null);
