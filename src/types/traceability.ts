@@ -534,6 +534,7 @@ export interface TradeRecord {
   buyerConfirmed?: boolean;
   buyerConfirmedAt?: string;
   confirmedByBuyerUid?: string;
+  dealOutcome?: "sold" | "deal_fell_through";
   platformFeeApplied?: AppliedFeeRecord; // CONFIRMED: 2% platform service fee on purchase price
   transferFeeApplied?: AppliedFeeRecord; // Preserved transfer fee if settled with cert transfer
   transferId?: string; // Associated CertificateTransfer ID if certified

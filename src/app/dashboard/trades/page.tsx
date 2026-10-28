@@ -79,6 +79,7 @@ export default function TradeManagementPage() {
   const [concludeQuantityKg, setConcludeQuantityKg] = useState<number | "">("");
   const [concludeAgreedPricePerKg, setConcludeAgreedPricePerKg] = useState<number | "">("");
   const [concludeBuyerId, setConcludeBuyerId] = useState("");
+  const [concludeBuyerName, setConcludeBuyerName] = useState("");
   const [concludeBuyerHolderType, setConcludeBuyerHolderType] = useState<CertificateHolderType>("cooperative");
   const [concludeNotes, setConcludeNotes] = useState("");
   const [concludeSubmitting, setConcludeSubmitting] = useState(false);
@@ -274,6 +275,7 @@ export default function TradeManagementPage() {
     setConcludeQuantityKg(item.listing.quantityAvailableKg);
     setConcludeAgreedPricePerKg(item.listing.pricePerKg);
     setConcludeBuyerId(item.accessRecord.buyerUid || item.accessRecord.buyerId || "");
+    setConcludeBuyerName(item.buyerProfile?.displayName || item.accessRecord.buyerUid || item.accessRecord.buyerId || "Verified Buyer");
     setConcludeBuyerHolderType("cooperative");
     setConcludeNotes("");
     setConcludeError(null);
@@ -1369,28 +1371,25 @@ export default function TradeManagementPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">Buyer Identifier / Name</label>
+                    <label className="block font-semibold text-[#10251d] mb-1">Buyer ID / Identifier (Locked)</label>
                     <input
                       type="text"
-                      required
+                      readOnly
+                      disabled
                       value={concludeBuyerId}
-                      onChange={(e) => setConcludeBuyerId(e.target.value)}
-                      placeholder="e.g. buyer_uid_or_name"
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-gray-100 text-gray-700 p-2.5 outline-none font-mono text-xs cursor-not-allowed"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">Buyer Entity Role</label>
-                    <select
-                      value={concludeBuyerHolderType}
-                      onChange={(e) => setConcludeBuyerHolderType(e.target.value as CertificateHolderType)}
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                    >
-                      <option value="cooperative">Cooperative Organization</option>
-                      <option value="agent">Licensed Buying Agent</option>
-                      <option value="warehouse">Licensed Export Warehouse</option>
-                    </select>
+                    <label className="block font-semibold text-[#10251d] mb-1">Buyer Name (Locked)</label>
+                    <input
+                      type="text"
+                      readOnly
+                      disabled
+                      value={concludeBuyerName}
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-gray-100 text-gray-700 p-2.5 outline-none font-medium text-xs cursor-not-allowed"
+                    />
                   </div>
                 </div>
 

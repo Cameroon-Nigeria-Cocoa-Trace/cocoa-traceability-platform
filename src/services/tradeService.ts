@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Trade & Commercial Purchase Service (Role 3 Domain Logic)
  * Cocoa Traceability, Certificate & Cross-Border Export Platform
@@ -52,6 +53,22 @@ import {
   calculateTransferFee,
   executeCertificateTransferInTransaction,
 } from "./transferService";
+
+export function cleanData<T>(obj: T): T {
+  if (obj === null || typeof obj !== "object") {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(cleanData) as unknown as T;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      cleaned[key] = cleanData(val);
+    }
+  }
+  return cleaned as T;
+}
 
 export const COLLECTIONS = {
   TRADES: "trades",
@@ -967,40 +984,81 @@ export async function concludeNegotiationDeal(
 
     const now = new Date().toISOString();
 
-    // BRANCH 1: Deal Fell Through
+    // BRANCH 1: Deal Fell Through (Requires Buyer Confirmation)
     if (input.dealOutcome === "deal_fell_through") {
-      tx.update(listingRef, {
-        listingStatus: "available",
-        pendingAccessIntent: null,
+      const buyerIdentifier = input.buyerId?.trim() || "buyer_off_platform";
+      const tradeId = `trade_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const tradeNumber = generateTradeNumber();
+
+      const tradeRecord: TradeRecord = {
+        tradeId,
+        tradeNumber,
+        listingId: listing.listingId,
+        certificationType: listing.certificationType,
+        lotId: listing.lotId,
+        certificateId: listing.certificateId,
+        sourceHoldingId: listing.sourceHoldingId,
+        sellerId: listing.sellerHolderId,
+        sellerHolderId: listing.sellerHolderId,
+        sellerHolderType: listing.sellerHolderType,
+        buyerId: buyerIdentifier,
+        buyerHolderType: input.buyerHolderType || "cooperative",
+        quantityKg: listing.quantityAvailableKg,
+        negotiatedPricePerKg: listing.pricePerKg,
+        totalAmount: 0,
+        currency: listing.currency,
+        paymentChannel: "off_platform",
+        tradeStatus: "pending",
+        requiresBuyerConfirmation: true,
+        buyerConfirmed: false,
+        dealOutcome: "deal_fell_through",
+        notes: input.cancellationReason?.trim() || "Deal fell through (Pending Buyer Confirmation)",
+        tradeDate: now,
+        createdAt: now,
         updatedAt: now,
-      });
+      };
+
+      const tradeRef = doc(db, COLLECTIONS.TRADES, tradeId);
+      tx.set(tradeRef, cleanData(tradeRecord));
 
       // Update specific access record if provided
       if (input.accessId && input.accessId.trim()) {
         const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, input.accessId.trim());
         const accSnap = await tx.get(accRef);
         if (accSnap.exists()) {
-          tx.update(accRef, {
-            accessStatus: "deal_fell_through",
+          tx.update(accRef, cleanData({
+            accessStatus: "deal_fell_through_pending",
             dealOutcome: "deal_fell_through",
+            tradeId,
             cancellationReason: input.cancellationReason?.trim() || "Deal fell through after negotiation",
             concludedAt: now,
             updatedAt: now,
-          });
+          }));
+        }
+      } else {
+        const c1 = `SAR-${listing.listingId}-${buyerIdentifier}`;
+        const c2 = `acc_${listing.listingId}-${buyerIdentifier}`;
+        for (const cid of [c1, c2]) {
+          const cRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, cid);
+          const cSnap = await tx.get(cRef);
+          if (cSnap.exists()) {
+            tx.update(cRef, cleanData({
+              accessStatus: "deal_fell_through_pending",
+              dealOutcome: "deal_fell_through",
+              tradeId,
+              cancellationReason: input.cancellationReason?.trim() || "Deal fell through after negotiation",
+              concludedAt: now,
+              updatedAt: now,
+            }));
+          }
         }
       }
 
-      const updatedListing: MarketplaceListing = {
-        ...listing,
-        listingStatus: "available",
-        pendingAccessIntent: undefined,
-        updatedAt: now,
-      };
-
       return {
         success: true,
-        listing: updatedListing,
-        message: "Deal marked as fell through. Cocoa lot is listed back as available on the marketplace.",
+        listing,
+        trade: tradeRecord,
+        message: "Deal cancellation recorded. Awaiting buyer confirmation before releasing cocoa lot back to marketplace.",
       };
     }
 
@@ -1327,11 +1385,56 @@ export async function confirmTradeByBuyer(tradeId: string, buyerUid: string): Pr
       throw new Error("Authorization Error: Only the designated buyer can confirm this trade.");
     }
 
+    const now = new Date().toISOString();
+
+    if (trade.dealOutcome === "deal_fell_through") {
+      // Release listing back to available
+      const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, trade.listingId);
+      const listingSnap = await tx.get(listingRef);
+      if (listingSnap.exists()) {
+        tx.update(listingRef, cleanData({
+          listingStatus: "available",
+          pendingAccessIntent: null,
+          updatedAt: now,
+        }));
+      }
+
+      // Update access record if exists
+      const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, `acc_${trade.listingId}_${cleanBuyerUid}`);
+      const accSnap = await tx.get(accRef);
+      if (accSnap.exists()) {
+        tx.update(accRef, cleanData({
+          accessStatus: "deal_fell_through",
+          dealOutcome: "deal_fell_through",
+          concludedAt: now,
+          updatedAt: now,
+        }));
+      }
+
+      const updatedTrade: TradeRecord = {
+        ...trade,
+        tradeStatus: "cancelled",
+        buyerConfirmed: true,
+        buyerConfirmedAt: now,
+        confirmedByBuyerUid: cleanBuyerUid,
+        updatedAt: now,
+      };
+
+      tx.update(tradeRef, cleanData({
+        tradeStatus: "cancelled",
+        buyerConfirmed: true,
+        buyerConfirmedAt: now,
+        confirmedByBuyerUid: cleanBuyerUid,
+        updatedAt: now,
+      }));
+
+      return updatedTrade;
+    }
+
     if (trade.tradeStatus === "completed" && trade.buyerConfirmed) {
       return trade;
     }
 
-    const now = new Date().toISOString();
     const updatedTrade: TradeRecord = {
       ...trade,
       tradeStatus: "completed",
@@ -1341,13 +1444,13 @@ export async function confirmTradeByBuyer(tradeId: string, buyerUid: string): Pr
       updatedAt: now,
     };
 
-    tx.update(tradeRef, {
+    tx.update(tradeRef, cleanData({
       tradeStatus: "completed",
       buyerConfirmed: true,
       buyerConfirmedAt: now,
       confirmedByBuyerUid: cleanBuyerUid,
       updatedAt: now,
-    });
+    }));
 
     return updatedTrade;
   });
