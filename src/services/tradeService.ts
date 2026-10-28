@@ -894,8 +894,10 @@ export async function declareOffPlatformSale(
       totalAmount: tradeValue,
       currency: (input.currency || listing.currency || "XAF").toUpperCase(),
       paymentChannel: "off_platform",
-      tradeStatus: "completed",
-      notes: input.notes?.trim() || "Negotiated settlement after contact access",
+      tradeStatus: "pending",
+      requiresBuyerConfirmation: true,
+      buyerConfirmed: false,
+      notes: input.notes?.trim() || "Declared off-platform sale (Pending Buyer Confirmation)",
       tradeDate: now,
       createdAt: now,
       updatedAt: now,
@@ -1095,8 +1097,10 @@ export async function concludeNegotiationDeal(
       totalAmount: tradeValue,
       currency: (input.currency || listing.currency || "XAF").toUpperCase(),
       paymentChannel: "off_platform",
-      tradeStatus: "completed",
-      notes: input.notes?.trim() || "Negotiated settlement after seller contact access",
+      tradeStatus: "pending",
+      requiresBuyerConfirmation: true,
+      buyerConfirmed: false,
+      notes: input.notes?.trim() || "Negotiated settlement after seller contact access (Pending Buyer Confirmation)",
       tradeDate: now,
       createdAt: now,
       updatedAt: now,
@@ -1302,3 +1306,94 @@ export async function listTrades(filters?: TradeFilterOptions): Promise<TradeRec
 
   return trades.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
+
+/**
+ * Confirms an off-platform or concluded trade from the buyer's Trade Management dashboard.
+ */
+export async function confirmTradeByBuyer(tradeId: string, buyerUid: string): Promise<TradeRecord> {
+  const cleanTradeId = tradeId.trim();
+  const cleanBuyerUid = buyerUid.trim();
+  const tradeRef = doc(db, COLLECTIONS.TRADES, cleanTradeId);
+
+  return await runTransaction(db, async (tx) => {
+    const tradeSnap = await tx.get(tradeRef);
+    if (!tradeSnap.exists()) {
+      throw new Error(`Trade Record "${cleanTradeId}" does not exist.`);
+    }
+
+    const trade = tradeSnap.data() as TradeRecord;
+    const isBuyer = trade.buyerId === cleanBuyerUid;
+    if (!isBuyer) {
+      throw new Error("Authorization Error: Only the designated buyer can confirm this trade.");
+    }
+
+    if (trade.tradeStatus === "completed" && trade.buyerConfirmed) {
+      return trade;
+    }
+
+    const now = new Date().toISOString();
+    const updatedTrade: TradeRecord = {
+      ...trade,
+      tradeStatus: "completed",
+      buyerConfirmed: true,
+      buyerConfirmedAt: now,
+      confirmedByBuyerUid: cleanBuyerUid,
+      updatedAt: now,
+    };
+
+    tx.update(tradeRef, {
+      tradeStatus: "completed",
+      buyerConfirmed: true,
+      buyerConfirmedAt: now,
+      confirmedByBuyerUid: cleanBuyerUid,
+      updatedAt: now,
+    });
+
+    return updatedTrade;
+  });
+}
+
+/**
+ * Rejects or disputes an unconfirmed declared trade.
+ */
+export async function rejectTradeByBuyer(
+  tradeId: string,
+  buyerUid: string,
+  reason?: string
+): Promise<TradeRecord> {
+  const cleanTradeId = tradeId.trim();
+  const cleanBuyerUid = buyerUid.trim();
+  const tradeRef = doc(db, COLLECTIONS.TRADES, cleanTradeId);
+
+  return await runTransaction(db, async (tx) => {
+    const tradeSnap = await tx.get(tradeRef);
+    if (!tradeSnap.exists()) {
+      throw new Error(`Trade Record "${cleanTradeId}" does not exist.`);
+    }
+
+    const trade = tradeSnap.data() as TradeRecord;
+    const isBuyer = trade.buyerId === cleanBuyerUid;
+    if (!isBuyer) {
+      throw new Error("Authorization Error: Only the designated buyer can reject this trade.");
+    }
+
+    const now = new Date().toISOString();
+    const updatedTrade: TradeRecord = {
+      ...trade,
+      tradeStatus: "cancelled",
+      buyerConfirmed: false,
+      notes: `${trade.notes || ""} [Rejected by buyer: ${reason?.trim() || "Terms not agreed"}]`.trim(),
+      updatedAt: now,
+    };
+
+    tx.update(tradeRef, {
+      tradeStatus: "cancelled",
+      buyerConfirmed: false,
+      notes: updatedTrade.notes,
+      updatedAt: now,
+    });
+
+    return updatedTrade;
+  });
+}
+

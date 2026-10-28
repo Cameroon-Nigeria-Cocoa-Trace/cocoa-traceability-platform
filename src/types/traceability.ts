@@ -530,6 +530,10 @@ export interface TradeRecord {
   paymentReference?: string; // Unique idempotency key / gateway payment reference
   notes?: string;
   tradeStatus: TradeStatus;
+  requiresBuyerConfirmation?: boolean;
+  buyerConfirmed?: boolean;
+  buyerConfirmedAt?: string;
+  confirmedByBuyerUid?: string;
   platformFeeApplied?: AppliedFeeRecord; // CONFIRMED: 2% platform service fee on purchase price
   transferFeeApplied?: AppliedFeeRecord; // Preserved transfer fee if settled with cert transfer
   transferId?: string; // Associated CertificateTransfer ID if certified

@@ -124,6 +124,30 @@ export default function TradeManagementPage() {
   const [tradeReviewSuccess, setTradeReviewSuccess] = useState<string | null>(null);
   const [tradeReviewError, setTradeReviewError] = useState<string | null>(null);
   const [hasReviewedSelectedTrade, setHasReviewedSelectedTrade] = useState<boolean>(false);
+  const [confirmingTradeId, setConfirmingTradeId] = useState<string | null>(null);
+  const [confirmSuccessMsg, setConfirmSuccessMsg] = useState<string | null>(null);
+
+  const handleBuyerConfirmTrade = async (tradeId: string) => {
+    setConfirmingTradeId(tradeId);
+    try {
+      const res = await apiClient.post<{ success: boolean; message: string; trade: TradeRecord }>(
+        `/api/marketplace/trades/${tradeId}/confirm`,
+        { action: "confirm" }
+      );
+      if (res && res.success) {
+        setConfirmSuccessMsg("Trade confirmed successfully!");
+        loadTrades();
+        if (selectedTrade && selectedTrade.tradeId === tradeId) {
+          setSelectedTrade(res.trade);
+        }
+        setTimeout(() => setConfirmSuccessMsg(null), 3000);
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to confirm trade.");
+    } finally {
+      setConfirmingTradeId(null);
+    }
+  };
 
   useEffect(() => {
     if (selectedTrade && user && selectedTrade.buyerId === user.uid) {
@@ -835,25 +859,51 @@ export default function TradeManagementPage() {
                         </td>
 
                         <td className="py-4 px-4">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[0.65rem] font-bold capitalize ${
-                              t.tradeStatus === "completed"
-                                ? "bg-[#eefbf3] text-[#1d6a45] border border-[#cdebc2]"
-                                : "bg-amber-50 text-amber-700 border border-amber-200"
-                            }`}
-                          >
-                            {t.tradeStatus}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[0.65rem] font-bold capitalize w-fit ${
+                                t.tradeStatus === "completed"
+                                  ? "bg-[#eefbf3] text-[#1d6a45] border border-[#cdebc2]"
+                                  : t.tradeStatus === "pending"
+                                  ? "bg-amber-50 text-amber-800 border border-amber-300"
+                                  : "bg-gray-100 text-gray-700 border border-gray-200"
+                              }`}
+                            >
+                              {t.tradeStatus === "pending"
+                                ? isBuyer
+                                  ? "Action Required: Confirm Trade"
+                                  : "Awaiting Buyer Confirmation"
+                                : t.tradeStatus}
+                            </span>
+                            {t.buyerConfirmed && (
+                              <span className="text-[10px] text-[#2d6130] font-semibold flex items-center gap-0.5">
+                                <CheckCircle2 size={10} /> Confirmed by Buyer
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="py-4 px-5 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedTrade(t)}
-                            className="inline-flex items-center gap-1 rounded-full border border-[#dfe7d8] bg-white px-3 py-1.5 text-xs font-bold text-[#10251d] hover:bg-[#edf2ea] cursor-pointer"
-                          >
-                            Audit Record <ChevronRight size={12} />
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            {isBuyer && t.tradeStatus === "pending" && (
+                              <button
+                                type="button"
+                                onClick={() => handleBuyerConfirmTrade(t.tradeId)}
+                                disabled={confirmingTradeId === t.tradeId}
+                                className="inline-flex items-center gap-1 rounded-full bg-[#0b3528] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer shadow-xs disabled:opacity-50"
+                              >
+                                <CheckCircle2 size={12} />
+                                {confirmingTradeId === t.tradeId ? "Confirming..." : "Confirm & Accept"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTrade(t)}
+                              className="inline-flex items-center gap-1 rounded-full border border-[#dfe7d8] bg-white px-3 py-1.5 text-xs font-bold text-[#10251d] hover:bg-[#edf2ea] cursor-pointer"
+                            >
+                              Audit Record <ChevronRight size={12} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -901,7 +951,7 @@ export default function TradeManagementPage() {
                   <div className="rounded-2xl bg-[#f8f9f3] p-3">
                     <span className="text-gray-500 block">Trade Status</span>
                     <strong className="text-sm font-bold capitalize text-[#10251d]">
-                      {selectedTrade.tradeStatus}
+                      {selectedTrade.tradeStatus === "pending" ? "Pending Confirmation" : selectedTrade.tradeStatus}
                     </strong>
                   </div>
                   <div className="rounded-2xl bg-[#f8f9f3] p-3">
@@ -911,6 +961,46 @@ export default function TradeManagementPage() {
                     </strong>
                   </div>
                 </div>
+
+                {selectedTrade.tradeStatus === "pending" && (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-950">
+                      <AlertTriangle size={15} /> Awaiting Buyer Confirmation
+                    </div>
+                    {user && selectedTrade.buyerId === user.uid ? (
+                      <div>
+                        <p className="leading-relaxed">
+                          The seller has declared this commercial sale. Please review the declared quantity ({selectedTrade.quantityKg} kg) and price ({selectedTrade.negotiatedPricePerKg} {selectedTrade.currency}/kg), and click confirm below to complete the trade.
+                        </p>
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleBuyerConfirmTrade(selectedTrade.tradeId)}
+                            disabled={confirmingTradeId === selectedTrade.tradeId}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer shadow-xs disabled:opacity-50"
+                          >
+                            <CheckCircle2 size={14} />
+                            {confirmingTradeId === selectedTrade.tradeId ? "Confirming..." : "Confirm & Accept Trade Terms"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="leading-relaxed text-[#57655d]">
+                        This sale was recorded by the seller and is pending confirmation from the buyer ({selectedTrade.buyerId}) in their own Trade Management dashboard.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {selectedTrade.buyerConfirmed && (
+                  <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-3 text-xs text-[#1d6a45] flex items-center gap-2">
+                    <CheckCircle2 size={16} />
+                    <span>
+                      Confirmed by Buyer
+                      {selectedTrade.buyerConfirmedAt && ` on ${new Date(selectedTrade.buyerConfirmedAt).toLocaleDateString()}`}
+                    </span>
+                  </div>
+                )}
 
                 <div className="rounded-2xl border border-[#dfe7d8] p-4 space-y-2">
                   <div className="flex justify-between">
@@ -1089,6 +1179,14 @@ export default function TradeManagementPage() {
                 accounting balance, and prevent ghost inventory.
               </p>
 
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
+                <AlertTriangle size={17} className="shrink-0 mt-0.5 text-amber-700" />
+                <div>
+                  <strong className="block font-bold">Buyer Confirmation Required:</strong>
+                  Everything declared here (quantity, price, buyer details) must be confirmed by the buyer in their own Trade Management dashboard before this sale is finalized. The trade will be recorded in <em>&quot;Pending Confirmation&quot;</em> status until accepted.
+                </div>
+              </div>
+
               {declareError && (
                 <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 border border-red-200">
                   {declareError}
@@ -1210,6 +1308,246 @@ export default function TradeManagementPage() {
                   </button>
                 </div>
                 </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Conclude Negotiated Sale */}
+        {concludeModalItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
+            <div className="relative my-8 w-full max-w-xl rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setConcludeModalItem(null)}
+                className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 cursor-pointer"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
+                <Handshake size={14} /> Negotiation Finalization
+              </div>
+              <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Conclude Commercial Sale</h2>
+              <p className="mt-1 text-xs text-[#57655d]">
+                Record agreed transaction terms negotiated with the prospective buyer.
+              </p>
+
+              {/* Notice for the seller before concluding */}
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
+                <AlertTriangle size={18} className="shrink-0 mt-0.5 text-amber-700" />
+                <div>
+                  <strong className="block font-bold">Buyer Confirmation Required:</strong>
+                  Everything declared here (agreed price, quantity, buyer details) must be reviewed and confirmed by the buyer in their own Trade Management dashboard. The transaction will be saved in <em>&quot;Pending Confirmation&quot;</em> status until accepted by the buyer.
+                </div>
+              </div>
+
+              {concludeError && (
+                <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                  {concludeError}
+                </div>
+              )}
+
+              {concludeSuccess && (
+                <div className="mt-4 rounded-2xl bg-green-50 p-3 text-xs text-green-700 border border-green-200 flex items-center gap-1.5">
+                  <CheckCircle2 size={15} /> {concludeSuccess}
+                </div>
+              )}
+
+              <form onSubmit={handleConcludeSale} className="mt-4 space-y-4 text-xs">
+                {/* Read-only listing overview */}
+                <div className="rounded-2xl border border-[#dfe7d8] bg-[#f8f9f3] p-3 space-y-1">
+                  <div className="font-bold text-[#10251d] text-sm">{concludeModalItem.listing.title}</div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>
+                      Lot ID: <strong className="font-mono text-[#10251d]">{concludeModalItem.listing.lotId}</strong>
+                    </span>
+                    <span>
+                      Available: <strong className="text-[#10251d]">{concludeModalItem.listing.quantityAvailableKg.toLocaleString()} kg</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">Buyer Identifier / Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={concludeBuyerId}
+                      onChange={(e) => setConcludeBuyerId(e.target.value)}
+                      placeholder="e.g. buyer_uid_or_name"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">Buyer Entity Role</label>
+                    <select
+                      value={concludeBuyerHolderType}
+                      onChange={(e) => setConcludeBuyerHolderType(e.target.value as CertificateHolderType)}
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                    >
+                      <option value="cooperative">Cooperative Organization</option>
+                      <option value="agent">Licensed Buying Agent</option>
+                      <option value="warehouse">Licensed Export Warehouse</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">Amount Bought (kg) *</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      max={concludeModalItem.listing.quantityAvailableKg}
+                      value={concludeQuantityKg}
+                      onChange={(e) => setConcludeQuantityKg(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">
+                      Max available: {concludeModalItem.listing.quantityAvailableKg} kg
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">
+                      Agreed Price per kg ({concludeModalItem.listing.currency}) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={concludeAgreedPricePerKg}
+                      onChange={(e) => setConcludeAgreedPricePerKg(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                    />
+                    <span className="text-[10px] text-gray-400 mt-0.5 block">
+                      Catalog Price: {concludeModalItem.listing.pricePerKg} {concludeModalItem.listing.currency}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Calculated Total */}
+                {Number(concludeQuantityKg) > 0 && Number(concludeAgreedPricePerKg) > 0 && (
+                  <div className="rounded-2xl bg-[#edf7e8] border border-[#cdebc2] p-3 flex justify-between items-center text-xs">
+                    <span className="font-semibold text-[#10251d]">Total Transaction Value:</span>
+                    <span className="font-bold text-sm text-[#0b3528]">
+                      {(Number(concludeQuantityKg) * Number(concludeAgreedPricePerKg)).toLocaleString()} {concludeModalItem.listing.currency}
+                    </span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block font-semibold text-[#10251d] mb-1">Notes / Agreed Conditions (Optional)</label>
+                  <textarea
+                    rows={2}
+                    value={concludeNotes}
+                    onChange={(e) => setConcludeNotes(e.target.value)}
+                    placeholder="e.g. Terms agreed via direct contact, cash payment upon physical inspection"
+                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                  />
+                </div>
+
+                <div className="mt-5 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
+                  <button
+                    type="button"
+                    onClick={() => setConcludeModalItem(null)}
+                    className="rounded-full px-5 py-2 font-bold text-gray-500 hover:bg-gray-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={concludeSubmitting}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                  >
+                    {concludeSubmitting ? "Recording..." : "Record & Send to Buyer for Confirmation"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Deal Fell Through */}
+        {fellThroughModalItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
+            <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setFellThroughModalItem(null)}
+                className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 cursor-pointer"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-700">
+                <XCircle size={14} /> Negotiation Cancellation
+              </div>
+              <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Mark Deal as Fell Through</h2>
+              <p className="mt-1 text-xs text-[#57655d]">
+                Cancel negotiation with this buyer and release the cocoa lot back to the marketplace.
+              </p>
+
+              {/* Informational notice */}
+              <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3.5 text-xs text-blue-900 flex items-start gap-2.5">
+                <Info size={18} className="shrink-0 mt-0.5 text-blue-700" />
+                <div>
+                  <strong className="block font-bold">Negotiation Status Update:</strong>
+                  Marking this deal as fell through will update the status for both parties and restore the cocoa lot as available on the marketplace so other prospective buyers can explore it.
+                </div>
+              </div>
+
+              {fellThroughError && (
+                <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                  {fellThroughError}
+                </div>
+              )}
+
+              {fellThroughSuccess && (
+                <div className="mt-4 rounded-2xl bg-green-50 p-3 text-xs text-green-700 border border-green-200 flex items-center gap-1.5">
+                  <CheckCircle2 size={15} /> {fellThroughSuccess}
+                </div>
+              )}
+
+              <form onSubmit={handleFellThrough} className="mt-4 space-y-4 text-xs">
+                <div className="rounded-2xl border border-[#dfe7d8] bg-[#f8f9f3] p-3 space-y-1">
+                  <div className="font-bold text-[#10251d] text-sm">{fellThroughModalItem.listing.title}</div>
+                  <div className="text-gray-500 font-mono text-[11px]">
+                    Buyer: {fellThroughModalItem.buyerProfile?.displayName || fellThroughModalItem.accessRecord.buyerUid || "Prospective Buyer"}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-[#10251d] mb-1">Reason for Deal Falling Through (Optional)</label>
+                  <textarea
+                    rows={3}
+                    value={cancellationReason}
+                    onChange={(e) => setCancellationReason(e.target.value)}
+                    placeholder="e.g. Counterparty unable to agree on pricing or delivery timeline"
+                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
+                  />
+                </div>
+
+                <div className="mt-5 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
+                  <button
+                    type="button"
+                    onClick={() => setFellThroughModalItem(null)}
+                    className="rounded-full px-5 py-2 font-bold text-gray-500 hover:bg-gray-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={fellThroughSubmitting}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-red-600 px-6 py-2.5 font-bold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    {fellThroughSubmitting ? "Releasing..." : "Confirm & Release Lot"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
