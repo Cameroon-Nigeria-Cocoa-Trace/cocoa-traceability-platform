@@ -273,10 +273,10 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               cooperativeOrgId: existingData.cooperativeOrgId || coopProf?.cooperativeOrgId || coopOrgId,
               cooperativeOrgName: existingData.cooperativeOrgName || coopProf?.cooperativeOrgName || coopOrgName,
             });
-          } else {
+            const cachedPendingRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_pending_role") : null;
             if (currentUser.email === "afumbomboyo@gmail.com") {
               roleToSet = "farmer";
-            } else if (cachedRole === "cooperative" && (coopProf || coopOrgId)) {
+            } else if (cachedRole === "cooperative" || cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
               roleToSet = "cooperative";
             } else {
               roleToSet = "farmer";

@@ -345,6 +345,7 @@ function HarvestsContent() {
         setNotes("");
         await loadHarvests();
         await loadProductionRecords();
+        setTimeout(() => loadHarvests(), 1000); // Small delay to handle potential Firestore latency
         setTimeout(() => setSuccessMessage(null), 4000);
       }
     } catch (err: unknown) {

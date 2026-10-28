@@ -51,11 +51,11 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
       },
       {
         name: "Cooperative Hub",
-        href: "/dashboard/cooperative",
+        href: "/dashboard/cooperatives",
         icon: Store,
         isReady: true,
         stageBadge: "Role 4",
-        description: "Cooperative member directory, onboarding, status history & sub-cooperative hierarchy",
+        description: "Link cooperatives to your farm, delegate single/all farm management & operational authority",
       },
     ],
   },
@@ -256,7 +256,12 @@ export function DashboardWorkflowNav({
                   const Icon = item.icon;
 
                   if (item.isReady) {
-                    const itemHref = item.href === "/dashboard" && isCooperative ? "/dashboard/cooperative" : item.href;
+                    let itemHref = item.href;
+                    if (item.name === "Cooperative Hub") {
+                      itemHref = isCooperative ? "/dashboard/cooperative" : "/dashboard/cooperatives";
+                    } else if (item.href === "/dashboard" && isCooperative) {
+                      itemHref = "/dashboard/cooperative";
+                    }
                     return (
                       <Link
                         key={item.name}

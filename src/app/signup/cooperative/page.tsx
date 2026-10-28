@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { useFirebase } from "@/context/FirebaseContext";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 import { Store, ShieldCheck, UserCheck, Mail, Lock, User, Building2, MapPin, Phone, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
 import { CooperativeAccountType } from "@/types/cooperative";
 
@@ -99,72 +100,122 @@ export default function CooperativeSignupPage() {
     try {
       setLoading(true);
 
+      if (typeof window !== "undefined") {
+        localStorage.setItem("cocoatrace_user_role", "cooperative");
+        localStorage.setItem("cocoatrace_pending_role", "cooperative");
+      }
+
       // 1. Create Firebase Auth account
       let authUser = user;
       if (!authUser) {
-        const cred = await signUpWithEmail(authEmail, password, repName.trim());
-        authUser = (cred as any)?.user || auth.currentUser;
+        await signUpWithEmail(authEmail, password, repName.trim());
+        authUser = auth.currentUser;
       }
 
       if (!authUser) {
         throw new Error("Failed to authenticate user account.");
       }
 
-      const token = await authUser.getIdToken();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "x-user-uid": authUser.uid,
-        Authorization: `Bearer ${token}`,
-      };
-
-      // 2. Create Organization record
       const fullRegionString =
         accountType === "personal"
           ? `${personalVillage || "Local Community"}, ${personalDivision}, ${personalRegion}, Cameroon`
           : `${locality}, ${division}, ${region}, ${country}`;
 
       const phoneToSave = accountType === "personal" ? personalPhone || cleanIdentifier : contactPhone;
+      const orgId = `org_coop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const now = new Date().toISOString();
 
-      const orgRes = await fetch("/api/cooperative/account", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          action: "create_organization",
-          name: effectiveCoopName,
-          registrationNumber: registrationNumber.trim() || `PERSONAL-REF-${authUser.uid.slice(0, 6)}`,
-          region: fullRegionString,
-          headquartersAddress: accountType === "personal" ? `${personalVillage || "Local Community"}, ${personalRegion}` : headquartersAddress.trim(),
-          contactEmail: credentialType === "email" ? cleanIdentifier : `phone_${authUser.uid.substring(0, 8)}@tracetrade.cm`,
-          contactPhone: phoneToSave.trim() || "+237 670 000 000",
-          createdBy: authUser.uid,
-        }),
-      });
-      const orgJson = await orgRes.json();
-      if (!orgJson.success || !orgJson.organization) {
-        throw new Error(orgJson.error || "Failed to create cooperative organization profile.");
+      const orgData = {
+        id: orgId,
+        name: effectiveCoopName,
+        registrationNumber: registrationNumber.trim() || `COOP-CMR-${Date.now().toString().slice(-4)}`,
+        region: fullRegionString,
+        country,
+        division,
+        locality,
+        headquartersAddress: accountType === "personal" ? `${personalVillage || "Local Community"}, ${personalRegion}` : headquartersAddress.trim(),
+        contactEmail: credentialType === "email" ? cleanIdentifier : `phone_${authUser.uid.substring(0, 8)}@tracetrade.cm`,
+        contactPhone: phoneToSave.trim() || "+237 670 000 000",
+        representativeName: repName.trim(),
+        representativeRole: repRole,
+        accountType,
+        nationalIdRef: nationalIdRef.trim() || null,
+        personalBio: personalBio.trim() || null,
+        status: "active",
+        createdBy: authUser.uid,
+        adminId: authUser.uid,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const profileData = {
+        id: `coop_usr_${authUser.uid}`,
+        userId: authUser.uid,
+        fullName: repName.trim(),
+        email: credentialType === "email" ? cleanIdentifier : `phone_${authUser.uid.substring(0, 8)}@tracetrade.cm`,
+        phone: phoneToSave.trim() || "+237 670 000 000",
+        accountType,
+        cooperativeOrgId: orgId,
+        cooperativeOrgName: effectiveCoopName,
+        role: accountType === "personal" ? "member" : repRole,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const userData = {
+        id: authUser.uid,
+        displayName: repName.trim(),
+        email: authUser.email || cleanIdentifier,
+        phone: phoneToSave.trim() || "+237 670 000 000",
+        role: "cooperative",
+        accountType: "cooperative",
+        cooperativeOrgId: orgId,
+        cooperativeOrgName: effectiveCoopName,
+        cooperativeRole: repRole,
+        registrationNumber: orgData.registrationNumber,
+        headquartersAddress: orgData.headquartersAddress,
+        region: fullRegionString,
+        country,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // 2. Persist directly to Firestore using client credentials
+      try {
+        await setDoc(doc(db, "cooperative_organizations", orgId), orgData);
+        await setDoc(doc(db, "cooperatives", orgId), orgData);
+        await setDoc(doc(db, "cooperative_profiles", `coop_usr_${authUser.uid}`), profileData);
+        await setDoc(doc(db, "users", authUser.uid), userData, { merge: true });
+      } catch (fsErr) {
+        console.warn("Client Firestore write notice:", fsErr);
       }
 
-      const org = orgJson.organization;
+      // 3. Also notify server-side API proxy to sync memory store & admin
+      try {
+        const token = await authUser.getIdToken();
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "x-user-uid": authUser.uid,
+          Authorization: `Bearer ${token}`,
+        };
 
-      // 3. Create Cooperative Profile record
-      const profRes = await fetch("/api/cooperative/account", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          userId: authUser.uid,
-          fullName: repName.trim(),
-          email: credentialType === "email" ? cleanIdentifier : `phone_${authUser.uid.substring(0, 8)}@tracetrade.cm`,
-          phone: phoneToSave.trim() || "+237 670 000 000",
-          accountType,
-          cooperativeOrgId: org.id,
-          cooperativeOrgName: org.name,
-          // Every personal account is considered as an Independent Cooperative Member
-          role: accountType === "personal" ? "member" : repRole,
-        }),
-      });
-      const profJson = await profRes.json();
-      if (!profJson.success || !profJson.profile) {
-        throw new Error(profJson.error || "Failed to link user profile to cooperative organization.");
+        await fetch("/api/cooperative/account", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            action: "create_organization",
+            ...orgData,
+          }),
+        });
+
+        await fetch("/api/cooperative/account", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(profileData),
+        });
+      } catch (apiErr) {
+        console.warn("API proxy sync notice:", apiErr);
       }
 
       setUserRole("cooperative");
@@ -172,7 +223,7 @@ export default function CooperativeSignupPage() {
         localStorage.setItem("cocoatrace_user_role", "cooperative");
       }
 
-      setSuccess("Cooperative registration completed successfully! Redirecting to dashboard...");
+      setSuccess("Cooperative registration completed successfully! Redirecting to cooperative workspace...");
       setTimeout(() => {
         router.push("/dashboard/cooperative");
       }, 1200);

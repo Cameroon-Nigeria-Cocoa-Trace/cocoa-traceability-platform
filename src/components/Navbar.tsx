@@ -13,14 +13,12 @@ export function Navbar() {
 
   const isCoop = isCooperative || userRole === "cooperative";
   const dashboardHref = isCoop ? "/dashboard/cooperative" : "/dashboard";
-  const forEntityLabel = isCoop ? "Cooperative Hub" : "For Farmers";
-  const forEntityHref = isCoop ? "/dashboard/cooperative" : user ? "/dashboard" : "/signup";
 
   const links = [
     ["Home", "/"],
     ["Marketplace", "/marketplace"],
     ...(user ? [["Dashboard", dashboardHref]] : []),
-    [forEntityLabel, forEntityHref],
+    ...(isCoop ? [["Cooperative Workspace", "/dashboard/cooperative"]] : [["For Farmers", user ? "/dashboard" : "/signup"]]),
     ["Traceability", "/marketplace"],
     ["Portal", "/login"],
   ];

@@ -8,11 +8,38 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const farmerId = searchParams.get("farmerId");
     const cooperativeOrgId = searchParams.get("cooperativeOrgId");
-    const searchQuery = searchParams.get("search");
+    const listCooperatives = searchParams.get("listCooperatives");
 
-    if (searchQuery) {
-      const orgs = await cooperativeStore.searchOrganizations(searchQuery);
-      return NextResponse.json({ success: true, organizations: orgs });
+    const searchQueryParam = searchParams.get("searchQuery");
+
+    if (searchQueryParam !== null || listCooperatives === "true") {
+      const orgs = await cooperativeStore.searchOrganizations(searchQueryParam || "");
+      // Also fetch from firebaseAdminDb cooperatives and cooperative_organizations
+      const allOrgsMap = new Map<string, any>();
+      orgs.forEach((o) => allOrgsMap.set(o.id, o));
+      try {
+        const snap = await firebaseAdminDb.collection("cooperative_organizations").get();
+        snap.forEach((d) => allOrgsMap.set(d.id, { ...d.data(), id: d.id }));
+        const coopSnap = await firebaseAdminDb.collection("cooperatives").get();
+        coopSnap.forEach((d) => {
+          const c = d.data();
+          if (!allOrgsMap.has(d.id)) {
+            allOrgsMap.set(d.id, {
+              id: d.id,
+              name: c.name || "Cooperative Society",
+              registrationNumber: c.registrationNumber || "COOP-CMR",
+              region: c.region || "South-West Region",
+              headquartersAddress: c.headquartersAddress || "",
+              contactEmail: c.contactEmail || "",
+              contactPhone: c.contactPhone || "",
+              status: c.status || "active",
+            });
+          }
+        });
+      } catch {
+        // Fallback to in-memory
+      }
+      return NextResponse.json({ success: true, organizations: Array.from(allOrgsMap.values()) });
     }
 
     if (cooperativeOrgId) {
@@ -142,6 +169,16 @@ export async function POST(req: NextRequest) {
         // Fallback already handled
       }
       return NextResponse.json({ success: true, association: assoc });
+    }
+
+    if (action === "unlink") {
+      const key = `${farmerId}_${cooperativeOrgId}`;
+      try {
+        await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(key).delete();
+      } catch (err) {
+        console.warn("Notice deleting association in admin DB:", err);
+      }
+      return NextResponse.json({ success: true, message: "Association unlinked successfully." });
     }
 
     return NextResponse.json({ success: false, error: "Invalid action." }, { status: 400 });

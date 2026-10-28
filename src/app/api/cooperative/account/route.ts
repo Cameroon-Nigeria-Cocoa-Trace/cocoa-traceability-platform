@@ -22,10 +22,52 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     if (body.action === "create_organization") {
       const org = await cooperativeService.createOrganization(body);
+      // Persist to Firestore via firebaseAdminDb as well
+      try {
+        const { firebaseAdminDb } = await import("@/lib/firebaseAdmin");
+        const orgData = {
+          ...org,
+          country: body.country || "Cameroon",
+          division: body.division || "Manyu Division",
+          locality: body.locality || "Mamfe Central",
+          accountType: body.accountType || "organizational",
+          updatedAt: new Date().toISOString(),
+        };
+        await firebaseAdminDb.collection("cooperative_organizations").doc(org.id).set(orgData, { merge: true });
+        await firebaseAdminDb.collection("cooperatives").doc(org.id).set(orgData, { merge: true });
+      } catch (adminErr) {
+        console.warn("firebaseAdmin notice saving organization:", adminErr);
+      }
       return NextResponse.json({ success: true, organization: org });
     }
 
     const profile = await cooperativeService.registerProfile(body);
+    // Persist to Firestore via firebaseAdminDb as well
+    try {
+      const { firebaseAdminDb } = await import("@/lib/firebaseAdmin");
+      const profileData = {
+        ...profile,
+        updatedAt: new Date().toISOString(),
+      };
+      await firebaseAdminDb.collection("cooperative_profiles").doc(profile.id).set(profileData, { merge: true });
+      await firebaseAdminDb.collection("cooperative_profiles").doc(`coop_usr_${profile.userId}`).set(profileData, { merge: true });
+      // Update user document to explicitly set role: "cooperative"
+      await firebaseAdminDb.collection("users").doc(profile.userId).set({
+        id: profile.userId,
+        displayName: profile.fullName,
+        email: profile.email,
+        phone: profile.phone,
+        role: "cooperative",
+        accountType: "cooperative",
+        cooperativeOrgId: profile.cooperativeOrgId,
+        cooperativeOrgName: profile.cooperativeOrgName,
+        cooperativeRole: profile.role,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch (adminErr) {
+      console.warn("firebaseAdmin notice saving profile & user:", adminErr);
+    }
+
     return NextResponse.json({ success: true, profile });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
