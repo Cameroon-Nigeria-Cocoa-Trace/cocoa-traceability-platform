@@ -32,6 +32,10 @@ export interface CooperativeOrganization {
   headquartersAddress: string;
   contactEmail: string;
   contactPhone: string;
+  accountType?: "personal" | "organizational" | "farm_group" | string;
+  representativeName?: string;
+  userId?: string;
+  adminId?: string;
   parentCooperativeId?: string; // For subordinate cooperative hierarchy
   parentCooperativeName?: string;
   status: "active" | "suspended";
@@ -115,7 +119,7 @@ export interface FarmerCooperativeAssociation {
     productionInventory: boolean;
     tradingManagement: boolean;
   };
-  status: "active" | "suspended";
+  status: "active" | "suspended" | "withdrawn" | "inactive";
   associatedAt: string;
   updatedAt: string;
 }

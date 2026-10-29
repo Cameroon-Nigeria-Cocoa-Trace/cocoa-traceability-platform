@@ -60,9 +60,9 @@ export default function CooperativeSignupPage() {
     setSuccess(null);
 
     // Validation
-    const effectiveCoopName = accountType === "personal" ? `${repName.trim()}'s Independent Cooperative Account` : coopName.trim();
+    const effectiveCoopName = accountType === "personal" ? `${repName.trim()}'s Farm Group` : coopName.trim();
     if (!effectiveCoopName) {
-      setError("Cooperative name is required.");
+      setError("Cooperative or Farm Group name is required.");
       return;
     }
     if (accountType === "organizational" && !registrationNumber.trim()) {
@@ -252,7 +252,7 @@ export default function CooperativeSignupPage() {
             Register Cooperative Account
           </h1>
           <p className="mt-2 text-sm text-[#57655d] max-w-xl mx-auto">
-            Choose whether you are registering as an organizational cooperative entity or a personal account using email or phone number.
+            Choose whether you are registering as an organizational cooperative entity or a Farm Group using email or phone number.
           </p>
         </div>
 
@@ -302,10 +302,10 @@ export default function CooperativeSignupPage() {
                 }`}
               >
                 <div className="flex items-center gap-2 font-bold text-[#10251d] text-sm">
-                  <UserCheck size={16} className="text-[#2d6130]" /> Personal
+                  <UserCheck size={16} className="text-[#2d6130]" /> Farm Groups
                 </div>
                 <p className="mt-1 text-xs text-[#57655d] text-left">
-                  Register as an independent cooperative member (Individual Producer).
+                  Register as an independent cooperative member, producer union, or local farm group.
                 </p>
               </button>
             </div>
@@ -419,18 +419,18 @@ export default function CooperativeSignupPage() {
             </div>
           )}
 
-          {/* Section 1B: Personal Cooperative Details (Shown if Personal) */}
+          {/* Section 1B: Farm Groups Details (Shown if Farm Groups) */}
           {accountType === "personal" && (
             <div className="p-5 rounded-2xl border border-[#edf1ea] bg-[#fafcf9] space-y-4">
               <div className="flex items-center gap-2 border-b border-[#edf1ea] pb-3 mb-2">
                 <UserCheck size={18} className="text-[#2d6130]" />
-                <h2 className="text-base font-bold text-[#10251d]">Personal Member Profile (Independent Cooperative Member)</h2>
+                <h2 className="text-base font-bold text-[#10251d]">Farm Group Profile (Local Group / Independent Producer)</h2>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 text-xs">
                 <div>
                   <label className="block font-semibold text-[#10251d] mb-1">
-                    Personal Phone Number <span className="text-red-500">*</span>
+                    Farm Group Phone Number <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -488,10 +488,10 @@ export default function CooperativeSignupPage() {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block font-semibold text-[#10251d] mb-1">Personal Bio / Farming Experience (Optional)</label>
+                  <label className="block font-semibold text-[#10251d] mb-1">Farm Group Description / Farming Details (Optional)</label>
                   <textarea
                     rows={2}
-                    placeholder="Briefly describe your cocoa farming experience..."
+                    placeholder="Briefly describe your cocoa farming experience and farm group..."
                     value={personalBio}
                     onChange={(e) => setPersonalBio(e.target.value)}
                     className="w-full rounded-xl border border-[#dfe7d8] bg-white p-3 text-xs font-medium outline-none focus:border-[#2d6130] resize-none"
@@ -501,12 +501,12 @@ export default function CooperativeSignupPage() {
             </div>
           )}
 
-          {/* Section 2: Authorized Representative / Personal User Name */}
+          {/* Section 2: Authorized Representative / Farm Group Representative Name */}
           <div>
             <div className="flex items-center gap-2 border-b border-[#edf1ea] pb-3 mb-5">
               <UserCheck size={20} className="text-[#2d6130]" />
               <h2 className="text-lg font-bold text-[#10251d]">
-                {accountType === "organizational" ? "Authorized Representative" : "Personal User Details"}
+                {accountType === "organizational" ? "Authorized Representative" : "Farm Group Representative Details"}
               </h2>
             </div>
 

@@ -35,74 +35,6 @@ import { FarmerCooperativeAssociation, CooperativeOrganization } from "@/types/c
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
-export const VERIFIED_CAMEROON_COOPERATIVES: CooperativeOrganization[] = [
-  {
-    id: "org_coop_mamfe_central",
-    name: "Mamfe Central Farmers Multi-Purpose Cooperative Society",
-    registrationNumber: "COOP-CMR-SW-2026-041",
-    region: "Manyu Division, South-West Region, Cameroon",
-    headquartersAddress: "Commercial Avenue, Mamfe Central",
-    contactEmail: "info@mamfecentral-coop.cm",
-    contactPhone: "+237 677 889 900",
-    status: "active",
-    createdBy: "system",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  },
-  {
-    id: "org_coop_manyu_allied",
-    name: "Manyu Allied Cocoa Farmers Cooperative",
-    registrationNumber: "COOP-CMR-SW-2026-088",
-    region: "Eyumojock / Manyu Basin, South-West Region, Cameroon",
-    headquartersAddress: "Station Road, Eyumojock",
-    contactEmail: "allied@manyu-cocoa.cm",
-    contactPhone: "+237 675 221 445",
-    status: "active",
-    createdBy: "system",
-    createdAt: "2026-01-10T00:00:00.000Z",
-    updatedAt: "2026-01-10T00:00:00.000Z",
-  },
-  {
-    id: "org_coop_kumba_union",
-    name: "Kumba High-Grade Cocoa Union",
-    registrationNumber: "COOP-CMR-SW-2025-112",
-    region: "Meme Division, South-West Region, Cameroon",
-    headquartersAddress: "Main Market Road, Kumba",
-    contactEmail: "contact@kumbacocoa.cm",
-    contactPhone: "+237 679 334 556",
-    status: "active",
-    createdBy: "system",
-    createdAt: "2025-11-01T00:00:00.000Z",
-    updatedAt: "2025-11-01T00:00:00.000Z",
-  },
-  {
-    id: "org_coop_tiko_society",
-    name: "Tiko Coastal Farmers Cooperative Society",
-    registrationNumber: "COOP-CMR-SW-2025-055",
-    region: "Fako Division, South-West Region, Cameroon",
-    headquartersAddress: "Wharf Road, Tiko",
-    contactEmail: "info@tikocoop.cm",
-    contactPhone: "+237 671 445 667",
-    status: "active",
-    createdBy: "system",
-    createdAt: "2025-08-15T00:00:00.000Z",
-    updatedAt: "2025-08-15T00:00:00.000Z",
-  },
-  {
-    id: "org_coop_cross_river",
-    name: "Ekok Cross-Border Farmers Union",
-    registrationNumber: "COOP-CMR-SW-2026-019",
-    region: "Ekok Border Zone, South-West Region, Cameroon",
-    headquartersAddress: "Customs Highway, Ekok",
-    contactEmail: "union@ekok-farmers.cm",
-    contactPhone: "+237 674 889 001",
-    status: "active",
-    createdBy: "system",
-    createdAt: "2026-02-01T00:00:00.000Z",
-    updatedAt: "2026-02-01T00:00:00.000Z",
-  },
-];
-
 export default function FarmerCooperativeHubPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#f7f8f3]" />}>
@@ -115,21 +47,22 @@ function FarmerCooperativeHubContent() {
   const { user, farms, userRole, isCooperative } = useFirebase();
 
   const [associations, setAssociations] = useState<FarmerCooperativeAssociation[]>([]);
-  const [availableCooperatives, setAvailableCooperatives] = useState<CooperativeOrganization[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchDirectory, setSearchDirectory] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Modal State: Link / Edit Cooperative
   const [showModal, setShowModal] = useState(false);
   const [editingAssociationId, setEditingAssociationId] = useState<string | null>(null);
+
+  // Search Cooperatives State (Search by Email or Phone)
+  const [searchQueryInput, setSearchQueryInput] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchPerformed, setSearchPerformed] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<CooperativeOrganization[]>([]);
+  const [selectedCoop, setSelectedCoop] = useState<CooperativeOrganization | null>(null);
   const [selectedCoopId, setSelectedCoopId] = useState("");
-  const [customCoopName, setCustomCoopName] = useState("");
-  const [customCoopReg, setCustomCoopReg] = useState("");
-  const [customCoopRegion, setCustomCoopRegion] = useState("South-West Region, Cameroon");
-  const [customCoopPhone, setCustomCoopPhone] = useState("+237 670 000 000");
-  const [customCoopEmail, setCustomCoopEmail] = useState("");
 
   // Scope: "all" | "single_farm"
   const [farmScope, setFarmScope] = useState<"all" | "single_farm" | "specific_farms">("all");
@@ -160,67 +93,54 @@ function FarmerCooperativeHubContent() {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch associations from Firestore
-      const userAssocs: FarmerCooperativeAssociation[] = [];
+      const dedupMap = new Map<string, FarmerCooperativeAssociation>();
+      const duplicateDocIdsToDelete: string[] = [];
+
       try {
         const q = query(collection(db, "farmerCooperativeAssociations"), where("farmerId", "==", user.uid));
         const snap = await getDocs(q);
         snap.forEach((d) => {
-          userAssocs.push(d.data() as FarmerCooperativeAssociation);
+          const data = d.data() as FarmerCooperativeAssociation;
+          if (data.status === "withdrawn" || data.status === "inactive") return;
+          const dedupKey = data.cooperativeOrgId || data.cooperativeOrgName;
+          if (!dedupMap.has(dedupKey)) {
+            dedupMap.set(dedupKey, data);
+          } else {
+            // Found a duplicate document for this cooperative! Schedule cleanup
+            duplicateDocIdsToDelete.push(d.id);
+          }
         });
+
+        // Clean up any duplicate documents in Firestore
+        if (duplicateDocIdsToDelete.length > 0) {
+          for (const docId of duplicateDocIdsToDelete) {
+            deleteDoc(doc(db, "farmerCooperativeAssociations", docId)).catch(() => {});
+          }
+        }
       } catch (fsErr) {
         console.warn("Firestore fetch notice:", fsErr);
       }
 
       // If empty in Firestore, query backend API
-      if (userAssocs.length === 0) {
+      if (dedupMap.size === 0) {
         try {
           const res = await fetch(`/api/cooperative/associations?farmerId=${user.uid}`);
           const json = await res.json();
           if (json.success && Array.isArray(json.associations)) {
-            userAssocs.push(...json.associations);
+            for (const a of json.associations) {
+              if (a.status === "withdrawn" || a.status === "inactive") continue;
+              const dedupKey = a.cooperativeOrgId || a.cooperativeOrgName;
+              if (!dedupMap.has(dedupKey)) {
+                dedupMap.set(dedupKey, a);
+              }
+            }
           }
         } catch {
           // ignore
         }
       }
 
-      setAssociations(userAssocs);
-
-      // 2. Fetch all registered cooperatives for directory & dropdown
-      const orgMap = new Map<string, CooperativeOrganization>();
-      // VERIFIED_CAMEROON_COOPERATIVES.forEach((c) => orgMap.set(c.id, c));
-
-      try {
-        const snap = await getDocs(collection(db, "cooperative_organizations"));
-        snap.forEach((d) => {
-          const org = d.data() as CooperativeOrganization;
-          orgMap.set(org.id, org);
-        });
-        const coopSnap = await getDocs(collection(db, "cooperatives"));
-        coopSnap.forEach((d) => {
-          const c = d.data();
-          if (!orgMap.has(d.id)) {
-            orgMap.set(d.id, {
-              id: d.id,
-              name: c.name || "Cooperative Society",
-              registrationNumber: c.registrationNumber || "COOP-CMR",
-              region: c.region || "South-West Region",
-              headquartersAddress: c.headquartersAddress || "",
-              contactEmail: c.contactEmail || "",
-              contactPhone: c.contactPhone || "",
-              status: c.status || "active",
-              createdBy: c.createdBy || c.adminId || "user",
-              createdAt: c.createdAt || new Date().toISOString(),
-              updatedAt: c.updatedAt || new Date().toISOString(),
-            });
-          }
-        });
-      } catch {
-        // Fallback
-      }
-
-      setAvailableCooperatives(Array.from(orgMap.values()));
+      setAssociations(Array.from(dedupMap.values()));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -239,12 +159,15 @@ function FarmerCooperativeHubContent() {
     }
   }, [myFarms, selectedSingleFarmId]);
 
-  // Open Link Modal with pre-selection
-  const handleOpenLinkModal = (preselectedCoopId?: string) => {
+  // Open Link Modal (Fresh search required)
+  const handleOpenLinkModal = () => {
     setEditingAssociationId(null);
-    setSelectedCoopId(preselectedCoopId || (availableCooperatives[0]?.id ?? "org_coop_mamfe_central"));
-    setCustomCoopName("");
-    setCustomCoopReg("");
+    setSelectedCoop(null);
+    setSelectedCoopId("");
+    setSearchQueryInput("");
+    setSearchResults([]);
+    setSearchPerformed(false);
+    setSearchError(null);
     setFarmScope("all");
     setSelectedSingleFarmId(myFarms[0]?.id || "");
     setManageEverything(true);
@@ -260,6 +183,23 @@ function FarmerCooperativeHubContent() {
   const handleOpenEditModal = (assoc: FarmerCooperativeAssociation) => {
     setEditingAssociationId(assoc.associationId);
     setSelectedCoopId(assoc.cooperativeOrgId);
+    setSelectedCoop({
+      id: assoc.cooperativeOrgId,
+      name: assoc.cooperativeOrgName,
+      registrationNumber: "COOP-CMR",
+      region: "South-West Region, Cameroon",
+      headquartersAddress: "",
+      contactEmail: assoc.cooperativeEmail,
+      contactPhone: assoc.cooperativePhone,
+      status: "active",
+      createdAt: assoc.associatedAt,
+      updatedAt: assoc.updatedAt,
+      createdBy: "",
+    });
+    setSearchQueryInput("");
+    setSearchResults([]);
+    setSearchPerformed(false);
+    setSearchError(null);
     setFarmScope(assoc.farmScope || "all");
     setSelectedSingleFarmId(assoc.delegatedFarmIds?.[0] || myFarms[0]?.id || "");
     setManageEverything(Boolean(assoc.manageEverything));
@@ -271,6 +211,158 @@ function FarmerCooperativeHubContent() {
     setShowModal(true);
   };
 
+  // Search Registered Cooperatives by Name, Email, or Phone Number
+  const handleSearchCooperatives = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const queryTerm = searchQueryInput.trim();
+    if (!queryTerm) {
+      setSearchError("Please enter the cooperative or farm group name, email, or phone number.");
+      return;
+    }
+    setIsSearching(true);
+    setSearchError(null);
+    setSearchPerformed(true);
+    try {
+      const qLower = queryTerm.toLowerCase();
+      const qDigits = queryTerm.replace(/\D/g, "");
+      const map = new Map<string, CooperativeOrganization>();
+
+      // 1. Query Server API
+      try {
+        const res = await fetch(`/api/cooperative/associations?searchQuery=${encodeURIComponent(queryTerm)}`);
+        const json = await res.json();
+        if (json.success && Array.isArray(json.organizations)) {
+          json.organizations.forEach((org: CooperativeOrganization) => {
+            map.set(org.id, org);
+          });
+        }
+      } catch (apiErr) {
+        console.warn("API search notice:", apiErr);
+      }
+
+      // 2. Query client-side Firestore for instant lookup and fallback
+      try {
+        // Search cooperative_organizations
+        const orgSnap = await getDocs(collection(db, "cooperative_organizations"));
+        orgSnap.forEach((d) => {
+          const org = { ...d.data(), id: d.id } as any;
+          const orgName = (org.name || org.cooperativeOrgName || "").toLowerCase();
+          const repName = (org.representativeName || org.fullName || org.displayName || "").toLowerCase();
+          const email = (org.contactEmail || org.email || "").toLowerCase();
+          const phoneStr = (org.contactPhone || org.phone || "").toString();
+          const regStr = (org.registrationNumber || "").toLowerCase();
+
+          const nameMatch = orgName.includes(qLower);
+          const repMatch = repName.includes(qLower);
+          const emailMatch = email.includes(qLower);
+          const phoneMatch = phoneStr.toLowerCase().includes(qLower);
+          const digitsMatch = qDigits.length >= 5 && phoneStr.replace(/\D/g, "").includes(qDigits);
+          const regMatch = regStr.includes(qLower);
+
+          if (nameMatch || repMatch || emailMatch || phoneMatch || digitsMatch || regMatch) {
+            map.set(d.id, org);
+          }
+        });
+
+        // Search cooperatives collection
+        const coopSnap = await getDocs(collection(db, "cooperatives"));
+        coopSnap.forEach((d) => {
+          const c = { ...d.data(), id: d.id } as any;
+          const cName = (c.name || "").toLowerCase();
+          const repName = (c.representativeName || "").toLowerCase();
+          const email = (c.contactEmail || "").toLowerCase();
+          const phoneStr = (c.contactPhone || "").toString();
+          const regStr = (c.registrationNumber || "").toLowerCase();
+
+          const nameMatch = cName.includes(qLower);
+          const repMatch = repName.includes(qLower);
+          const emailMatch = email.includes(qLower);
+          const phoneMatch = phoneStr.toLowerCase().includes(qLower);
+          const digitsMatch = qDigits.length >= 5 && phoneStr.replace(/\D/g, "").includes(qDigits);
+          const regMatch = regStr.includes(qLower);
+
+          if (nameMatch || repMatch || emailMatch || phoneMatch || digitsMatch || regMatch) {
+            if (!map.has(d.id)) {
+              map.set(d.id, {
+                id: d.id,
+                name: c.name || "Cooperative Society",
+                registrationNumber: c.registrationNumber || "COOP-CMR",
+                region: c.region || "South-West Region, Cameroon",
+                headquartersAddress: c.headquartersAddress || "",
+                contactEmail: c.contactEmail || "",
+                contactPhone: c.contactPhone || "",
+                accountType: c.accountType === "personal" ? "farm_group" : (c.accountType || "organizational"),
+                status: c.status || "active",
+                representativeName: c.representativeName || "",
+                createdAt: c.createdAt || new Date().toISOString(),
+                updatedAt: c.updatedAt || new Date().toISOString(),
+                createdBy: c.createdBy || "",
+              });
+            }
+          }
+        });
+
+        // Search users with role == 'cooperative'
+        const usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", "cooperative")));
+        usersSnap.forEach((d) => {
+          const u = d.data() as any;
+          const orgName = (u.cooperativeOrgName || (u.displayName ? `${u.displayName}'s Farm Group` : "")).toLowerCase();
+          const repName = (u.displayName || "").toLowerCase();
+          const email = (u.email || "").toLowerCase();
+          const phoneStr = (u.phone || "").toString();
+          const regStr = (u.registrationNumber || "").toLowerCase();
+
+          const nameMatch = orgName.includes(qLower);
+          const repMatch = repName.includes(qLower);
+          const emailMatch = email.includes(qLower);
+          const phoneMatch = phoneStr.toLowerCase().includes(qLower);
+          const digitsMatch = qDigits.length >= 5 && phoneStr.replace(/\D/g, "").includes(qDigits);
+          const regMatch = regStr.includes(qLower);
+
+          if (nameMatch || repMatch || emailMatch || phoneMatch || digitsMatch || regMatch) {
+            const orgId = u.cooperativeOrgId || `org_coop_${d.id}`;
+            if (!map.has(orgId)) {
+              map.set(orgId, {
+                id: orgId,
+                name: u.cooperativeOrgName || (u.displayName ? `${u.displayName}'s Farm Group` : "Cooperative Society"),
+                registrationNumber: u.registrationNumber || "COOP-CMR-MEMBER",
+                region: u.region || "South-West Region, Cameroon",
+                headquartersAddress: u.headquartersAddress || "",
+                contactEmail: u.email || "",
+                contactPhone: u.phone || "",
+                accountType: u.accountType === "personal" ? "farm_group" : (u.accountType || "organizational"),
+                status: "active",
+                representativeName: u.displayName || "",
+                userId: d.id,
+                createdAt: u.createdAt || new Date().toISOString(),
+                updatedAt: u.updatedAt || new Date().toISOString(),
+                createdBy: d.id,
+              } as any);
+            }
+          }
+        });
+      } catch (fsSearchErr) {
+        console.warn("Client Firestore search notice:", fsSearchErr);
+      }
+
+      const orgs = Array.from(map.values());
+      setSearchResults(orgs);
+      if (orgs.length === 1) {
+        // Auto-select if single match
+        setSelectedCoop(orgs[0]);
+        setSelectedCoopId(orgs[0].id);
+      } else if (orgs.length === 0) {
+        setSelectedCoop(null);
+        setSelectedCoopId("");
+      }
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : "Failed to search cooperatives.");
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   // Save / Submit Association Link
   const handleSubmitAssociation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,33 +371,16 @@ function FarmerCooperativeHubContent() {
       return;
     }
 
-    let coopName = "";
-    let coopReg = "";
-    let coopEmail = "";
-    let coopPhone = "";
-    let coopId = selectedCoopId;
-
-    if (selectedCoopId === "custom") {
-      if (!customCoopName.trim()) {
-        setError("Please enter the custom cooperative society name.");
-        return;
-      }
-      coopName = customCoopName.trim();
-      coopReg = customCoopReg.trim() || `COOP-CMR-${Date.now().toString().slice(-4)}`;
-      coopEmail = customCoopEmail.trim() || `contact@${coopName.toLowerCase().replace(/\s+/g, "")}.cm`;
-      coopPhone = customCoopPhone.trim() || "+237 670 000 000";
-      coopId = `org_coop_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    } else {
-      const found = availableCooperatives.find((c) => c.id === selectedCoopId);
-      if (!found) {
-        setError("Please select a valid cooperative.");
-        return;
-      }
-      coopName = found.name;
-      coopReg = found.registrationNumber;
-      coopEmail = found.contactEmail;
-      coopPhone = found.contactPhone;
+    if (!selectedCoop) {
+      setError("Please search and select a registered cooperative or farm group first.");
+      return;
     }
+
+    const coopName = selectedCoop.name;
+    const coopEmail = selectedCoop.contactEmail || "";
+    const coopPhone = selectedCoop.contactPhone || "";
+    const coopId = selectedCoop.id;
+    const coopUserId = (selectedCoop as any).userId || undefined;
 
     if (farmScope === "single_farm" && !selectedSingleFarmId) {
       setError("Please select the specific farm to delegate.");
@@ -346,11 +421,12 @@ function FarmerCooperativeHubContent() {
     const associationId = editingAssociationId || `assoc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
 
-    const associationData: FarmerCooperativeAssociation = {
+    const associationData: FarmerCooperativeAssociation & { cooperativeUserId?: string } = {
       associationId,
       farmerId: user.uid,
       farmerName: user.displayName || user.email || "Farmer",
       cooperativeOrgId: coopId,
+      cooperativeUserId: coopUserId,
       cooperativeOrgName: coopName,
       cooperativeEmail: coopEmail,
       cooperativePhone: coopPhone,
@@ -368,9 +444,12 @@ function FarmerCooperativeHubContent() {
     setError(null);
 
     try {
-      // 1. Direct write to Firestore
+      // 1. Direct write to Firestore (single authoritative association document)
       const key = `${user.uid}_${coopId}`;
       await setDoc(doc(db, "farmerCooperativeAssociations", key), associationData);
+      if (coopUserId && coopUserId !== coopId) {
+        await deleteDoc(doc(db, "farmerCooperativeAssociations", `${user.uid}_${coopUserId}`)).catch(() => {});
+      }
 
       // Also create membership record for the cooperative
       const memKey = `${coopId}_${user.uid}`;
@@ -386,10 +465,43 @@ function FarmerCooperativeHubContent() {
           updatedAt: now,
           farmsCount: delegatedIds.length,
           villageOrCommunity: delegatedFarmsList[0]?.village || "South-West Region",
-          notes: `Farmer linked via Cooperative Hub. Scope: ${farmScope}. Full management: ${manageEverything ? "Yes" : "Custom"}`,
+          notes: `Farmer linked via Cooperative Hub search. Scope: ${farmScope}. Full management: ${manageEverything ? "Yes" : "Custom"}`,
         },
         { merge: true }
       );
+
+      // Explicitly update delegated farm plots in Firestore
+      if (farmScope === "single_farm" && selectedSingleFarmId) {
+        await setDoc(
+          doc(db, "farms", selectedSingleFarmId),
+          {
+            cooperative: coopName,
+            cooperativeOrgId: coopId,
+            cooperativeEmail: coopEmail,
+            cooperativePhone: coopPhone,
+            cooperativeDelegated: true,
+            delegatedAt: now,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      } else if (farmScope === "all") {
+        for (const farm of myFarms) {
+          await setDoc(
+            doc(db, "farms", farm.id),
+            {
+              cooperative: coopName,
+              cooperativeOrgId: coopId,
+              cooperativeEmail: coopEmail,
+              cooperativePhone: coopPhone,
+              cooperativeDelegated: true,
+              delegatedAt: now,
+              updatedAt: now,
+            },
+            { merge: true }
+          );
+        }
+      }
 
       // 2. Call backend API route to sync
       await fetch("/api/cooperative/associations", {
@@ -404,7 +516,7 @@ function FarmerCooperativeHubContent() {
       setSuccessMsg(
         editingAssociationId
           ? `Successfully updated delegation permissions for ${coopName}!`
-          : `Successfully linked ${coopName} to your farm! The cooperative can now manage authorized operations on your behalf.`
+          : `Successfully linked ${coopName} to your farm! The cooperative account now has permission to access and manage your farm.`
       );
 
       setShowModal(false);
@@ -428,7 +540,10 @@ function FarmerCooperativeHubContent() {
     try {
       const key = `${assoc.farmerId}_${assoc.cooperativeOrgId}`;
       // Delete from Firestore
-      await deleteDoc(doc(db, "farmerCooperativeAssociations", key));
+      await deleteDoc(doc(db, "farmerCooperativeAssociations", key)).catch(() => {});
+      if ((assoc as any).cooperativeUserId) {
+        await deleteDoc(doc(db, "farmerCooperativeAssociations", `${assoc.farmerId}_${(assoc as any).cooperativeUserId}`)).catch(() => {});
+      }
 
       // Update membership status in cooperative
       const memKey = `${assoc.cooperativeOrgId}_${assoc.farmerId}`;
@@ -449,6 +564,7 @@ function FarmerCooperativeHubContent() {
           action: "unlink",
           farmerId: assoc.farmerId,
           cooperativeOrgId: assoc.cooperativeOrgId,
+          cooperativeUserId: (assoc as any).cooperativeUserId,
         }),
       });
 
@@ -461,17 +577,6 @@ function FarmerCooperativeHubContent() {
     }
   };
 
-  // Filtered Directory
-  const filteredCooperatives = useMemo(() => {
-    if (!searchDirectory.trim()) return [];
-    const q = searchDirectory.toLowerCase();
-    return availableCooperatives.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.region.toLowerCase().includes(q) ||
-        c.registrationNumber.toLowerCase().includes(q)
-    );
-  }, [availableCooperatives, searchDirectory]);
 
   return (
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
@@ -776,90 +881,6 @@ function FarmerCooperativeHubContent() {
           )}
         </section>
 
-        {/* Section 2: Directory of Available Registered Cooperatives in Cameroon */}
-        <section>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-black text-[#10251d] flex items-center gap-2">
-                <Building2 className="text-[#2d6130]" size={20} />
-                Directory of Registered Cooperatives
-              </h2>
-              <p className="text-xs text-[#57655d] mt-0.5">
-                Select a verified Cameroon cocoa cooperative to link to your farm plot.
-              </p>
-            </div>
-
-            <div className="relative max-w-xs w-full">
-              <Search size={15} className="absolute left-3 top-3 text-[#57655d]" />
-              <input
-                type="text"
-                placeholder="Search cooperative by name or region..."
-                value={searchDirectory}
-                onChange={(e) => setSearchDirectory(e.target.value)}
-                className="w-full rounded-xl border border-[#dfe7d8] bg-white py-2 pl-9 pr-3 text-xs outline-none focus:border-[#2d6130]"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredCooperatives.map((coop) => {
-              const isAlreadyLinked = associations.some((a) => a.cooperativeOrgId === coop.id);
-
-              return (
-                <div
-                  key={coop.id}
-                  className="rounded-2xl border border-[#dfe7d8] bg-white p-4 shadow-xs transition hover:border-[#2d6130] flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#edf7e8] text-[#2d6130]">
-                        <Store size={18} />
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700">
-                        {coop.registrationNumber}
-                      </span>
-                    </div>
-
-                    <h3 className="mt-3 text-xs font-bold text-[#10251d] line-clamp-1">
-                      {coop.name}
-                    </h3>
-
-                    <p className="mt-1 text-[11px] text-[#57655d] flex items-center gap-1 line-clamp-1">
-                      <MapPin size={12} className="text-[#2d6130] shrink-0" />
-                      {coop.region}
-                    </p>
-
-                    <div className="mt-2 text-[11px] text-[#57655d] space-y-0.5">
-                      <div className="truncate">📞 {coop.contactPhone || "Ministry Registry"}</div>
-                      <div className="truncate">✉️ {coop.contactEmail || "N/A"}</div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 border-t border-[#edf1ea] pt-3 flex items-center justify-between">
-                    {isAlreadyLinked ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#2d6130]">
-                        <CheckCircle2 size={13} /> Linked to My Farm
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleOpenLinkModal(coop.id)}
-                        className="inline-flex items-center gap-1 rounded-xl bg-[#edf7e8] px-3.5 py-2 text-xs font-bold text-[#2d6130] hover:bg-[#2d6130] hover:text-white transition cursor-pointer"
-                      >
-                        <Plus size={13} /> Link to My Farm
-                      </button>
-                    )}
-
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {coop.id.slice(0, 14)}...
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
         {/* Modal: Link / Edit Cooperative Association */}
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
@@ -878,65 +899,133 @@ function FarmerCooperativeHubContent() {
                   {editingAssociationId ? "Edit Cooperative Delegation" : "Link a Cooperative to My Farm"}
                 </h2>
               </div>
-              <p className="text-xs text-[#57655d] mb-6">
-                Grant authority to an official cooperative society to manage operations, harvests, certificates, and trades.
+              <p className="text-xs text-[#57655d] mb-6 leading-relaxed">
+                Search for an authorized cooperative society or farm group registered on TraceTrade Network by their name, email, or phone number to grant farm management permissions.
               </p>
 
               <form onSubmit={handleSubmitAssociation} className="space-y-6 text-xs">
-                {/* Step 1: Cooperative Selection */}
+                {/* Step 1: Cooperative Search & Selection */}
                 <div>
                   <label className="block font-bold text-[#10251d] mb-1.5">
-                    1. Select Cooperative Society <span className="text-red-500">*</span>
+                    1. Search Cooperative or Farm Group by Name, Email, or Phone <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={selectedCoopId}
-                    onChange={(e) => setSelectedCoopId(e.target.value)}
-                    disabled={Boolean(editingAssociationId)}
-                    className="w-full rounded-xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 text-xs font-semibold outline-none focus:border-[#2d6130]"
-                  >
-                    {availableCooperatives.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.registrationNumber}) — {c.region}
-                      </option>
-                    ))}
-                    <option value="custom">+ Other / Independent Village Cooperative...</option>
-                  </select>
 
-                  {selectedCoopId === "custom" && (
-                    <div className="mt-3 p-3.5 rounded-xl border border-[#dfe7d8] bg-[#fafcf9] space-y-3">
-                      <div>
-                        <label className="block font-semibold text-[#10251d] mb-1">Cooperative Name *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. Tombel Cocoa Farmers Cooperative"
-                          value={customCoopName}
-                          onChange={(e) => setCustomCoopName(e.target.value)}
-                          className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 text-xs outline-none focus:border-[#2d6130]"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
+                  {editingAssociationId && selectedCoop ? (
+                    <div className="rounded-2xl border border-[#2d6130] bg-[#edf7e8] p-4">
+                      <div className="flex items-start justify-between">
                         <div>
-                          <label className="block font-semibold text-[#10251d] mb-1">Registration #</label>
+                          <span className="inline-block rounded-md bg-[#2d6130] px-2 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider mb-1">
+                            Linked Cooperative
+                          </span>
+                          <h4 className="font-bold text-sm text-[#10251d]">{selectedCoop.name}</h4>
+                          <p className="text-xs text-[#57655d] mt-0.5">
+                            📞 {selectedCoop.contactPhone || "No phone"} • ✉️ {selectedCoop.contactEmail || "No email"}
+                          </p>
+                        </div>
+                        <span className="font-mono text-[10px] text-gray-500">{selectedCoop.registrationNumber}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Search size={15} className="absolute left-3.5 top-3.5 text-[#57655d]" />
                           <input
                             type="text"
-                            placeholder="COOP-CMR-..."
-                            value={customCoopReg}
-                            onChange={(e) => setCustomCoopReg(e.target.value)}
-                            className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 text-xs outline-none focus:border-[#2d6130]"
+                            placeholder="Enter cooperative/farm group name, email, or phone (e.g. Manyu, info@coop.cm, +237...)"
+                            value={searchQueryInput}
+                            onChange={(e) => setSearchQueryInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleSearchCooperatives();
+                              }
+                            }}
+                            className="w-full rounded-xl border border-[#dfe7d8] bg-white py-2.5 pl-10 pr-3 text-xs outline-none focus:border-[#2d6130]"
                           />
                         </div>
-                        <div>
-                          <label className="block font-semibold text-[#10251d] mb-1">Contact Phone</label>
-                          <input
-                            type="text"
-                            placeholder="+237 670..."
-                            value={customCoopPhone}
-                            onChange={(e) => setCustomCoopPhone(e.target.value)}
-                            className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 text-xs outline-none focus:border-[#2d6130]"
-                          />
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSearchCooperatives()}
+                          disabled={isSearching || !searchQueryInput.trim()}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b3528] px-4 py-2.5 font-bold text-white hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                        >
+                          {isSearching ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+                          Search
+                        </button>
                       </div>
+
+                      {searchError && (
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[11px] text-red-800 flex items-center gap-2">
+                          <AlertCircle size={14} className="shrink-0 text-red-600" />
+                          <span>{searchError}</span>
+                        </div>
+                      )}
+
+                      {/* Search Results Display */}
+                      {searchPerformed && !isSearching && searchResults.length === 0 && (
+                        <div className="rounded-2xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-4 text-center">
+                          <p className="font-semibold text-[#10251d]">No Registered Cooperative Found</p>
+                          <p className="text-[11px] text-[#57655d] mt-1">
+                            No cooperative or farm group on TraceTrade Network matched &ldquo;{searchQueryInput}&rdquo;. Please verify the name, email, or phone number with your cooperative society.
+                          </p>
+                        </div>
+                      )}
+
+                      {searchResults.length > 0 && (
+                        <div className="space-y-2 pt-1">
+                          <span className="text-[11px] font-bold text-[#57655d]">Matching Registered Cooperatives ({searchResults.length}):</span>
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            {searchResults.map((coop) => {
+                              const isSelected = selectedCoop?.id === coop.id;
+                              return (
+                                <div
+                                  key={coop.id}
+                                  onClick={() => {
+                                    setSelectedCoop(coop);
+                                    setSelectedCoopId(coop.id);
+                                  }}
+                                  className={`p-3 rounded-2xl border transition cursor-pointer flex items-start justify-between gap-3 ${
+                                    isSelected
+                                      ? "border-[#2d6130] bg-[#edf7e8] ring-2 ring-[#2d6130]"
+                                      : "border-[#dfe7d8] bg-white hover:border-[#2d6130]"
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-xs text-[#10251d]">{coop.name}</h4>
+                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold text-slate-700">
+                                        {(coop as any).accountType === "farm_group" ? "Farm Group" : coop.registrationNumber}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-[#57655d] mt-1 flex flex-wrap items-center gap-2">
+                                      <span>📞 {coop.contactPhone || "Ministry Registry"}</span>
+                                      <span>✉️ {coop.contactEmail || "Registered Account"}</span>
+                                    </p>
+                                    <p className="text-[10px] text-[#2d6130] mt-0.5">
+                                      📍 {coop.region}
+                                    </p>
+                                  </div>
+                                  <div className="shrink-0 pt-0.5">
+                                    {isSelected ? (
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#2d6130] bg-white px-2.5 py-1 rounded-full border border-[#2d6130]">
+                                        <Check size={12} /> Selected
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="text-[11px] font-semibold text-[#0b3528] hover:underline"
+                                      >
+                                        Select
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1032,7 +1121,7 @@ function FarmerCooperativeHubContent() {
                         Permission to manage everything of this farm
                       </span>
                       <p className="text-[11px] text-[#57655d] mt-0.5 leading-relaxed">
-                        Grants the cooperative full authority to log harvests, manage lots, apply for Origin Trace Certificates,
+                        Grants the cooperative account full authority to log harvests, manage lots, apply for Origin Trace Certificates,
                         and conclude commercial trades on your behalf.
                       </p>
                     </div>
@@ -1093,7 +1182,7 @@ function FarmerCooperativeHubContent() {
 
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || !selectedCoop}
                     className="inline-flex items-center gap-2 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
                   >
                     {submitting ? "Establishing Link..." : editingAssociationId ? "Save Changes" : "Confirm & Link Cooperative"}

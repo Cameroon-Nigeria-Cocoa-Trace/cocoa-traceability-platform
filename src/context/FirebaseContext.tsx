@@ -228,40 +228,37 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           const userSnap = await getDoc(userRef);
 
           const cachedRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_user_role") : null;
+          const cachedPendingRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_pending_role") : null;
           let roleToSet: "farmer" | "cooperative" | "buyer" | "admin" = "farmer";
 
           if (userSnap.exists()) {
             const existingData = userSnap.data();
 
-            // Specifically repair user account if it was previously corrupted to cooperative
-            if (currentUser.email === "afumbomboyo@gmail.com") {
-              roleToSet = "farmer";
+            // Check if existing user account is marked as cooperative
+            if (existingData.role === "cooperative" || existingData.accountType === "cooperative") {
+              roleToSet = "cooperative";
+            } else if (coopProf || coopOrgId) {
+              // Has associated cooperative profile or organization
+              roleToSet = "cooperative";
+            } else if (existingData.role === "buyer" || existingData.role === "admin") {
+              roleToSet = existingData.role as "buyer" | "admin";
             } else if (existingData.role === "farmer" || existingData.accountType === "farmer") {
               roleToSet = "farmer";
-            } else if (existingData.role === "cooperative" || existingData.accountType === "cooperative") {
-              roleToSet = "cooperative";
-            } else if (existingData.role) {
-              roleToSet = existingData.role as "farmer" | "cooperative" | "buyer" | "admin";
-            } else if (coopProf || coopOrgId) {
+            } else if (cachedRole === "cooperative" || cachedPendingRole === "cooperative") {
               roleToSet = "cooperative";
             } else {
               roleToSet = "farmer";
             }
 
             if (
-              currentUser.displayName &&
-              existingData.displayName !== currentUser.displayName
+              (currentUser.displayName && existingData.displayName !== currentUser.displayName) ||
+              existingData.role !== roleToSet
             ) {
               await updateDoc(userRef, {
-                displayName: currentUser.displayName,
+                displayName: currentUser.displayName || existingData.displayName || "User",
                 role: roleToSet,
                 accountType: roleToSet,
-              });
-            } else if (existingData.role !== roleToSet) {
-              await updateDoc(userRef, {
-                role: roleToSet,
-                accountType: roleToSet,
-              });
+              }).catch(() => {});
             }
 
             setUserProfile({
@@ -273,10 +270,9 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               cooperativeOrgId: existingData.cooperativeOrgId || coopProf?.cooperativeOrgId || coopOrgId,
               cooperativeOrgName: existingData.cooperativeOrgName || coopProf?.cooperativeOrgName || coopOrgName,
             });
-            const cachedPendingRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_pending_role") : null;
-            if (currentUser.email === "afumbomboyo@gmail.com") {
-              roleToSet = "farmer";
-            } else if (cachedRole === "cooperative" || cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
+          } else {
+            // New user registration
+            if (cachedRole === "cooperative" || cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
               roleToSet = "cooperative";
             } else {
               roleToSet = "farmer";
@@ -295,13 +291,32 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             await setDoc(userRef, {
               ...newProf,
               createdAt: new Date().toISOString(),
-            });
+            }).catch(() => {});
 
             setUserProfile(newProf);
           }
 
           if (coopProf) {
             setCooperativeProfile(coopProf);
+          } else if (roleToSet === "cooperative") {
+            // Also check if we can synthesize a basic cooperative profile from user document
+            const userSnapData = userSnap.exists() ? userSnap.data() : null;
+            if (userSnapData?.cooperativeOrgId) {
+              setCooperativeProfile({
+                id: `coop_usr_${currentUser.uid}`,
+                userId: currentUser.uid,
+                fullName: currentUser.displayName || userSnapData.displayName || "Cooperative Representative",
+                email: currentUser.email || userSnapData.email || "",
+                phone: userSnapData.phone || "",
+                accountType: userSnapData.accountType === "personal" ? "personal" : "organizational",
+                cooperativeOrgId: userSnapData.cooperativeOrgId,
+                cooperativeOrgName: userSnapData.cooperativeOrgName || "Cooperative Society",
+                role: userSnapData.cooperativeRole || "member",
+                status: "active",
+                createdAt: userSnapData.createdAt || new Date().toISOString(),
+                updatedAt: userSnapData.updatedAt || new Date().toISOString(),
+              });
+            }
           }
 
           setUserRoleState(roleToSet);

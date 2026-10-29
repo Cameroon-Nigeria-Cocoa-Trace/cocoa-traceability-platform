@@ -14,6 +14,8 @@ import {
   Phone,
   ArrowRight,
 } from "lucide-react";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 
 export default function LoginPage() {
   return (
@@ -111,6 +113,32 @@ function LoginContent() {
     };
   };
 
+  const resolvePostLoginDestination = async (fallback: string | null): Promise<string> => {
+    if (fallback) return fallback;
+    if (auth.currentUser) {
+      try {
+        const uDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+        if (uDoc.exists()) {
+          const d = uDoc.data();
+          if (d.role === "cooperative" || d.accountType === "cooperative") {
+            return "/dashboard/cooperative";
+          }
+        }
+        const coopSnap = await getDoc(doc(db, "cooperative_profiles", `coop_usr_${auth.currentUser.uid}`));
+        if (coopSnap.exists()) {
+          return "/dashboard/cooperative";
+        }
+      } catch {
+        // Continue
+      }
+    }
+    const cachedRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_user_role") : null;
+    if (cachedRole === "cooperative") {
+      return "/dashboard/cooperative";
+    }
+    return "/dashboard";
+  };
+
   const handleGoogleLogin = async () => {
     try {
       setLoading(true);
@@ -118,15 +146,10 @@ function LoginContent() {
       setErrorDetails(null);
       await loginWithGoogle();
       setSuccess("Connected with Google successfully!");
-      if (redirectUrl) {
-        setTimeout(() => {
-          router.push(redirectUrl);
-        }, 500);
-      } else {
-        setTimeout(() => {
-          router.push("/dashboard");
-        }, 500);
-      }
+      const target = await resolvePostLoginDestination(redirectUrl);
+      setTimeout(() => {
+        router.push(target);
+      }, 500);
     } catch (err: unknown) {
       console.error("Google Auth Error:", err);
       const parsed = parseAuthError(err);
@@ -163,15 +186,10 @@ function LoginContent() {
       setLoading(true);
       await loginWithEmail(authEmail, password);
       setSuccess("Signed in successfully!");
-      if (redirectUrl) {
-        setTimeout(() => {
-          router.push(redirectUrl);
-        }, 500);
-      } else {
-        setTimeout(() => {
-          router.push("/dashboard");
-        }, 500);
-      }
+      const target = await resolvePostLoginDestination(redirectUrl);
+      setTimeout(() => {
+        router.push(target);
+      }, 500);
     } catch (err: unknown) {
       console.error("Auth Error:", err);
       const parsed = parseAuthError(err);

@@ -150,7 +150,13 @@ function CooperativeDashboardContent() {
       const json = await res.json();
       let assocs: FarmerCooperativeAssociation[] = [];
       if (json.success && Array.isArray(json.associations)) {
-        assocs = json.associations;
+        const dedup = new Map<string, FarmerCooperativeAssociation>();
+        json.associations.forEach((a: FarmerCooperativeAssociation) => {
+          if (!dedup.has(a.farmerId)) {
+            dedup.set(a.farmerId, a);
+          }
+        });
+        assocs = Array.from(dedup.values());
       }
 
       setAssociations(assocs);
@@ -205,7 +211,9 @@ function CooperativeDashboardContent() {
         }
       }
 
-      setFarms(loadedFarms);
+      const dedupFarmsMap = new Map<string, FarmRecord>();
+      loadedFarms.forEach((f) => dedupFarmsMap.set(f.id, f));
+      setFarms(Array.from(dedupFarmsMap.values()));
 
       // 3. Fetch Trades
       const tradesRes = await fetch("/api/marketplace/trades");
