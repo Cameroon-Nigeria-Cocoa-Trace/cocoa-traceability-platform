@@ -13,6 +13,11 @@ import {
   firebaseAdminDb,
 } from "@/lib/firebaseAdmin";
 import { getAuthenticatedUser } from "@/lib/authServer";
+import {
+  isCooperativeAuthorizedForFarm,
+  getAffiliatedFarmerIds,
+  getAffiliatedFarmIds,
+} from "@/lib/serverCooperativeAuth";
 import type {
   CocoaLot,
   CloudinaryImageReference,
@@ -379,10 +384,12 @@ export async function POST(req: NextRequest) {
 
         const farm = farmSnapshot.data()!;
 
-        if (
-          farm.farmerId !== user.userId &&
-          !isAdmin
-        ) {
+        const isAuthorized =
+          farm.farmerId === user.userId ||
+          isAdmin ||
+          (await isCooperativeAuthorizedForFarm(user.userId, farm));
+
+        if (!isAuthorized) {
           throw new ApiError(
             "You are not authorized to create a lot for this farm.",
             403
@@ -623,6 +630,43 @@ export async function GET(req: NextRequest) {
       snapshotByCreator.docs.forEach((doc) => lotsMap.set(doc.id, doc.data() as CocoaLot));
       snapshotByFarmer.docs.forEach((doc) => lotsMap.set(doc.id, doc.data() as CocoaLot));
 
+      // Also retrieve lots for affiliated cooperative farmers
+      try {
+        const affiliatedFarmerIds = await getAffiliatedFarmerIds(user.userId);
+        if (affiliatedFarmerIds.length > 0) {
+          const chunked: string[][] = [];
+          for (let i = 0; i < affiliatedFarmerIds.length; i += 10) {
+            chunked.push(affiliatedFarmerIds.slice(i, i + 10));
+          }
+          for (const chunk of chunked) {
+            if (chunk.length === 0) continue;
+            const chunkSnap = await firebaseAdminDb
+              .collection("cocoaLots")
+              .where("farmerId", "in", chunk)
+              .get();
+            chunkSnap.docs.forEach((doc) => lotsMap.set(doc.id, doc.data() as CocoaLot));
+          }
+        }
+
+        const affiliatedFarmIds = await getAffiliatedFarmIds(user.userId);
+        if (affiliatedFarmIds.length > 0) {
+          const chunkedFarms: string[][] = [];
+          for (let i = 0; i < affiliatedFarmIds.length; i += 10) {
+            chunkedFarms.push(affiliatedFarmIds.slice(i, i + 10));
+          }
+          for (const chunk of chunkedFarms) {
+            if (chunk.length === 0) continue;
+            const chunkSnap = await firebaseAdminDb
+              .collection("cocoaLots")
+              .where("farmId", "in", chunk)
+              .get();
+            chunkSnap.docs.forEach((doc) => lotsMap.set(doc.id, doc.data() as CocoaLot));
+          }
+        }
+      } catch (err) {
+        console.warn("Cooperative lots retrieval notice:", err);
+      }
+
       const lots = Array.from(lotsMap.values())
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
@@ -696,10 +740,12 @@ export async function GET(req: NextRequest) {
     const farm = farmSnapshot.data()!;
     const isAdmin = await hasAdminClaim(user.userId);
 
-    if (
-      farm.farmerId !== user.userId &&
-      !isAdmin
-    ) {
+    const isFarmAuthorized =
+      farm.farmerId === user.userId ||
+      isAdmin ||
+      (await isCooperativeAuthorizedForFarm(user.userId, farm));
+
+    if (!isFarmAuthorized) {
       throw new ApiError(
         "You are not authorized to view lots for this farm.",
         403

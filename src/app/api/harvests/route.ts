@@ -99,14 +99,90 @@ async function assertFarmAccess(
 
   const farm = farmSnap.data() as JsonObject;
 
-  if (farm.farmerId !== userId && !isAdmin) {
-    throw new ApiError(
-      403,
-      "Authorization Error: You cannot access this farm."
-    );
+  if (farm.farmerId === userId || isAdmin) {
+    return farm;
   }
 
-  return farm;
+  try {
+    if (
+      farm.cooperativeUserId === userId ||
+      farm.cooperativeOrgId === userId ||
+      (typeof farm.cooperativeOrgId === "string" && farm.cooperativeOrgId.includes(userId))
+    ) {
+      return farm;
+    }
+
+    const userSnap = await firebaseAdminDb.collection("users").doc(userId).get();
+    if (userSnap.exists) {
+      const uData = userSnap.data();
+      const role = uData?.role || uData?.accountType;
+      const coopOrgId = uData?.cooperativeOrgId || uData?.cooperativeId;
+
+      if (role === "cooperative" || uData?.isCooperative) {
+        if (
+          (coopOrgId && (farm.cooperativeOrgId === coopOrgId || farm.cooperativeUserId === userId)) ||
+          farm.cooperativeUserId === userId
+        ) {
+          return farm;
+        }
+
+        const assocKey1 = `${farm.farmerId}_${userId}`;
+        const assocKey2 = coopOrgId ? `${farm.farmerId}_${coopOrgId}` : null;
+
+        const assocSnap1 = await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey1).get();
+        if (assocSnap1.exists && assocSnap1.data()?.status === "active") {
+          return farm;
+        }
+
+        if (assocKey2) {
+          const assocSnap2 = await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey2).get();
+          if (assocSnap2.exists && assocSnap2.data()?.status === "active") {
+            return farm;
+          }
+        }
+
+        const queryAssoc = await firebaseAdminDb
+          .collection("farmerCooperativeAssociations")
+          .where("farmerId", "==", farm.farmerId)
+          .where("status", "==", "active")
+          .get();
+
+        for (const docSnap of queryAssoc.docs) {
+          const assocData = docSnap.data();
+          if (
+            assocData.cooperativeUserId === userId ||
+            assocData.cooperativeOrgId === userId ||
+            (coopOrgId && assocData.cooperativeOrgId === coopOrgId)
+          ) {
+            return farm;
+          }
+        }
+
+        const memSnap = await firebaseAdminDb
+          .collection("cooperative_memberships")
+          .where("farmerId", "==", farm.farmerId)
+          .where("status", "==", "active")
+          .get();
+
+        for (const docSnap of memSnap.docs) {
+          const memData = docSnap.data();
+          if (
+            (coopOrgId && memData.cooperativeOrgId === coopOrgId) ||
+            memData.cooperativeOrgId === userId
+          ) {
+            return farm;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Cooperative farm access check notice:", err);
+  }
+
+  throw new ApiError(
+    403,
+    "Authorization Error: You cannot access this farm."
+  );
 }
 
 function handleError(error: unknown) {
@@ -382,10 +458,47 @@ export async function GET(req: NextRequest) {
     const requestedFarmId = searchParams.get("farmId")?.trim();
 
     if (!productionRecordId && !requestedFarmId) {
-      throw new ApiError(
-        400,
-        "farmId or productionRecordId is required."
+      const {
+        getAffiliatedFarmIds,
+        getCooperativeActorInfo,
+      } = await import("@/lib/serverCooperativeAuth");
+
+      const targetFarmIds = new Set<string>();
+      const userFarmsSnap = await firebaseAdminDb
+        .collection("farms")
+        .where("farmerId", "==", userId)
+        .get();
+      userFarmsSnap.forEach((d) => targetFarmIds.add(d.id));
+
+      const actorInfo = await getCooperativeActorInfo(userId);
+      if (actorInfo.isCooperative || actorInfo.cooperativeOrgIds.length > 0) {
+        const affiliated = await getAffiliatedFarmIds(userId);
+        affiliated.forEach((id) => targetFarmIds.add(id));
+      }
+
+      const farmIdList = Array.from(targetFarmIds);
+      const harvestMap = new Map<string, Harvest>();
+
+      for (let i = 0; i < farmIdList.length; i += 10) {
+        const chunk = farmIdList.slice(i, i + 10);
+        if (chunk.length === 0) continue;
+        const snap = await firebaseAdminDb
+          .collection("harvests")
+          .where("farmId", "in", chunk)
+          .get();
+        snap.forEach((doc) => {
+          harvestMap.set(doc.id, {
+            ...doc.data(),
+            harvestId: doc.id,
+          } as Harvest);
+        });
+      }
+
+      const allHarvests = Array.from(harvestMap.values()).sort((a, b) =>
+        b.harvestDate.localeCompare(a.harvestDate)
       );
+
+      return NextResponse.json({ success: true, harvests: allHarvests });
     }
 
     const admin = await isPlatformAdmin(userId);

@@ -48,13 +48,26 @@ export async function GET(req: NextRequest) {
     }
 
     // If no specific role is specified and neither buyerId nor sellerHolderId was passed,
-    // filter to trades where the user is either buyer OR seller/sellerHolder
+    // filter to trades where the user is either buyer OR seller/sellerHolder (or affiliated cooperative)
+    const {
+      getAffiliatedFarmerIds,
+      getCooperativeActorInfo,
+    } = await import("@/lib/serverCooperativeAuth");
+
+    const actorInfo = await getCooperativeActorInfo(user.userId);
+    const accessibleEntities = new Set<string>([user.userId]);
+    if (actorInfo.isCooperative || actorInfo.cooperativeOrgIds.length > 0) {
+      actorInfo.cooperativeOrgIds.forEach((id) => accessibleEntities.add(id));
+      const memberFarmerIds = await getAffiliatedFarmerIds(user.userId);
+      memberFarmerIds.forEach((id) => accessibleEntities.add(id));
+    }
+
     if (!role && !sellerHolderId && !buyerId) {
       trades = trades.filter(
         (t) =>
-          t.buyerId === user.userId ||
-          t.sellerId === user.userId ||
-          t.sellerHolderId === user.userId
+          accessibleEntities.has(t.buyerId) ||
+          accessibleEntities.has(t.sellerId) ||
+          accessibleEntities.has(t.sellerHolderId)
       );
     }
 

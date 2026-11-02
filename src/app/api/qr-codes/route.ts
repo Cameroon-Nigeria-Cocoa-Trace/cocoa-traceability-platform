@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/authServer";
 import { firebaseAdminAuth, firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { isCooperativeAuthorizedForHolding } from "@/lib/serverCooperativeAuth";
 import type {
   CertificateHolding,
   CocoaLot,
@@ -37,21 +38,15 @@ function statusForError(message: string): number {
   return 500;
 }
 
-function assertHoldingAccess(
+async function assertHoldingAccess(
   holding: CertificateHolding,
   uid: string,
   isAdmin: boolean
-): void {
+): Promise<void> {
   if (isAdmin) return;
 
-  // Until a trusted server-side organization membership verifier exists,
-  // organizational holdings are deliberately denied to non-admin users.
-  if (
-    holding.holderType?.toLowerCase() === "farmer" &&
-    holding.holderId === uid
-  ) {
-    return;
-  }
+  const isAuthorized = await isCooperativeAuthorizedForHolding(uid, holding);
+  if (isAuthorized) return;
 
   throw new Error(
     "Authorization Error: You are not authorized to access this holding."
@@ -178,7 +173,7 @@ export async function POST(req: NextRequest) {
         throw new Error("Holding Error: The holding record is incomplete or inconsistent.");
       }
 
-      assertHoldingAccess(holding, user.userId, isAdmin);
+      await assertHoldingAccess(holding, user.userId, isAdmin);
 
       if (holding.status !== "active") {
         throw new Error("Holding Error: Only active holdings can be packaged.");
@@ -482,7 +477,7 @@ export async function GET(req: NextRequest) {
       }
 
       const holding = holdingSnap.data() as CertificateHolding;
-      assertHoldingAccess(holding, user.userId, isAdmin);
+      await assertHoldingAccess(holding, user.userId, isAdmin);
 
       qrSnapshot = await qrCollection
         .where("currentHoldingId", "==", holdingId)
@@ -529,10 +524,8 @@ export async function GET(req: NextRequest) {
 
         const holding = snapshot.data() as CertificateHolding;
 
-        if (
-          holding.holderType?.toLowerCase() === "farmer" &&
-          holding.holderId === user.userId
-        ) {
+        const isAuth = await isCooperativeAuthorizedForHolding(user.userId, holding);
+        if (isAuth) {
           accessibleHoldingIds.add(snapshot.id);
         }
       }

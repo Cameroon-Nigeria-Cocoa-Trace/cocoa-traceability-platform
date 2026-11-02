@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/authServer";
 import { firebaseAdminAuth, firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { isCooperativeAuthorizedForHolding } from "@/lib/serverCooperativeAuth";
 import type {
   CertificateHolding,
   CocoaLot,
@@ -186,12 +187,9 @@ export async function POST(req: NextRequest) {
         throw new Error("Holding Error: The holding record is incomplete or inconsistent.");
       }
 
-      // Organizational authorization is deliberately fail-closed:
-      // no trusted server-side membership verifier has been registered.
       if (!isAdmin) {
-        const holderType = holding.holderType.toLowerCase();
-
-        if (holderType !== "farmer" || holding.holderId !== user.userId) {
+        const isAuthorized = await isCooperativeAuthorizedForHolding(user.userId, holding);
+        if (!isAuthorized) {
           throw new Error(
             "Authorization Error: You are not authorized to manage this holding."
           );

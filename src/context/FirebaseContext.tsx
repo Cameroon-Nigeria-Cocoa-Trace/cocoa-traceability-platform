@@ -425,16 +425,16 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             try {
               const assocSnap = await getDocs(query(collection(db, "farmerCooperativeAssociations"), where("cooperativeOrgId", "==", cid)));
               assocSnap.forEach((d) => {
-                const data = d.data() as any;
-                if (data.status !== "withdrawn" && data.status !== "inactive" && data.farmerId) {
+                const data = d.data() as Record<string, unknown>;
+                if (data.status !== "withdrawn" && data.status !== "inactive" && typeof data.farmerId === "string") {
                   memberFarmerIds.add(data.farmerId);
                 }
               });
 
               const memSnap = await getDocs(query(collection(db, "cooperative_memberships"), where("cooperativeOrgId", "==", cid)));
               memSnap.forEach((d) => {
-                const data = d.data() as any;
-                if (data.farmerId) {
+                const data = d.data() as Record<string, unknown>;
+                if (typeof data.farmerId === "string") {
                   memberFarmerIds.add(data.farmerId);
                 }
               });

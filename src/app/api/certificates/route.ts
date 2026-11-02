@@ -16,6 +16,13 @@ import {
   toPublicTraceCertificate,
 } from "@/services/certificateService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
+import {
+  getAffiliatedFarmerIds,
+  getCooperativeActorInfo,
+  isCooperativeAuthorizedForFarmer,
+} from "@/lib/serverCooperativeAuth";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { TraceCertificate } from "@/types/traceability";
 
 export async function POST(req: NextRequest) {
   // 1. Enforce Authentication Requirement
@@ -67,6 +74,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  let authenticatedUser: AuthenticatedUser | null = null;
+  try {
+    authenticatedUser = await getAuthenticatedUser(req);
+  } catch {
+    // Optional for public lookup
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const lotId = searchParams.get("lotId");
@@ -90,10 +104,58 @@ export async function GET(req: NextRequest) {
     }
 
     if (holderId) {
+      if (authenticatedUser) {
+        const isAuthorized =
+          holderId === authenticatedUser.userId ||
+          (await isCooperativeAuthorizedForFarmer(authenticatedUser.userId, holderId));
+        if (!isAuthorized) {
+          const actorInfo = await getCooperativeActorInfo(authenticatedUser.userId);
+          if (!actorInfo.isAdmin && !actorInfo.cooperativeOrgIds.includes(holderId)) {
+            return NextResponse.json(
+              { success: false, error: "Authorization Error: Not authorized to access certificates for this holder." },
+              { status: 403 }
+            );
+          }
+        }
+      }
+
       const certs = await listTraceCertificatesByHolder(holderId);
       return NextResponse.json({
         success: true,
         certificates: certs.map(toPublicTraceCertificate),
+      });
+    }
+
+    // If no params, resolve based on authenticated caller
+    if (authenticatedUser) {
+      const actorInfo = await getCooperativeActorInfo(authenticatedUser.userId);
+      const targetHolders = new Set<string>([authenticatedUser.userId]);
+
+      if (actorInfo.isCooperative || actorInfo.cooperativeOrgIds.length > 0) {
+        actorInfo.cooperativeOrgIds.forEach((id) => targetHolders.add(id));
+        const memberFarmerIds = await getAffiliatedFarmerIds(authenticatedUser.userId);
+        memberFarmerIds.forEach((id) => targetHolders.add(id));
+      }
+
+      const certMap = new Map<string, TraceCertificate>();
+      const holderList = Array.from(targetHolders);
+
+      for (let i = 0; i < holderList.length; i += 10) {
+        const chunk = holderList.slice(i, i + 10);
+        if (chunk.length === 0) continue;
+        const snap = await firebaseAdminDb
+          .collection("certificates")
+          .where("currentHolderId", "in", chunk)
+          .get();
+        snap.forEach((doc) => {
+          const cert = doc.data() as TraceCertificate;
+          certMap.set(doc.id, cert);
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        certificates: Array.from(certMap.values()).map(toPublicTraceCertificate),
       });
     }
 

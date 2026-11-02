@@ -14,6 +14,7 @@ import { firebaseAdminDb } from "@/lib/firebaseAdmin";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
 import { validateCameroonFarmLocation } from "@/lib/geo/cameroonBoundary";
 import { isAuthorizedCadastralReviewer } from "@/lib/cadastralAuthorization";
+import { isCooperativeAuthorizedForFarm } from "@/lib/serverCooperativeAuth";
 
 export { validateCameroonFarmLocation as validateCameroonLocationServer };
 
@@ -356,11 +357,15 @@ export async function PATCH(req: NextRequest) {
 
     const existingFarm = farmDoc.data();
 
-    if (existingFarm?.farmerId !== user.userId) {
+    const isAuthorized =
+      existingFarm?.farmerId === user.userId ||
+      (await isCooperativeAuthorizedForFarm(user.userId, existingFarm || {}));
+
+    if (!isAuthorized) {
       return NextResponse.json(
         {
           success: false,
-          error: "Forbidden: You cannot modify another user's farm.",
+          error: "Forbidden: You are not authorized to modify this farm.",
         },
         { status: 403 }
       );

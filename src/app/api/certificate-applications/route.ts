@@ -15,6 +15,13 @@ import {
 } from "@/services/certificateService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
 import { isAuthorizedForCertificateOperation } from "@/lib/certificateAuthorization";
+import {
+  isCooperativeAuthorizedForFarmer,
+  getAffiliatedFarmerIds,
+  getCooperativeActorInfo,
+} from "@/lib/serverCooperativeAuth";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { CertificateApplication } from "@/types/traceability";
 
 export async function POST(req: NextRequest) {
   // 1. Enforce Authentication Requirement
@@ -33,10 +40,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // 3. Delegate to service, strictly binding applicantId to authenticated UID
+    let resolvedApplicantId = user.userId;
+    if (body.applicantId && body.applicantId !== user.userId) {
+      const isAuthorized = await isCooperativeAuthorizedForFarmer(user.userId, body.applicantId);
+      if (isAuthorized) {
+        resolvedApplicantId = body.applicantId;
+      }
+    }
+
+    const coopInfo = await getCooperativeActorInfo(user.userId);
+
+    // 3. Delegate to service
     const application = await createCertificateApplication({
       ...body,
-      applicantId: user.userId,
+      applicantId: resolvedApplicantId,
+      ...(coopInfo.primaryOrgId ? { targetCooperativeOrgId: coopInfo.primaryOrgId } : {}),
     });
 
     return NextResponse.json({
@@ -84,8 +102,9 @@ export async function GET(req: NextRequest) {
     const canReadInternal = await isAuthorizedForCertificateOperation(user.userId, "read_internal");
 
     if (applicantId) {
-      // Non-authorities can only view their own applications
-      if (applicantId !== user.userId && !canReadInternal) {
+      // Non-authorities can view their own applications or cooperative affiliated applications
+      const isAffiliatedCoop = await isCooperativeAuthorizedForFarmer(user.userId, applicantId);
+      if (applicantId !== user.userId && !canReadInternal && !isAffiliatedCoop) {
         return NextResponse.json(
           { success: false, error: "Authorization Error: Cannot access another user's certificate applications." },
           { status: 403 }
@@ -106,10 +125,46 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, applications });
     }
 
-    return NextResponse.json(
-      { success: false, error: "Query parameter 'lotId' or 'applicantId' is required." },
-      { status: 400 }
+    // Default query for authenticated user (and their cooperative members)
+    const coopInfo = await getCooperativeActorInfo(user.userId);
+    const targetApplicants = new Set<string>([user.userId]);
+
+    if (coopInfo.isCooperative || coopInfo.cooperativeOrgIds.length > 0) {
+      const affiliatedFarmerIds = await getAffiliatedFarmerIds(user.userId);
+      affiliatedFarmerIds.forEach((id) => targetApplicants.add(id));
+    }
+
+    const appMap = new Map<string, CertificateApplication>();
+    const applicantList = Array.from(targetApplicants);
+
+    for (let i = 0; i < applicantList.length; i += 10) {
+      const chunk = applicantList.slice(i, i + 10);
+      if (chunk.length === 0) continue;
+      const snap = await firebaseAdminDb
+        .collection("certificateApplications")
+        .where("applicantId", "in", chunk)
+        .get();
+      snap.forEach((doc) => {
+        appMap.set(doc.id, doc.data() as CertificateApplication);
+      });
+    }
+
+    // Also check applications targeted at this cooperative
+    if (coopInfo.primaryOrgId) {
+      const targetSnap = await firebaseAdminDb
+        .collection("certificateApplications")
+        .where("targetCooperativeOrgId", "==", coopInfo.primaryOrgId)
+        .get();
+      targetSnap.forEach((doc) => {
+        appMap.set(doc.id, doc.data() as CertificateApplication);
+      });
+    }
+
+    const applications = Array.from(appMap.values()).sort((a, b) =>
+      b.createdAt.localeCompare(a.createdAt)
     );
+
+    return NextResponse.json({ success: true, applications });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
     return NextResponse.json(

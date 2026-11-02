@@ -49,7 +49,7 @@ async function assertFarmOwnership(
     throw new Error("Farm Lookup Error: Farm not found.");
   }
 
-  const farm = farmSnap.data();
+  const farm = farmSnap.data() as JsonObject;
 
   if (farm?.farmerId === user.userId) {
     return;
@@ -57,6 +57,82 @@ async function assertFarmOwnership(
 
   if (await isPlatformAdmin(user.userId)) {
     return;
+  }
+
+  try {
+    if (
+      farm.cooperativeUserId === user.userId ||
+      farm.cooperativeOrgId === user.userId ||
+      (typeof farm.cooperativeOrgId === "string" && farm.cooperativeOrgId.includes(user.userId))
+    ) {
+      return;
+    }
+
+    const userSnap = await firebaseAdminDb.collection("users").doc(user.userId).get();
+    if (userSnap.exists) {
+      const uData = userSnap.data();
+      const role = uData?.role || uData?.accountType;
+      const coopOrgId = uData?.cooperativeOrgId || uData?.cooperativeId;
+
+      if (role === "cooperative" || uData?.isCooperative) {
+        if (
+          (coopOrgId && (farm.cooperativeOrgId === coopOrgId || farm.cooperativeUserId === user.userId)) ||
+          farm.cooperativeUserId === user.userId
+        ) {
+          return;
+        }
+
+        const assocKey1 = `${farm.farmerId}_${user.userId}`;
+        const assocKey2 = coopOrgId ? `${farm.farmerId}_${coopOrgId}` : null;
+
+        const assocSnap1 = await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey1).get();
+        if (assocSnap1.exists && assocSnap1.data()?.status === "active") {
+          return;
+        }
+
+        if (assocKey2) {
+          const assocSnap2 = await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey2).get();
+          if (assocSnap2.exists && assocSnap2.data()?.status === "active") {
+            return;
+          }
+        }
+
+        const queryAssoc = await firebaseAdminDb
+          .collection("farmerCooperativeAssociations")
+          .where("farmerId", "==", farm.farmerId)
+          .where("status", "==", "active")
+          .get();
+
+        for (const docSnap of queryAssoc.docs) {
+          const assocData = docSnap.data();
+          if (
+            assocData.cooperativeUserId === user.userId ||
+            assocData.cooperativeOrgId === user.userId ||
+            (coopOrgId && assocData.cooperativeOrgId === coopOrgId)
+          ) {
+            return;
+          }
+        }
+
+        const memSnap = await firebaseAdminDb
+          .collection("cooperative_memberships")
+          .where("farmerId", "==", farm.farmerId)
+          .where("status", "==", "active")
+          .get();
+
+        for (const docSnap of memSnap.docs) {
+          const memData = docSnap.data();
+          if (
+            (coopOrgId && memData.cooperativeOrgId === coopOrgId) ||
+            memData.cooperativeOrgId === user.userId
+          ) {
+            return;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Cooperative farm ownership check notice:", err);
   }
 
   throw new Error(
@@ -381,13 +457,50 @@ export async function GET(req: NextRequest) {
     const farmId = searchParams.get("farmId")?.trim();
 
     if (!farmId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation Error: farmId query parameter is required.",
-        },
-        { status: 400 }
+      const {
+        getAffiliatedFarmIds,
+        getCooperativeActorInfo,
+      } = await import("@/lib/serverCooperativeAuth");
+
+      const targetFarmIds = new Set<string>();
+      const userFarmsSnap = await firebaseAdminDb
+        .collection("farms")
+        .where("farmerId", "==", user.userId)
+        .get();
+      userFarmsSnap.forEach((d) => targetFarmIds.add(d.id));
+
+      const actorInfo = await getCooperativeActorInfo(user.userId);
+      if (actorInfo.isCooperative || actorInfo.cooperativeOrgIds.length > 0) {
+        const affiliated = await getAffiliatedFarmIds(user.userId);
+        affiliated.forEach((id) => targetFarmIds.add(id));
+      }
+
+      const farmIdList = Array.from(targetFarmIds);
+      const recordsMap = new Map<string, Record<string, unknown> & { productionRecordId: string }>();
+
+      for (let i = 0; i < farmIdList.length; i += 10) {
+        const chunk = farmIdList.slice(i, i + 10);
+        if (chunk.length === 0) continue;
+        const snap = await firebaseAdminDb
+          .collection("productions")
+          .where("farmId", "in", chunk)
+          .get();
+        snap.forEach((doc) => {
+          recordsMap.set(doc.id, {
+            ...doc.data(),
+            productionRecordId: doc.id,
+          });
+        });
+      }
+
+      const productionRecords = Array.from(recordsMap.values()).sort((a, b) =>
+        String(b.startDate ?? "").localeCompare(String(a.startDate ?? ""))
       );
+
+      return NextResponse.json({
+        success: true,
+        productionRecords,
+      });
     }
 
     await assertFarmOwnership(farmId, user);

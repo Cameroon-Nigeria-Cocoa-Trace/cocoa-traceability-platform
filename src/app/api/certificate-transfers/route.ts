@@ -66,6 +66,13 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  let user: AuthenticatedUser | null = null;
+  try {
+    user = await getAuthenticatedUser(req);
+  } catch {
+    // Optional
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const certificateId = searchParams.get("certificateId");
@@ -86,23 +93,55 @@ export async function GET(req: NextRequest) {
     }
 
     if (holderId) {
-      try {
-        const transfers = await listCertificateTransfersByHolder(holderId);
-        return NextResponse.json({ success: true, transfers });
-      } catch {
-        const cleanId = holderId.trim();
+      const cleanId = holderId.trim();
+      const [srcSnap, destSnap] = await Promise.all([
+        firebaseAdminDb.collection("certificateTransfers").where("sourceHolderId", "==", cleanId).get(),
+        firebaseAdminDb.collection("certificateTransfers").where("destinationHolderId", "==", cleanId).get(),
+      ]);
+      const map = new Map<string, CertificateTransfer>();
+      srcSnap.docs.forEach((d) => map.set(d.id, d.data() as CertificateTransfer));
+      destSnap.docs.forEach((d) => map.set(d.id, d.data() as CertificateTransfer));
+      const transfers = Array.from(map.values()).sort((a, b) =>
+        (b.completedAt || b.initiatedAt).localeCompare(a.completedAt || a.initiatedAt)
+      );
+      return NextResponse.json({ success: true, transfers });
+    }
+
+    if (user) {
+      const {
+        getAffiliatedFarmerIds,
+        getCooperativeActorInfo,
+      } = await import("@/lib/serverCooperativeAuth");
+
+      const actorInfo = await getCooperativeActorInfo(user.userId);
+      const targetHolders = new Set<string>([user.userId]);
+
+      if (actorInfo.isCooperative || actorInfo.cooperativeOrgIds.length > 0) {
+        actorInfo.cooperativeOrgIds.forEach((id) => targetHolders.add(id));
+        const memberFarmerIds = await getAffiliatedFarmerIds(user.userId);
+        memberFarmerIds.forEach((id) => targetHolders.add(id));
+      }
+
+      const map = new Map<string, CertificateTransfer>();
+      const holderList = Array.from(targetHolders);
+
+      for (let i = 0; i < holderList.length; i += 10) {
+        const chunk = holderList.slice(i, i + 10);
+        if (chunk.length === 0) continue;
+
         const [srcSnap, destSnap] = await Promise.all([
-          firebaseAdminDb.collection("certificateTransfers").where("sourceHolderId", "==", cleanId).get(),
-          firebaseAdminDb.collection("certificateTransfers").where("destinationHolderId", "==", cleanId).get(),
+          firebaseAdminDb.collection("certificateTransfers").where("sourceHolderId", "in", chunk).get(),
+          firebaseAdminDb.collection("certificateTransfers").where("destinationHolderId", "in", chunk).get(),
         ]);
-        const map = new Map<string, CertificateTransfer>();
+
         srcSnap.docs.forEach((d) => map.set(d.id, d.data() as CertificateTransfer));
         destSnap.docs.forEach((d) => map.set(d.id, d.data() as CertificateTransfer));
-        const transfers = Array.from(map.values()).sort((a, b) =>
-          (b.completedAt || b.initiatedAt).localeCompare(a.completedAt || a.initiatedAt)
-        );
-        return NextResponse.json({ success: true, transfers });
       }
+
+      const transfers = Array.from(map.values()).sort((a, b) =>
+        (b.completedAt || b.initiatedAt).localeCompare(a.completedAt || a.initiatedAt)
+      );
+      return NextResponse.json({ success: true, transfers });
     }
 
     return NextResponse.json(

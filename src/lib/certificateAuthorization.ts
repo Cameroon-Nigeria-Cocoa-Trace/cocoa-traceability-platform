@@ -19,7 +19,7 @@
  *   - Pluggable verifier interface for integration when Role 1 formalizes the certification officer account.
  */
 
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export type CertificateOperation =
@@ -91,8 +91,10 @@ export async function assertActorCanActForHolder(
       // Check organization membership link if present on user profile
       if (
         holderType !== "farmer" &&
-        (userData?.organizationId === cleanHolderId ||
+        (cleanActorUid === cleanHolderId ||
+          userData?.organizationId === cleanHolderId ||
           userData?.cooperativeId === cleanHolderId ||
+          userData?.cooperativeOrgId === cleanHolderId ||
           userData?.agentId === cleanHolderId ||
           userData?.warehouseId === cleanHolderId)
       ) {
@@ -103,17 +105,89 @@ export async function assertActorCanActForHolder(
     // Continue
   }
 
-  // 3. Farmer: Personal holding, actor must match farmer UID
+  // Cooperative: Actor UID may directly match holding entity or belong to cooperative profile
+  if (holderType === "cooperative") {
+    if (cleanActorUid === cleanHolderId) return;
+    try {
+      const profileSnap = await getDoc(doc(db, "cooperative_profiles", cleanActorUid));
+      if (profileSnap.exists() && profileSnap.data()?.cooperativeOrgId === cleanHolderId) {
+        return;
+      }
+      const altProfile = await getDoc(doc(db, "cooperative_profiles", `coop_usr_${cleanActorUid}`));
+      if (altProfile.exists() && altProfile.data()?.cooperativeOrgId === cleanHolderId) {
+        return;
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  // 3. Farmer: Personal holding, actor must match farmer UID OR actor is authorized cooperative for this farmer
   if (holderType === "farmer") {
     if (cleanActorUid === cleanHolderId) return;
+
+    try {
+      const userSnap = await getDoc(doc(db, "users", cleanActorUid));
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const role = userData?.role || userData?.accountType;
+        const coopOrgId = userData?.cooperativeOrgId || userData?.cooperativeId;
+
+        if (role === "cooperative" || userData?.isCooperative) {
+          const directKey1 = `${cleanHolderId}_${cleanActorUid}`;
+          const assocSnap1 = await getDoc(doc(db, "farmerCooperativeAssociations", directKey1));
+          if (assocSnap1.exists() && assocSnap1.data()?.status === "active") return;
+
+          if (coopOrgId) {
+            const directKey2 = `${cleanHolderId}_${coopOrgId}`;
+            const assocSnap2 = await getDoc(doc(db, "farmerCooperativeAssociations", directKey2));
+            if (assocSnap2.exists() && assocSnap2.data()?.status === "active") return;
+          }
+
+          const qAssoc = query(
+            collection(db, "farmerCooperativeAssociations"),
+            where("farmerId", "==", cleanHolderId),
+            where("status", "==", "active")
+          );
+          const qAssocSnap = await getDocs(qAssoc);
+          for (const d of qAssocSnap.docs) {
+            const data = d.data();
+            if (
+              data.cooperativeUserId === cleanActorUid ||
+              data.cooperativeOrgId === cleanActorUid ||
+              (coopOrgId && data.cooperativeOrgId === coopOrgId)
+            ) {
+              return;
+            }
+          }
+
+          const qMem = query(
+            collection(db, "cooperative_memberships"),
+            where("farmerId", "==", cleanHolderId),
+            where("status", "==", "active")
+          );
+          const qMemSnap = await getDocs(qMem);
+          for (const d of qMemSnap.docs) {
+            const data = d.data();
+            if (
+              (coopOrgId && data.cooperativeOrgId === coopOrgId) ||
+              data.cooperativeOrgId === cleanActorUid
+            ) {
+              return;
+            }
+          }
+        }
+      }
+    } catch {
+      // Continue
+    }
+
     throw new Error(
       `Authorization Error: Actor "${cleanActorUid}" is not authorized to act on behalf of farmer "${cleanHolderId}".`
     );
   }
 
   // 4. Organizational holder (Cooperative, Agent, Warehouse):
-  // Actor UID is an individual user and does NOT equal the organizational holder ID.
-  // Fail closed by default if membership/authority was not established above.
   throw new Error(
     `Authorization Error: Actor "${cleanActorUid}" is not authorized to act on behalf of ${holderType} entity "${cleanHolderId}".`
   );
@@ -322,9 +396,27 @@ export async function isAuthorizedForCertificateOperation(
       if (userData?.role === "admin" || userData?.isCertificateAuthority === true || userData?.accountType === "admin") {
         return true;
       }
+      if (
+        operation === "read_internal" &&
+        (userData?.role === "cooperative" || userData?.isCooperative === true || userData?.accountType === "cooperative")
+      ) {
+        return true;
+      }
     }
   } catch {
     // Continue
+  }
+
+  // 4. Check cooperative_profiles for read_internal
+  if (operation === "read_internal") {
+    try {
+      const coopSnap = await getDoc(doc(db, "cooperative_profiles", cleanUserId));
+      if (coopSnap.exists() && coopSnap.data()?.status === "active") {
+        return true;
+      }
+    } catch {
+      // Continue
+    }
   }
 
   // Default deny: ordinary authenticated users (standard farmers, buyers, etc.)
