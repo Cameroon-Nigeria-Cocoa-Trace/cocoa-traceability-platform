@@ -43,11 +43,41 @@ export async function POST(
           return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 });
         }
         const now = new Date().toISOString();
+
+        if (data.listingId) {
+          const listingRef = firebaseAdminDb.collection("marketplaceListings").doc(data.listingId);
+          const lSnap = await listingRef.get();
+          if (lSnap.exists) {
+            const lData = lSnap.data() as any;
+            const restored = (lData.quantityAvailableKg || 0) + (data.quantityKg || 0);
+            await listingRef.update({
+              quantityAvailableKg: restored,
+              listingStatus: "available",
+              pendingAccessIntent: null,
+              updatedAt: now,
+            });
+          }
+          const c1 = `SAR-${data.listingId}-${user.userId}`;
+          const c2 = `acc_${data.listingId}-${user.userId}`;
+          for (const cid of [c1, c2]) {
+            const accRef = firebaseAdminDb.collection("sellerAccessRecords").doc(cid);
+            const accSnap = await accRef.get();
+            if (accSnap.exists) {
+              await accRef.update({
+                accessStatus: "active",
+                dealOutcome: null,
+                cancellationReason: reason || "Declined by buyer",
+                updatedAt: now,
+              });
+            }
+          }
+        }
+
         trade = {
           ...data,
           tradeStatus: "cancelled",
           buyerConfirmed: false,
-          notes: `${data.notes || ""} [Rejected by buyer: ${reason || "Terms not agreed"}]`.trim(),
+          notes: `${data.notes || ""} [Declined by buyer: ${reason || "Terms not agreed"}]`.trim(),
           updatedAt: now,
         };
         await tradeRef.update({
@@ -57,7 +87,7 @@ export async function POST(
           updatedAt: now,
         });
       }
-      return NextResponse.json({ success: true, message: "Trade rejected", trade });
+      return NextResponse.json({ success: true, message: "Trade declined and returned to seller", trade });
     }
 
     // Default: confirm

@@ -150,6 +150,40 @@ export default function TradeManagementPage() {
     }
   };
 
+  const [declineModalTrade, setDeclineModalTrade] = useState<TradeRecord | null>(null);
+  const [declineReason, setDeclineReason] = useState("");
+  const [declineSubmitting, setDeclineSubmitting] = useState(false);
+  const [declineError, setDeclineError] = useState<string | null>(null);
+
+  const handleBuyerRejectTrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!declineModalTrade) return;
+    setDeclineError(null);
+    setDeclineSubmitting(true);
+
+    try {
+      const res = await apiClient.post<{ success: boolean; message: string; trade: TradeRecord }>(
+        `/api/marketplace/trades/${declineModalTrade.tradeId}/confirm`,
+        { action: "reject", reason: declineReason.trim() || "Terms not agreed by buyer" }
+      );
+      if (res && res.success) {
+        setConfirmSuccessMsg("Trade declined and sent back to pending for the seller.");
+        loadTrades();
+        loadNegotiations();
+        if (selectedTrade && selectedTrade.tradeId === declineModalTrade.tradeId) {
+          setSelectedTrade(res.trade);
+        }
+        setDeclineModalTrade(null);
+        setDeclineReason("");
+        setTimeout(() => setConfirmSuccessMsg(null), 3500);
+      }
+    } catch (err: unknown) {
+      setDeclineError(err instanceof Error ? err.message : "Failed to decline trade.");
+    } finally {
+      setDeclineSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedTrade && user && selectedTrade.buyerId === user.uid) {
       apiClient.get<{ success: boolean; reviews: any[] }>(`/api/marketplace/reviews?listingId=${selectedTrade.listingId}`)
@@ -888,15 +922,25 @@ export default function TradeManagementPage() {
                         <td className="py-4 px-5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             {isBuyer && t.tradeStatus === "pending" && (
-                              <button
-                                type="button"
-                                onClick={() => handleBuyerConfirmTrade(t.tradeId)}
-                                disabled={confirmingTradeId === t.tradeId}
-                                className="inline-flex items-center gap-1 rounded-full bg-[#0b3528] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer shadow-xs disabled:opacity-50"
-                              >
-                                <CheckCircle2 size={12} />
-                                {confirmingTradeId === t.tradeId ? "Confirming..." : "Confirm & Accept"}
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleBuyerConfirmTrade(t.tradeId)}
+                                  disabled={confirmingTradeId === t.tradeId}
+                                  className="inline-flex items-center gap-1 rounded-full bg-[#0b3528] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#144737] cursor-pointer shadow-xs disabled:opacity-50"
+                                >
+                                  <CheckCircle2 size={12} />
+                                  {confirmingTradeId === t.tradeId ? "Confirming..." : "Confirm & Accept"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeclineModalTrade(t)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 cursor-pointer shadow-xs"
+                                >
+                                  <XCircle size={12} />
+                                  Decline
+                                </button>
+                              </div>
                             )}
                             <button
                               type="button"
@@ -983,6 +1027,14 @@ export default function TradeManagementPage() {
                           >
                             <CheckCircle2 size={14} />
                             {confirmingTradeId === selectedTrade.tradeId ? "Confirming..." : "Confirm & Accept Trade Terms"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeclineModalTrade(selectedTrade)}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-100 cursor-pointer shadow-xs"
+                          >
+                            <XCircle size={14} />
+                            Decline Trade
                           </button>
                         </div>
                       </div>
@@ -1544,6 +1596,69 @@ export default function TradeManagementPage() {
                     className="inline-flex items-center justify-center gap-1.5 rounded-full bg-red-600 px-6 py-2.5 font-bold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 cursor-pointer"
                   >
                     {fellThroughSubmitting ? "Releasing..." : "Confirm & Release Lot"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+        {/* Modal: Confirm Trade Decline */}
+        {declineModalTrade && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
+            <div className="relative my-8 w-full max-w-md rounded-[32px] border border-red-200 bg-white p-6 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setDeclineModalTrade(null)}
+                className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-700">
+                <AlertTriangle size={15} /> Confirm Trade Decline
+              </div>
+              <h3 className="mt-2 text-xl font-bold text-[#10251d]">
+                Decline Commercial Trade?
+              </h3>
+              <p className="mt-1 text-xs text-[#57655d]">
+                You are about to decline trade <span className="font-mono font-bold text-[#10251d]">{declineModalTrade.tradeNumber}</span> ({declineModalTrade.quantityKg} kg at {declineModalTrade.negotiatedPricePerKg} {declineModalTrade.currency}/kg). This will return the lot back to available status and send the inquiry back to pending for the seller to re-negotiate.
+              </p>
+
+              <form onSubmit={handleBuyerRejectTrade} className="mt-5 space-y-4">
+                {declineError && (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 font-semibold">
+                    {declineError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-[#10251d] mb-1.5">
+                    Reason for Declining (Optional / Recommended)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={declineReason}
+                    onChange={(e) => setDeclineReason(e.target.value)}
+                    placeholder="e.g., Price per kg is too high, or requested quantity needs adjustment..."
+                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 text-xs font-medium text-[#10251d] outline-none transition focus:border-red-600 focus:bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setDeclineModalTrade(null)}
+                    className="rounded-full border border-[#dfe7d8] bg-white px-4 py-2 text-xs font-bold text-[#10251d] hover:bg-[#edf2ea] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={declineSubmitting}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-5 py-2 text-xs font-bold text-white hover:bg-red-700 cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    <XCircle size={14} />
+                    {declineSubmitting ? "Declining..." : "Confirm & Decline Trade"}
                   </button>
                 </div>
               </form>

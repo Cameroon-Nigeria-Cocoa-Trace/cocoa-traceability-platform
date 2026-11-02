@@ -1462,11 +1462,44 @@ export async function rejectTradeByBuyer(
     }
 
     const now = new Date().toISOString();
+
+    // 1. Release listing quantity back to available if listing exists
+    if (trade.listingId) {
+      const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, trade.listingId);
+      const listingSnap = await tx.get(listingRef);
+      if (listingSnap.exists()) {
+        const listing = listingSnap.data() as MarketplaceListing;
+        const restoredQuantity = listing.quantityAvailableKg + (trade.quantityKg || 0);
+        tx.update(listingRef, cleanData({
+          quantityAvailableKg: restoredQuantity,
+          listingStatus: "available",
+          pendingAccessIntent: null,
+          updatedAt: now,
+        }));
+      }
+
+      // 2. Reopen Seller Access Record / negotiation back to active for the seller
+      const c1 = `SAR-${trade.listingId}-${cleanBuyerUid}`;
+      const c2 = `acc_${trade.listingId}-${cleanBuyerUid}`;
+      for (const cid of [c1, c2]) {
+        const accRef = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, cid);
+        const accSnap = await tx.get(accRef);
+        if (accSnap.exists()) {
+          tx.update(accRef, cleanData({
+            accessStatus: "active",
+            dealOutcome: null,
+            cancellationReason: reason?.trim() || "Declined by buyer. Returned to pending negotiation.",
+            updatedAt: now,
+          }));
+        }
+      }
+    }
+
     const updatedTrade: TradeRecord = {
       ...trade,
       tradeStatus: "cancelled",
       buyerConfirmed: false,
-      notes: `${trade.notes || ""} [Rejected by buyer: ${reason?.trim() || "Terms not agreed"}]`.trim(),
+      notes: `${trade.notes || ""} [Declined by buyer: ${reason?.trim() || "Terms not agreed"}]`.trim(),
       updatedAt: now,
     };
 
