@@ -808,7 +808,7 @@ export default function MarketplacePage() {
                         <dd className="font-bold text-[#10251d]">
                           {(Number(item.quantityAvailableKg) || 0).toLocaleString()} kg
                           {(() => {
-                            const initKg = Number(item.quantityInitialKg) || Number(item.quantityAvailableKg) || 0;
+                            const initKg = Math.max(Number(item.quantityInitialKg) || 0, Number(item.quantityAvailableKg) || 0);
                             if (initKg > 0) {
                               return (
                                 <span className="ml-1 text-[10px] text-gray-400 font-normal">

@@ -1934,6 +1934,7 @@ export function sanitizePublicListing(listing: MarketplaceListing) {
     title: listing.title,
     description: listing.description,
     quantityAvailableKg: listing.quantityAvailableKg,
+    quantityInitialKg: listing.quantityInitialKg,
     pricePerKg: listing.pricePerKg,
     currency: listing.currency,
     qualityGrade: listing.qualityGrade,

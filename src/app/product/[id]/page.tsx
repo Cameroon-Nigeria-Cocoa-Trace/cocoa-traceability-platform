@@ -518,6 +518,17 @@ export default function ProductDetailPage() {
                 <dt className="text-gray-500">Available Stock:</dt>
                 <dd className="font-bold text-[#10251d]">
                   {listing.quantityAvailableKg.toLocaleString()} kg
+                  {(() => {
+                    const initKg = Math.max(Number(listing.quantityInitialKg) || 0, Number(listing.quantityAvailableKg) || 0);
+                    if (initKg > 0) {
+                      return (
+                        <span className="ml-1 text-[10px] text-gray-400 font-normal">
+                          (of {initKg.toLocaleString()} kg)
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
                 </dd>
               </div>
               <div className="flex justify-between">
