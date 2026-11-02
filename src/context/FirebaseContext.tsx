@@ -72,6 +72,13 @@ export interface FarmRecord {
   geofencePolygon?: [number, number][];
   geofenceAreaHa?: number;
   geofencePointCount?: number;
+  cooperativeOrgId?: string;
+  cooperativeUserId?: string;
+  cooperativeEmail?: string;
+  cooperativePhone?: string;
+  cooperativeDelegated?: boolean;
+  delegatedAt?: string;
+  updatedAt?: string;
   createdAt: string;
 }
 
@@ -210,12 +217,38 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
         if (!coopProf) {
           try {
-            const orgQ = query(collection(db, "cooperative_organizations"), where("createdBy", "==", currentUser.uid));
-            const orgQs = await getDocs(orgQ);
-            if (!orgQs.empty) {
-              const orgData = orgQs.docs[0].data();
+            // Check cooperative_organizations by createdBy and adminId
+            const orgQ1 = query(collection(db, "cooperative_organizations"), where("createdBy", "==", currentUser.uid));
+            const orgQs1 = await getDocs(orgQ1);
+            if (!orgQs1.empty) {
+              const orgData = orgQs1.docs[0].data();
               coopOrgId = orgData.id;
               coopOrgName = orgData.name;
+            } else {
+              const orgQ2 = query(collection(db, "cooperative_organizations"), where("adminId", "==", currentUser.uid));
+              const orgQs2 = await getDocs(orgQ2);
+              if (!orgQs2.empty) {
+                const orgData = orgQs2.docs[0].data();
+                coopOrgId = orgData.id;
+                coopOrgName = orgData.name;
+              } else {
+                // Check cooperatives collection
+                const coopQ1 = query(collection(db, "cooperatives"), where("createdBy", "==", currentUser.uid));
+                const coopQs1 = await getDocs(coopQ1);
+                if (!coopQs1.empty) {
+                  const coopData = coopQs1.docs[0].data();
+                  coopOrgId = coopQs1.docs[0].id;
+                  coopOrgName = coopData.name;
+                } else {
+                  const coopQ2 = query(collection(db, "cooperatives"), where("adminId", "==", currentUser.uid));
+                  const coopQs2 = await getDocs(coopQ2);
+                  if (!coopQs2.empty) {
+                    const coopData = coopQs2.docs[0].data();
+                    coopOrgId = coopQs2.docs[0].id;
+                    coopOrgName = coopData.name;
+                  }
+                }
+              }
             }
           } catch {
             // Fallback handled
@@ -299,24 +332,26 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           if (coopProf) {
             setCooperativeProfile(coopProf);
           } else if (roleToSet === "cooperative") {
-            // Also check if we can synthesize a basic cooperative profile from user document
             const userSnapData = userSnap.exists() ? userSnap.data() : null;
-            if (userSnapData?.cooperativeOrgId) {
-              setCooperativeProfile({
-                id: `coop_usr_${currentUser.uid}`,
-                userId: currentUser.uid,
-                fullName: currentUser.displayName || userSnapData.displayName || "Cooperative Representative",
-                email: currentUser.email || userSnapData.email || "",
-                phone: userSnapData.phone || "",
-                accountType: userSnapData.accountType === "personal" ? "personal" : "organizational",
-                cooperativeOrgId: userSnapData.cooperativeOrgId,
-                cooperativeOrgName: userSnapData.cooperativeOrgName || "Cooperative Society",
-                role: userSnapData.cooperativeRole || "member",
-                status: "active",
-                createdAt: userSnapData.createdAt || new Date().toISOString(),
-                updatedAt: userSnapData.updatedAt || new Date().toISOString(),
-              });
-            }
+            const orgId = userSnapData?.cooperativeOrgId || coopOrgId || `org_coop_${currentUser.uid}`;
+            const orgName =
+              userSnapData?.cooperativeOrgName ||
+              coopOrgName ||
+              (currentUser.displayName ? `${currentUser.displayName} Cooperative Society` : "Cooperative Society");
+            setCooperativeProfile({
+              id: `coop_usr_${currentUser.uid}`,
+              userId: currentUser.uid,
+              fullName: currentUser.displayName || userSnapData?.displayName || "Cooperative Representative",
+              email: currentUser.email || userSnapData?.email || "",
+              phone: userSnapData?.phone || "",
+              accountType: userSnapData?.accountType === "personal" ? "personal" : "organizational",
+              cooperativeOrgId: orgId,
+              cooperativeOrgName: orgName,
+              role: userSnapData?.cooperativeRole || "manager",
+              status: "active",
+              createdAt: userSnapData?.createdAt || new Date().toISOString(),
+              updatedAt: userSnapData?.updatedAt || new Date().toISOString(),
+            });
           }
 
           setUserRoleState(roleToSet);

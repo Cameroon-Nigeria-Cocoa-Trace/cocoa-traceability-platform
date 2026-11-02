@@ -150,34 +150,164 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, organizations: [] });
     }
 
-    if (cooperativeOrgId) {
+    if (cooperativeOrgId || searchParams.get("userId") || searchParams.get("email")) {
       const coopUserId = searchParams.get("userId");
-      let associations = await cooperativeStore.listAssociationsForCooperative(cooperativeOrgId);
-      if (associations.length === 0) {
+      const coopEmail = searchParams.get("email");
+
+      const candidateIds = new Set<string>();
+      if (cooperativeOrgId) candidateIds.add(cooperativeOrgId);
+      if (coopUserId) {
+        candidateIds.add(coopUserId);
+        candidateIds.add(`org_coop_${coopUserId}`);
+        candidateIds.add(`org_coop_${coopUserId.slice(0, 8)}`);
+      }
+
+      const allFoundAssocs: FarmerCooperativeAssociation[] = [];
+
+      // 1. Check in-memory store for all candidate IDs
+      for (const cid of candidateIds) {
         try {
-          const snap = await firebaseAdminDb
-            .collection("farmerCooperativeAssociations")
-            .where("cooperativeOrgId", "==", cooperativeOrgId)
-            .get();
-          if (!snap.empty) {
-            associations = snap.docs.map((d) => d.data() as FarmerCooperativeAssociation);
-          } else if (coopUserId) {
-            const userSnap = await firebaseAdminDb
-              .collection("farmerCooperativeAssociations")
-              .where("cooperativeUserId", "==", coopUserId)
-              .get();
-            if (!userSnap.empty) {
-              associations = userSnap.docs.map((d) => d.data() as FarmerCooperativeAssociation);
-            }
-          }
+          const memAssocs = await cooperativeStore.listAssociationsForCooperative(cid);
+          allFoundAssocs.push(...memAssocs);
         } catch {
           // Continue
         }
       }
 
+      // 2. Query Firestore farmerCooperativeAssociations
+      try {
+        const queries: Promise<any>[] = [];
+        for (const cid of candidateIds) {
+          queries.push(
+            firebaseAdminDb.collection("farmerCooperativeAssociations").where("cooperativeOrgId", "==", cid).get()
+          );
+        }
+        if (coopUserId) {
+          queries.push(
+            firebaseAdminDb.collection("farmerCooperativeAssociations").where("cooperativeUserId", "==", coopUserId).get()
+          );
+        }
+        if (coopEmail) {
+          queries.push(
+            firebaseAdminDb.collection("farmerCooperativeAssociations").where("cooperativeEmail", "==", coopEmail).get()
+          );
+        }
+
+        const snaps = await Promise.all(queries);
+        for (const snap of snaps) {
+          if (!snap.empty) {
+            snap.forEach((d: any) => {
+              allFoundAssocs.push(d.data() as FarmerCooperativeAssociation);
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Firestore association query notice:", e);
+      }
+
+      // 3. Query cooperative_memberships
+      try {
+        const memQueries: Promise<any>[] = [];
+        for (const cid of candidateIds) {
+          memQueries.push(
+            firebaseAdminDb.collection("cooperative_memberships").where("cooperativeOrgId", "==", cid).get()
+          );
+        }
+        const memSnaps = await Promise.all(memQueries);
+        for (const mSnap of memSnaps) {
+          if (!mSnap.empty) {
+            mSnap.forEach((d: any) => {
+              const mem = d.data();
+              if (mem.farmerId) {
+                allFoundAssocs.push({
+                  associationId: mem.id || `assoc_${mem.farmerId}`,
+                  farmerId: mem.farmerId,
+                  farmerName: mem.farmerName || "Member Farmer",
+                  cooperativeOrgId: cooperativeOrgId || mem.cooperativeOrgId,
+                  cooperativeUserId: coopUserId || undefined,
+                  cooperativeOrgName: mem.cooperativeOrgName || "Cooperative Society",
+                  cooperativeEmail: coopEmail || "",
+                  cooperativePhone: "",
+                  farmScope: "all",
+                  delegatedFarmIds: ["ALL"],
+                  manageEverything: true,
+                  permissions: {
+                    farmsManagement: true,
+                    certificatesManagement: true,
+                    productionInventory: true,
+                    tradingManagement: true,
+                  },
+                  status: "active",
+                  associatedAt: mem.joinedAt || new Date().toISOString(),
+                  updatedAt: mem.updatedAt || new Date().toISOString(),
+                });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Memberships query notice:", e);
+      }
+
+      // 4. Query farms collection directly for any delegated farms
+      try {
+        const farmQueries: Promise<any>[] = [];
+        for (const cid of candidateIds) {
+          farmQueries.push(
+            firebaseAdminDb.collection("farms").where("cooperativeOrgId", "==", cid).get()
+          );
+        }
+        if (coopUserId) {
+          farmQueries.push(
+            firebaseAdminDb.collection("farms").where("cooperativeUserId", "==", coopUserId).get()
+          );
+        }
+        if (coopEmail) {
+          farmQueries.push(
+            firebaseAdminDb.collection("farms").where("cooperativeEmail", "==", coopEmail).get()
+          );
+        }
+
+        const farmSnaps = await Promise.all(farmQueries);
+        for (const fSnap of farmSnaps) {
+          if (!fSnap.empty) {
+            fSnap.forEach((d: any) => {
+              const f = d.data();
+              if (f.farmerId) {
+                allFoundAssocs.push({
+                  associationId: `synth_assoc_${f.farmerId}_${d.id}`,
+                  farmerId: f.farmerId,
+                  farmerName: f.farmerName || "Member Farmer",
+                  cooperativeOrgId: f.cooperativeOrgId || cooperativeOrgId || `org_coop_${coopUserId}`,
+                  cooperativeUserId: coopUserId || undefined,
+                  cooperativeOrgName: f.cooperative || "Cooperative Society",
+                  cooperativeEmail: f.cooperativeEmail || coopEmail || "",
+                  cooperativePhone: f.cooperativePhone || "",
+                  farmScope: "single_farm",
+                  delegatedFarmIds: [d.id],
+                  delegatedFarmNames: [f.farmName || "Delegated Farm"],
+                  manageEverything: true,
+                  permissions: {
+                    farmsManagement: true,
+                    certificatesManagement: true,
+                    productionInventory: true,
+                    tradingManagement: true,
+                  },
+                  status: "active",
+                  associatedAt: f.delegatedAt || f.createdAt || new Date().toISOString(),
+                  updatedAt: f.updatedAt || new Date().toISOString(),
+                });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Direct farms query notice:", e);
+      }
+
       // Deduplicate by farmerId
       const dedupCoopMap = new Map<string, FarmerCooperativeAssociation>();
-      for (const a of associations) {
+      for (const a of allFoundAssocs) {
         if (a.status === "withdrawn" || a.status === "inactive") continue;
         const key = a.farmerId;
         if (!dedupCoopMap.has(key)) {
@@ -291,6 +421,7 @@ export async function POST(req: NextRequest) {
             await firebaseAdminDb.collection("farms").doc(fId).set({
               cooperative: assoc.cooperativeOrgName,
               cooperativeOrgId: assoc.cooperativeOrgId,
+              cooperativeUserId: assoc.cooperativeUserId || "",
               cooperativeEmail: assoc.cooperativeEmail,
               cooperativePhone: assoc.cooperativePhone,
               cooperativeDelegated: true,
@@ -304,6 +435,7 @@ export async function POST(req: NextRequest) {
             await farmDoc.ref.set({
               cooperative: assoc.cooperativeOrgName,
               cooperativeOrgId: assoc.cooperativeOrgId,
+              cooperativeUserId: assoc.cooperativeUserId || "",
               cooperativeEmail: assoc.cooperativeEmail,
               cooperativePhone: assoc.cooperativePhone,
               cooperativeDelegated: true,

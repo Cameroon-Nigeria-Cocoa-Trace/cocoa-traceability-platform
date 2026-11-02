@@ -106,6 +106,7 @@ export interface FarmerCooperativeAssociation {
   farmerId: string;
   farmerName?: string;
   cooperativeOrgId: string;
+  cooperativeUserId?: string;
   cooperativeOrgName: string;
   cooperativeEmail: string;
   cooperativePhone: string;

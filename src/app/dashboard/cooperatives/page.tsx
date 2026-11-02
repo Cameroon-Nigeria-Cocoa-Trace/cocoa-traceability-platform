@@ -477,6 +477,7 @@ function FarmerCooperativeHubContent() {
           {
             cooperative: coopName,
             cooperativeOrgId: coopId,
+            cooperativeUserId: coopUserId || "",
             cooperativeEmail: coopEmail,
             cooperativePhone: coopPhone,
             cooperativeDelegated: true,
@@ -492,6 +493,7 @@ function FarmerCooperativeHubContent() {
             {
               cooperative: coopName,
               cooperativeOrgId: coopId,
+              cooperativeUserId: coopUserId || "",
               cooperativeEmail: coopEmail,
               cooperativePhone: coopPhone,
               cooperativeDelegated: true,
