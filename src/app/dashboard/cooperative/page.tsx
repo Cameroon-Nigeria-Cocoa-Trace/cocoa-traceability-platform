@@ -2338,6 +2338,24 @@ function CooperativeDashboardContent() {
                     </div>
                   </div>
 
+                  {farmerMode === "new" && (
+                    <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-4 text-xs text-[#1a4936] space-y-2">
+                      <div className="flex items-center gap-1.5 font-bold text-[#0b3528] text-sm">
+                        <CheckCircle2 size={16} className="text-[#2d6130]" />
+                        Farmer Account &amp; Cooperative Linking Summary
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                        <div><strong>New Farmer:</strong> {newFarmerName || "Unspecified Name"}</div>
+                        <div><strong>Phone:</strong> {newFarmerPhone || "Not specified"}</div>
+                        <div><strong>Cooperative:</strong> {coopOrgName}</div>
+                        <div><strong>Permissions:</strong> Full Management Rights (Manage Everything)</div>
+                      </div>
+                      <p className="text-[11px] text-[#2d6130] leading-relaxed pt-1 border-t border-[#cdebc2]">
+                        Upon registration, this farmer account will be automatically provisioned in the user registry, linked to <strong>{coopOrgName}</strong>, and granted full cooperative management permissions for this farm plot and future harvests.
+                      </p>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pt-2">
                     <button
                       type="button"
