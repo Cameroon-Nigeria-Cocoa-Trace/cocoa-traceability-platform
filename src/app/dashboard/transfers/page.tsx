@@ -92,7 +92,7 @@ function TransfersContent() {
       userRole === "cooperative" ||
       userProfile?.role === "cooperative" ||
       isCooperative ||
-      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+      farms.some((f) => f.cooperativeOrgId || f.cooperative)
     );
   }, [userRole, userProfile, isCooperative, farms]);
 

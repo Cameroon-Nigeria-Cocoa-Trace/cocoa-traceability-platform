@@ -45,6 +45,12 @@ import {
   SlidersHorizontal,
   Tag,
   ChevronRight,
+  ChevronLeft,
+  Navigation,
+  Compass,
+  Phone,
+  Mail,
+  User,
 } from "lucide-react";
 import {
   FarmerCooperativeAssociation,
@@ -60,6 +66,40 @@ import {
 } from "@/types/traceability";
 import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+const CocoaTracker = dynamic(() => import("@/components/CocoaTracker"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-64 items-center justify-center rounded-3xl bg-[#062d22] text-white">
+      <div className="flex items-center gap-2 text-xs text-[#b8f58b]">
+        <RefreshCw className="animate-spin" size={18} /> Loading geofence tracker...
+      </div>
+    </div>
+  ),
+});
+
+const parseGeolocationToCenter = (geoStr: string): [number, number] | undefined => {
+  if (!geoStr) return undefined;
+  try {
+    const parts = geoStr.split(/[,]/);
+    if (parts.length >= 2) {
+      const latPart = parts[0].trim();
+      const lngPart = parts[1].trim();
+      const latMatch = latPart.match(/([+-]?\d+(\.\d+)?)/);
+      const lngMatch = lngPart.match(/([+-]?\d+(\.\d+)?)/);
+      if (latMatch && lngMatch) {
+        const lat = parseFloat(latMatch[1]);
+        const lng = parseFloat(lngMatch[1]);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          return [lng, lat];
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return undefined;
+};
 
 const MapboxGeofenceMap = dynamic(
   () => import("@/components/MapboxGeofenceMap"),
@@ -168,14 +208,53 @@ function CooperativeDashboardContent() {
   const [tradeFarmFilter, setTradeFarmFilter] = useState<string>("ALL");
   const [tradeSearchTerm, setTradeSearchTerm] = useState("");
 
-  // Modal: Register Farm Plot (delegated)
+  // Modal: Register Farm (for existing associated member OR brand-new farmer)
   const [showRegisterFarmModal, setShowRegisterFarmModal] = useState(false);
-  const [farmNameInput, setFarmNameInput] = useState("");
+  const [farmModalTab, setFarmModalTab] = useState<"farmer" | "location" | "supplychain" | "geofence">("farmer");
+  const [farmerMode, setFarmerMode] = useState<"existing" | "new">("existing");
+  // Member farmer selection
   const [farmFarmerIdInput, setFarmFarmerIdInput] = useState("");
-  const [farmRegionInput, setFarmRegionInput] = useState("South-West Region");
+  // New farmer fields
+  const [newFarmerName, setNewFarmerName] = useState("");
+  const [newFarmerPhone, setNewFarmerPhone] = useState("");
+  const [newFarmerEmail, setNewFarmerEmail] = useState("");
+  const [newFarmerNationalId, setNewFarmerNationalId] = useState("");
+  // Farm & Location fields
+  const [farmNameInput, setFarmNameInput] = useState("");
+  const [farmRegionInput, setFarmRegionInput] = useState("Southwest Region");
   const [farmVillageInput, setFarmVillageInput] = useState("");
+  const [farmLgaInput, setFarmLgaInput] = useState("Manyu");
+  const [farmGeolocationInput, setFarmGeolocationInput] = useState("");
   const [farmSizeInput, setFarmSizeInput] = useState<number | "">(2.5);
+  const [farmVarietyInput, setFarmVarietyInput] = useState("Trinitario F1");
+  const [farmHarvestSeasonInput, setFarmHarvestSeasonInput] = useState("Main Crop Season 2026/2027");
+  // Supply chain fields
+  const [farmAggregatorInput, setFarmAggregatorInput] = useState("");
+  const [farmMovementRouteInput, setFarmMovementRouteInput] = useState("");
+  const [farmProcessorInput, setFarmProcessorInput] = useState("");
+  const [farmBuyerInput, setFarmBuyerInput] = useState("");
+  // Geofence fields
+  const [farmGeofencePolygon, setFarmGeofencePolygon] = useState<[number, number][]>([]);
+  const [farmGeofenceAreaHa, setFarmGeofenceAreaHa] = useState<number>(2.5);
+  const [farmGeofencePointCount, setFarmGeofencePointCount] = useState<number>(0);
   const [farmSubmitting, setFarmSubmitting] = useState(false);
+
+  const handleUseCurrentLocation = () => {
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude.toFixed(5);
+          const lng = pos.coords.longitude.toFixed(5);
+          setFarmGeolocationInput(`${lat}°, ${lng}°`);
+        },
+        (err) => {
+          console.warn("Could not retrieve GPS:", err.message);
+          setFarmGeolocationInput("5.7142° N, 9.2891° E");
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  };
 
   // Modal: Create Seasonal Production Record
   const [showProdRecordModal, setShowProdRecordModal] = useState(false);
@@ -895,57 +974,123 @@ function CooperativeDashboardContent() {
     return true;
   };
 
-  // Handle Register Farm Plot on Behalf of Farmer
+  // Handle Register Farm on Behalf of Farmer (Existing Member OR Brand-New Farmer)
   const handleRegisterFarm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!farmFarmerIdInput) {
-      setError("Please select an associated member farmer.");
-      return;
+
+    let effectiveFarmerId = "";
+    let effectiveFarmerName = "";
+    let effectiveFarmerEmail = "";
+    let effectiveFarmerPhone = "";
+
+    if (farmerMode === "existing") {
+      if (!farmFarmerIdInput) {
+        setError("Please select an associated member farmer.");
+        setFarmModalTab("farmer");
+        return;
+      }
+
+      if (!verifyFarmManagementPermission(farmFarmerIdInput)) {
+        setError("Permission Denied: Your cooperative does not have farm management permission for this farmer.");
+        return;
+      }
+
+      const selectedAssoc = associations.find((a) => a.farmerId === farmFarmerIdInput);
+      if (selectedAssoc?.farmScope === "single_farm" && farms.some((f) => f.farmerId === farmFarmerIdInput)) {
+        setError("Permission Denied: This farmer has only delegated a single farm to this cooperative. Cannot register additional plots.");
+        return;
+      }
+
+      effectiveFarmerId = farmFarmerIdInput;
+      effectiveFarmerName = selectedAssoc?.farmerName || "Associated Farmer";
+      effectiveFarmerEmail = selectedAssoc?.cooperativeEmail || "";
+    } else {
+      // New Farmer Registration
+      if (!newFarmerName.trim()) {
+        setError("Please enter the new farmer's full name.");
+        setFarmModalTab("farmer");
+        return;
+      }
+      effectiveFarmerName = newFarmerName.trim();
+      effectiveFarmerPhone = newFarmerPhone.trim();
+      const slug = effectiveFarmerName.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 16);
+      effectiveFarmerId = `farmer_${slug}_${Date.now().toString(36)}`;
+      effectiveFarmerEmail = newFarmerEmail.trim() || `${slug}.${Date.now().toString(36)}@cocoatrace.cm`;
     }
 
-    if (!verifyFarmManagementPermission(farmFarmerIdInput)) {
-      setError("Permission Denied: Your cooperative does not have farm management permission for this farmer.");
-      return;
-    }
-
-    const selectedAssoc = associations.find((a) => a.farmerId === farmFarmerIdInput);
-    if (selectedAssoc?.farmScope === "single_farm" && farms.some((f) => f.farmerId === farmFarmerIdInput)) {
-      setError("Permission Denied: This farmer has only delegated a single farm to this cooperative. Cannot register additional plots.");
+    if (!farmNameInput.trim()) {
+      setError("Please specify the farm / plantation name.");
+      setFarmModalTab("location");
       return;
     }
 
     setFarmSubmitting(true);
     setError(null);
     try {
-      const farmId = `farm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-      const newFarm: FarmRecord = {
-        id: farmId,
+      const idToken = typeof user?.getIdToken === "function" ? await user.getIdToken() : "";
+      const parsedSize = Number(farmSizeInput) || (farmGeofenceAreaHa > 0 ? farmGeofenceAreaHa : 2.5);
+      const geoCoords =
+        farmGeolocationInput.trim() ||
+        (farmGeofencePolygon.length > 0
+          ? `${farmGeofencePolygon[0][1].toFixed(5)}° N, ${farmGeofencePolygon[0][0].toFixed(5)}° E`
+          : "5.7142° N, 9.2891° E");
+
+      const payload = {
         farmName: farmNameInput.trim(),
-        farmerId: farmFarmerIdInput,
-        farmerName: selectedAssoc?.farmerName || "Associated Farmer",
-        region: farmRegionInput,
+        farmerId: effectiveFarmerId,
+        farmerName: effectiveFarmerName,
+        farmerPhone: effectiveFarmerPhone || undefined,
+        farmerEmail: effectiveFarmerEmail || undefined,
+        nationalId: newFarmerNationalId.trim() || undefined,
+        region: farmRegionInput || "Southwest Region",
         village: farmVillageInput.trim() || "Manyu Basin",
+        lga: farmLgaInput.trim() || "Manyu",
         cooperative: coopOrgName,
-        geolocation: "5.4521° N, 9.2431° E",
-        sizeHectares: Number(farmSizeInput) || 2.5,
-        geofenceAreaHa: Number(farmSizeInput) || 2.5,
-        cocoaVariety: "Trinitario F1",
-        quantityHarvestedKg: 0,
+        geolocation: geoCoords,
+        sizeHectares: parsedSize,
+        geofenceAreaHa: farmGeofenceAreaHa || parsedSize,
+        cocoaVariety: farmVarietyInput || "Trinitario F1",
+        harvestSeason: farmHarvestSeasonInput || "Main Crop Season 2026/2027",
+        aggregatorCenter: farmAggregatorInput.trim() || `${coopOrgName} Central Depot`,
+        batchMovementRoute:
+          farmMovementRouteInput.trim() ||
+          `${farmVillageInput.trim() || "Farm Gate"} → ${coopOrgName} Depot → Douala Port`,
+        processorExporter: farmProcessorInput.trim() || undefined,
+        designatedBuyer: farmBuyerInput.trim() || undefined,
+        geofencePolygon: farmGeofencePolygon.length >= 3 ? farmGeofencePolygon : undefined,
         eudrCompliant: true,
-        createdAt: new Date().toISOString(),
-        geofencePolygon: [
-          [9.243, 5.452],
-          [9.246, 5.454],
-          [9.247, 5.451],
-          [9.243, 5.452],
-        ] as any,
       };
 
-      await setDoc(doc(db, "farms", farmId), newFarm);
-      setSuccessMsg(`Farm Plot "${newFarm.farmName}" successfully registered on behalf of ${newFarm.farmerName}!`);
+      const res = await fetch("/api/farms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const resJson = await res.json().catch(() => ({}));
+      if (!res.ok || !resJson.success) {
+        throw new Error(resJson.error || "Failed to register farm.");
+      }
+
+      setSuccessMsg(
+        farmerMode === "new"
+          ? `New farmer "${effectiveFarmerName}" and farm "${payload.farmName}" successfully registered and linked to ${coopOrgName}!`
+          : `Farm "${payload.farmName}" successfully registered on behalf of ${effectiveFarmerName}!`
+      );
+
       setShowRegisterFarmModal(false);
       setFarmNameInput("");
       setFarmVillageInput("");
+      setNewFarmerName("");
+      setNewFarmerPhone("");
+      setNewFarmerEmail("");
+      setNewFarmerNationalId("");
+      setFarmGeofencePolygon([]);
+      setFarmModalTab("farmer");
+
       await loadCooperativeData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -1175,47 +1320,20 @@ function CooperativeDashboardContent() {
 
             <button
               type="button"
-              disabled={!hasActiveAssociations}
               onClick={() => {
-                if (!hasActiveAssociations) return;
-                setFarmFarmerIdInput(associations[0]?.farmerId || "");
+                if (associations.length > 0) {
+                  setFarmFarmerIdInput(associations[0].farmerId);
+                  setFarmerMode("existing");
+                } else {
+                  setFarmerMode("new");
+                }
+                setFarmModalTab("farmer");
                 setShowRegisterFarmModal(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              title={!hasActiveAssociations ? "Requires active farmer association" : undefined}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] cursor-pointer"
             >
               <Plus size={14} />
-              Register Plot
-            </button>
-
-            <button
-              type="button"
-              disabled={!hasActiveAssociations}
-              onClick={() => {
-                if (!hasActiveAssociations) return;
-                setProdFarmerIdInput(associations[0]?.farmerId || "");
-                setShowProductionModal(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-4 py-2.5 text-xs font-bold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              title={!hasActiveAssociations ? "Requires active farmer association" : undefined}
-            >
-              <Layers size={14} />
-              Record Harvest
-            </button>
-
-            <button
-              type="button"
-              disabled={!hasActiveAssociations}
-              onClick={() => {
-                if (!hasActiveAssociations) return;
-                setLotFarmerIdInput(associations[0]?.farmerId || "");
-                setShowLotModal(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white px-4 py-2.5 text-xs font-bold text-[#10251d] shadow-sm transition hover:bg-[#f7f8f3] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              title={!hasActiveAssociations ? "Requires active farmer association" : undefined}
-            >
-              <FileText size={14} />
-              Create Lot
+              Register Farm
             </button>
           </div>
         </div>
@@ -1473,15 +1591,19 @@ function CooperativeDashboardContent() {
 
                   <button
                     type="button"
-                    disabled={!hasActiveAssociations}
                     onClick={() => {
-                      if (!hasActiveAssociations) return;
-                      setFarmFarmerIdInput(plotFarmerFilter !== "ALL" ? plotFarmerFilter : associations[0]?.farmerId || "");
+                      if (associations.length > 0) {
+                        setFarmFarmerIdInput(plotFarmerFilter !== "ALL" ? plotFarmerFilter : associations[0]?.farmerId || "");
+                        setFarmerMode("existing");
+                      } else {
+                        setFarmerMode("new");
+                      }
+                      setFarmModalTab("farmer");
                       setShowRegisterFarmModal(true);
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-40 cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
                   >
-                    <Plus size={14} /> Register Plot
+                    <Plus size={14} /> Register Farm
                   </button>
                 </div>
               </div>
@@ -1513,21 +1635,25 @@ function CooperativeDashboardContent() {
                 <h3 className="text-base font-bold text-[#10251d]">No Farm Plots Found</h3>
                 <p className="mt-1 text-xs text-[#57655d] max-w-md mx-auto">
                   {!hasActiveAssociations
-                    ? "Awaiting farm delegation from member farmers. Once a farmer links their farm in their Cooperative Hub, it will appear here."
+                    ? "No farms registered yet. Register a new farm for an existing member or a new farmer."
                     : "No farm plots match the current filter selection."}
                 </p>
-                {hasActiveAssociations && (
-                  <button
-                    type="button"
-                    onClick={() => {
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (associations.length > 0) {
                       setFarmFarmerIdInput(associations[0]?.farmerId || "");
-                      setShowRegisterFarmModal(true);
-                    }}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                  >
-                    <Plus size={14} /> Register First Plot
-                  </button>
-                )}
+                      setFarmerMode("existing");
+                    } else {
+                      setFarmerMode("new");
+                    }
+                    setFarmModalTab("farmer");
+                    setShowRegisterFarmModal(true);
+                  }}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                >
+                  <Plus size={14} /> Register Farm
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -1693,96 +1819,571 @@ function CooperativeDashboardContent() {
 
 
 
-      {/* Modal: Register Farm Plot on Behalf of Farmer */}
+      {/* Modal: Register Farm & Geofence (4-Step Standard Procedure) */}
       {showRegisterFarmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
-          <div className="relative my-8 w-full max-w-lg rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8">
+          <div className="relative my-6 w-full max-w-3xl rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl sm:p-8 max-h-[92vh] overflow-y-auto">
             <button
               type="button"
               onClick={() => setShowRegisterFarmModal(false)}
-              className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 cursor-pointer"
+              className="absolute right-5 top-5 rounded-full p-2 text-gray-400 hover:bg-gray-100 cursor-pointer"
             >
               <X size={20} />
             </button>
+
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
-              <Building2 size={14} /> Cooperative Operated
+              <Building2 size={14} /> Cooperative Registration • EUDR Compliance
             </div>
-            <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Register Farm Plot on Behalf of Farmer</h2>
+            <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Register Farm &amp; Geofence</h2>
             <p className="mt-1 text-xs text-[#57655d]">
-              Select the associated member farmer for whom you are registering this cocoa plot under {coopOrgName}.
+              Register and geofence a cocoa farm plot under <strong className="text-[#10251d]">{coopOrgName}</strong> either for an existing member farmer or by onboarding a new farmer to the platform.
             </p>
 
+            {/* Stepper Tabs */}
+            <div className="mt-5 grid grid-cols-4 gap-1.5 border-b border-[#edf1ea] pb-3 text-center">
+              {[
+                { id: "farmer", step: "1", label: "Farmer & Co-op", icon: Users },
+                { id: "location", step: "2", label: "Farm & Location", icon: MapPin },
+                { id: "supplychain", step: "3", label: "Trade Route", icon: Truck },
+                { id: "geofence", step: "4", label: "Canopy Geofence", icon: ShieldCheck },
+              ].map((tab) => {
+                const TabIcon = tab.icon;
+                const isActive = farmModalTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFarmModalTab(tab.id as any)}
+                    className={`flex flex-col items-center gap-1 rounded-2xl py-2 px-1 text-xs font-bold transition cursor-pointer ${
+                      isActive
+                        ? "bg-[#edf7e8] text-[#2d6130] shadow-xs"
+                        : "text-[#57655d] hover:bg-gray-50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${
+                        isActive ? "bg-[#2d6130] text-white" : "bg-gray-200 text-gray-600"
+                      }`}>
+                        {tab.step}
+                      </span>
+                      <TabIcon size={13} className="hidden sm:inline" />
+                    </div>
+                    <span className="text-[11px] truncate max-w-full">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             <form onSubmit={handleRegisterFarm} className="mt-5 space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-[#10251d] mb-1">Select Associated Farmer *</label>
-                <select
-                  required
-                  value={farmFarmerIdInput}
-                  onChange={(e) => setFarmFarmerIdInput(e.target.value)}
-                  className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                >
-                  <option value="">-- Choose Member Farmer --</option>
-                  {associations.map((a) => (
-                    <option key={a.farmerId} value={a.farmerId}>
-                      {a.farmerName} ({a.farmScope === "single_farm" ? "Single Farm Delegation" : "All Farms"})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* TAB 1: Farmer & Cooperative */}
+              {farmModalTab === "farmer" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4">
+                    <span className="block font-semibold text-[#10251d] mb-2 text-xs">
+                      Farmer Registration Mode:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label
+                        className={`flex items-start gap-2.5 rounded-2xl border p-3 cursor-pointer transition ${
+                          farmerMode === "existing"
+                            ? "border-[#2d6130] bg-[#edf7e8]/50 shadow-xs"
+                            : "border-[#dfe7d8] bg-white hover:bg-[#f7f8f3]"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="farmerMode"
+                          checked={farmerMode === "existing"}
+                          onChange={() => setFarmerMode("existing")}
+                          className="mt-0.5 text-[#2d6130] focus:ring-[#2d6130]"
+                        />
+                        <div>
+                          <div className="font-bold text-[#10251d] text-xs">Associated Member Farmer</div>
+                          <div className="text-[11px] text-[#57655d]">
+                            Select from farmers currently linked to {coopOrgName}
+                          </div>
+                        </div>
+                      </label>
 
-              <div>
-                <label className="block font-semibold text-[#10251d] mb-1">Farm / Plot Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={farmNameInput}
-                  onChange={(e) => setFarmNameInput(e.target.value)}
-                  placeholder="e.g. Mbenge Family Cocoa Plot"
-                  className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                />
-              </div>
+                      <label
+                        className={`flex items-start gap-2.5 rounded-2xl border p-3 cursor-pointer transition ${
+                          farmerMode === "new"
+                            ? "border-[#2d6130] bg-[#edf7e8]/50 shadow-xs"
+                            : "border-[#dfe7d8] bg-white hover:bg-[#f7f8f3]"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="farmerMode"
+                          checked={farmerMode === "new"}
+                          onChange={() => setFarmerMode("new")}
+                          className="mt-0.5 text-[#2d6130] focus:ring-[#2d6130]"
+                        />
+                        <div>
+                          <div className="font-bold text-[#10251d] text-xs">Register New Farmer</div>
+                          <div className="text-[11px] text-[#57655d]">
+                            Onboard a new producer not yet on the platform
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-[#10251d] mb-1">Village / Locality</label>
-                  <input
-                    type="text"
-                    value={farmVillageInput}
-                    onChange={(e) => setFarmVillageInput(e.target.value)}
-                    placeholder="e.g. Ossing"
-                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                  />
+                  {farmerMode === "existing" ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block font-semibold text-[#10251d] mb-1">
+                          Select Associated Member Farmer *
+                        </label>
+                        {associations.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-4 text-center">
+                            <p className="text-xs text-amber-800">
+                              No active associated member farmers yet. Switch to <strong>&ldquo;Register New Farmer&rdquo;</strong> to onboard your first producer!
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setFarmerMode("new")}
+                              className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#0b3528] px-3.5 py-1.5 text-[11px] font-bold text-white hover:bg-[#144737] cursor-pointer"
+                            >
+                              <Plus size={12} /> Register New Farmer
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            required
+                            value={farmFarmerIdInput}
+                            onChange={(e) => setFarmFarmerIdInput(e.target.value)}
+                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                          >
+                            <option value="">-- Choose Member Farmer --</option>
+                            {associations.map((a) => (
+                              <option key={a.farmerId} value={a.farmerId}>
+                                {a.farmerName} • ID: {a.farmerId.slice(0, 14)}... ({a.farmScope === "single_farm" ? "Single Farm Delegation" : "All Farms"})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      {farmFarmerIdInput && (
+                        <div className="rounded-2xl bg-[#edf7e8] p-3 text-xs text-[#1a4936] flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-semibold">
+                            <CheckCircle2 size={14} className="text-[#2d6130]" />
+                            Member identity verified in cooperative roster
+                          </span>
+                          <span className="text-[11px] font-mono opacity-80">
+                            {farmFarmerIdInput}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-[#10251d] mb-1">
+                            Farmer Full Name *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={newFarmerName}
+                            onChange={(e) => setNewFarmerName(e.target.value)}
+                            placeholder="e.g. Alain Nkweta or Jean-Pierre Mbida"
+                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-[#10251d] mb-1">
+                            Farmer Phone Number
+                          </label>
+                          <input
+                            type="tel"
+                            value={newFarmerPhone}
+                            onChange={(e) => setNewFarmerPhone(e.target.value)}
+                            placeholder="e.g. +237 671 234 567"
+                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-semibold text-[#10251d] mb-1">
+                            Farmer Email Address <span className="font-normal text-gray-500">(Optional)</span>
+                          </label>
+                          <input
+                            type="email"
+                            value={newFarmerEmail}
+                            onChange={(e) => setNewFarmerEmail(e.target.value)}
+                            placeholder="e.g. alain.nkweta@cocoatrace.cm"
+                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-semibold text-[#10251d] mb-1">
+                            National ID / CNI Number <span className="font-normal text-gray-500">(Optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newFarmerNationalId}
+                            onChange={(e) => setNewFarmerNationalId(e.target.value)}
+                            placeholder="e.g. CM-110294829"
+                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-3.5 text-xs text-[#1a4936] flex items-start gap-2.5">
+                        <ShieldCheck size={18} className="text-[#2d6130] shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold">Automatic Cooperative Association:</span> Upon registration, this producer will be automatically registered in the system and bound to <strong>{coopOrgName}</strong> with full delegated management permissions across farms, certificates, and production.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setFarmModalTab("location")}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                    >
+                      Next: Farm &amp; Location <ChevronRight size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-semibold text-[#10251d] mb-1">Size (Hectares) *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.5"
-                    required
-                    value={farmSizeInput}
-                    onChange={(e) => setFarmSizeInput(e.target.value ? Number(e.target.value) : "")}
-                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                  />
-                </div>
-              </div>
+              )}
 
-              <div className="mt-5 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
-                <button
-                  type="button"
-                  onClick={() => setShowRegisterFarmModal(false)}
-                  className="rounded-full px-5 py-2 font-bold text-gray-500 hover:bg-gray-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={farmSubmitting}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
-                >
-                  {farmSubmitting ? "Registering..." : "Register Plot"}
-                </button>
-              </div>
+              {/* TAB 2: Farm & Location */}
+              {farmModalTab === "location" && (
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">
+                      Farm / Plantation Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={farmNameInput}
+                      onChange={(e) => setFarmNameInput(e.target.value)}
+                      placeholder="e.g. Manyu Basin Heritage Cocoa Plot #2"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-semibold text-[#10251d]">
+                          GPS Coordinates (Lat, Lng) *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleUseCurrentLocation}
+                          className="text-[11px] font-bold text-[#2d6130] hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          <Navigation size={11} /> Get Device GPS
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={farmGeolocationInput}
+                        onChange={(e) => setFarmGeolocationInput(e.target.value)}
+                        placeholder="e.g. 5.7142° N, 9.2891° E"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 font-mono outline-none text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Farm Size (Hectares) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        required
+                        value={farmSizeInput}
+                        onChange={(e) => setFarmSizeInput(e.target.value ? Number(e.target.value) : "")}
+                        placeholder="e.g. 2.8"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Village / Locality *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={farmVillageInput}
+                        onChange={(e) => setFarmVillageInput(e.target.value)}
+                        placeholder="e.g. Ossing, Ekondo-Titi"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Division / District (LGA) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={farmLgaInput}
+                        onChange={(e) => setFarmLgaInput(e.target.value)}
+                        placeholder="e.g. Manyu, Ndian, Meme"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Region *
+                      </label>
+                      <select
+                        value={farmRegionInput}
+                        onChange={(e) => setFarmRegionInput(e.target.value)}
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      >
+                        <option value="Southwest Region">Southwest Region (Kumba, Ndian, Manyu)</option>
+                        <option value="Centre Region">Centre Region (Bafia, Bokito, Monatélé)</option>
+                        <option value="Littoral Region">Littoral Region (Moungo, Nkongsamba)</option>
+                        <option value="South Region">South Region (Ebolowa, Sangmélima, Kribi)</option>
+                        <option value="Northwest Region">Northwest Region (Bamenda Highlands)</option>
+                        <option value="East Region">East Region (Bertoua, Batouri)</option>
+                        <option value="Adamawa Corridor">Adamawa Corridor (Ngaoundal)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Cocoa Variety
+                      </label>
+                      <input
+                        type="text"
+                        value={farmVarietyInput}
+                        onChange={(e) => setFarmVarietyInput(e.target.value)}
+                        placeholder="e.g. Trinitario F1, Amelonado"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Harvest Season
+                      </label>
+                      <input
+                        type="text"
+                        value={farmHarvestSeasonInput}
+                        onChange={(e) => setFarmHarvestSeasonInput(e.target.value)}
+                        placeholder="e.g. Main Crop Season 2026/2027"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setFarmModalTab("farmer")}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] px-4 py-2 font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <ChevronLeft size={14} /> Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFarmModalTab("supplychain")}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                    >
+                      Next: Trade Route <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: Supply Chain & Trade Route */}
+              {farmModalTab === "supplychain" && (
+                <div className="space-y-3.5">
+                  <div className="rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-3 text-xs text-[#57655d]">
+                    Define physical custody nodes from the farm gate to cooperative depot and export processing facilities.
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Aggregator / Collection Centre
+                      </label>
+                      <input
+                        type="text"
+                        value={farmAggregatorInput}
+                        onChange={(e) => setFarmAggregatorInput(e.target.value)}
+                        placeholder={`e.g. ${coopOrgName} Central Depot`}
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-[#10251d] mb-1">
+                        Processor / Exporter
+                      </label>
+                      <input
+                        type="text"
+                        value={farmProcessorInput}
+                        onChange={(e) => setFarmProcessorInput(e.target.value)}
+                        placeholder="e.g. Telcar Cocoa Ltd / SIC CACAOS"
+                        className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">
+                      Designated Off-taker / Buyer
+                    </label>
+                    <input
+                      type="text"
+                      value={farmBuyerInput}
+                      onChange={(e) => setFarmBuyerInput(e.target.value)}
+                      placeholder="e.g. Barry Callebaut or Cargill EU Supply"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-[#10251d] mb-1">
+                      Custody Route Corridor
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={farmMovementRouteInput}
+                      onChange={(e) => setFarmMovementRouteInput(e.target.value)}
+                      placeholder="e.g. Ossing Farm Gate → Cooperative Buying Station → Douala Autonomous Port"
+                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setFarmModalTab("location")}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] px-4 py-2 font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <ChevronLeft size={14} /> Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFarmModalTab("geofence")}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
+                    >
+                      Next: Canopy Geofence <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4: Canopy Geofence via CocoaTracker */}
+              {farmModalTab === "geofence" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-[#edf1ea] bg-[#fafcf9] p-4">
+                    <div className="flex items-center justify-between flex-wrap gap-2 border-b border-[#edf1ea] pb-2">
+                      <div>
+                        <span className="font-bold text-[#10251d] text-xs">
+                          EUDR Article 9 Geodetic Perimeter Walk &amp; Geofence
+                        </span>
+                        <p className="text-[11px] text-[#57655d]">
+                          Interactive polygon capture for <strong className="text-[#10251d]">{farmNameInput || "the farm plot"}</strong>. Multipath signals under dense canopy are filtered (&lt;10m threshold).
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {farmGeofencePolygon.length >= 3 ? (
+                          <span className="rounded-full bg-[#edf7e8] px-2.5 py-1 text-[11px] font-bold text-[#2d6130] flex items-center gap-1">
+                            <CheckCircle2 size={13} /> {farmGeofencePolygon.length} Points ({farmGeofenceAreaHa.toFixed(2)} Ha)
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 flex items-center gap-1">
+                            <AlertCircle size={13} /> Boundary Pending (Draw or Walk)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <CocoaTracker
+                        farmId={farmNameInput ? `farm_${farmNameInput.toLowerCase().replace(/\s+/g, "_")}` : "farm_coop_temp"}
+                        farmName={farmNameInput || "Cocoa Farm Plot"}
+                        initialPolygon={farmGeofencePolygon}
+                        initialCenter={parseGeolocationToCenter(farmGeolocationInput)}
+                        onGeofenceComplete={({ polygon, areaHectares, pointCount }) => {
+                          setFarmGeofencePolygon(polygon);
+                          setFarmGeofenceAreaHa(areaHectares);
+                          setFarmGeofencePointCount(pointCount);
+                          if (areaHectares && (!farmSizeInput || farmSizeInput === 2.5)) {
+                            setFarmSizeInput(Number(areaHectares.toFixed(2)));
+                          }
+                          if (polygon.length > 0 && !farmGeolocationInput) {
+                            setFarmGeolocationInput(`${polygon[0][1].toFixed(5)}° N, ${polygon[0][0].toFixed(5)}° E`);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setFarmModalTab("supplychain")}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-[#dfe7d8] px-4 py-2 font-bold text-gray-700 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <ChevronLeft size={14} /> Back
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={farmSubmitting}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-7 py-3 font-bold text-white shadow-md hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                    >
+                      {farmSubmitting ? (
+                        <>
+                          <RefreshCw size={14} className="animate-spin" /> Registering Farm...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 size={15} /> Register Farm Plot
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Bottom Controls for Step 1-3 to allow instant submit if ready */}
+              {farmModalTab !== "geofence" && (
+                <div className="mt-4 flex items-center justify-between pt-3 border-t border-[#edf1ea]">
+                  <button
+                    type="button"
+                    onClick={() => setShowRegisterFarmModal(false)}
+                    className="rounded-full px-4 py-2 font-bold text-gray-500 hover:bg-gray-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={farmSubmitting}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 cursor-pointer"
+                  >
+                    {farmSubmitting ? "Registering..." : "Submit Registration"}
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>
