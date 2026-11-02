@@ -44,7 +44,7 @@ function HarvestsContent() {
   const initialFarmId = searchParams.get("farmId") || "";
   const initialProdId = searchParams.get("productionRecordId") || "";
 
-  const { user, farms, loading: authLoading } = useFirebase();
+  const { user, farms, userProfile, userRole, loading: authLoading } = useFirebase();
 
   const apiClient = useMemo(() => {
     return createCocoaApiClient(async () => {
@@ -53,11 +53,38 @@ function HarvestsContent() {
     });
   }, [user]);
 
-  // Only display farms owned by the authenticated user.
+  const isCooperativeUser = useMemo(() => {
+    return (
+      userRole === "cooperative" ||
+      userProfile?.role === "cooperative" ||
+      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+    );
+  }, [userRole, userProfile, farms]);
+
+  const [selectedFarmerFilter, setSelectedFarmerFilter] = useState<string>("ALL");
+
+  const associatedFarmers = useMemo(() => {
+    const map = new Map<string, string>();
+    farms.forEach((f) => {
+      if (f.farmerId && f.farmerId !== user?.uid) {
+        map.set(f.farmerId, f.farmerName || `Farmer ${f.farmerId.slice(-6)}`);
+      }
+    });
+    return Array.from(map.entries()).map(([farmerId, farmerName]) => ({ farmerId, farmerName }));
+  }, [farms, user]);
+
+  // Only display farms owned by the authenticated user or associated member farms for cooperatives.
   const userFarms = useMemo(() => {
     if (!user) return [];
+    if (isCooperativeUser) {
+      let list = farms;
+      if (selectedFarmerFilter !== "ALL") {
+        list = list.filter((f) => f.farmerId === selectedFarmerFilter);
+      }
+      return list;
+    }
     return farms.filter((farm) => farm.farmerId === user.uid);
-  }, [farms, user]);
+  }, [farms, user, isCooperativeUser, selectedFarmerFilter]);
 
   const [selectedFarmId, setSelectedFarmId] = useState<string>(initialFarmId);
   const [productionRecords, setProductionRecords] = useState<ProductionRecord[]>([]);
@@ -94,7 +121,7 @@ function HarvestsContent() {
     }
 
     const selectedFarmIsAccessible = userFarms.some(
-      (farm) => farm.id === selectedFarmId
+      (farm) => farm.id === selectedFarmId && (farm.farmerId === user?.uid || isCooperativeUser)
     );
 
     if (selectedFarmId && !selectedFarmIsAccessible) {
@@ -407,7 +434,27 @@ function HarvestsContent() {
 
         {/* Farm & Season Selector */}
         <div className="mb-8 rounded-3xl border border-[#dfe7d8] bg-white p-5 sm:p-6 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className={`grid gap-4 ${isCooperativeUser ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
+            {isCooperativeUser && (
+              <div>
+                <label htmlFor="farmerFilter" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider mb-1">
+                  Associated Farmer Filter
+                </label>
+                <select
+                  id="farmerFilter"
+                  value={selectedFarmerFilter}
+                  onChange={(e) => setSelectedFarmerFilter(e.target.value)}
+                  className="w-full rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
+                >
+                  <option value="ALL">All Associated Farmers ({associatedFarmers.length})</option>
+                  {associatedFarmers.map((f) => (
+                    <option key={f.farmerId} value={f.farmerId}>
+                      {f.farmerName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label htmlFor="farmSelect" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider mb-1">
                 Select Farm Plot
@@ -426,7 +473,7 @@ function HarvestsContent() {
               >
                 {userFarms.map((farm) => (
                   <option key={farm.id} value={farm.id}>
-                    {farm.farmName} — {farm.region} ({farm.sizeHectares || 3.5} Ha)
+                    {farm.farmName} {farm.farmerName ? `(${farm.farmerName})` : ""} — {farm.region} ({farm.sizeHectares || 3.5} Ha)
                   </option>
                 ))}
               </select>

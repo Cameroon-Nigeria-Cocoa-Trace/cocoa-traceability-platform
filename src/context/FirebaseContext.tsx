@@ -379,7 +379,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
 
-  // Fetch Farms from Firestore (Scoped securely by authenticated user UID)
+  // Fetch Farms from Firestore (Scoped securely by authenticated user UID and cooperative associations)
   useEffect(() => {
     let active = true;
 
@@ -399,63 +399,84 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    const farmsRef = collection(db, "farms");
-    const farmsQuery = query(
-      farmsRef,
-      where("farmerId", "==", ownerUid)
-    );
+    const loadAllFarms = async () => {
+      try {
+        const fetchedFarmsMap = new Map<string, FarmRecord>();
+        const farmsRef = collection(db, "farms");
 
-    const unsubscribe = onSnapshot(
-      farmsQuery,
-      (snapshot) => {
-        // Ignore callbacks from an obsolete subscription/account.
-        if (
-          !active ||
-          auth.currentUser?.uid !== ownerUid
-        ) {
-          return;
-        }
-
-        const fetchedFarms: FarmRecord[] = [];
-
-        snapshot.forEach((document) => {
-          const data = document.data() as FarmRecord;
-
-          // Defense in depth: never add another owner's record to state.
-          if (data.farmerId !== ownerUid) {
-            return;
-          }
-
-          fetchedFarms.push({
-            ...data,
-            id: document.id,
-          });
+        // 1. Fetch own farms
+        const ownSnap = await getDocs(query(farmsRef, where("farmerId", "==", ownerUid)));
+        ownSnap.forEach((docSnap) => {
+          fetchedFarmsMap.set(docSnap.id, { ...docSnap.data(), id: docSnap.id } as FarmRecord);
         });
 
-        // Use only the current owner's authoritative snapshot.
-        // Do not merge records from the previous account's state.
-        setFarms(fetchedFarms);
-      },
-      (error) => {
-        if (
-          !active ||
-          auth.currentUser?.uid !== ownerUid
-        ) {
-          return;
+        // 2. If cooperative, fetch associated farmers and their farms
+        const isCoopUser = userRole === "cooperative" || userProfile?.role === "cooperative" || cooperativeProfile != null;
+        if (isCoopUser) {
+          const candidateCoopIds = new Set<string>([ownerUid]);
+          if (cooperativeProfile?.cooperativeOrgId) candidateCoopIds.add(cooperativeProfile.cooperativeOrgId);
+          if (userProfile?.cooperativeOrgId) candidateCoopIds.add(userProfile.cooperativeOrgId);
+          candidateCoopIds.add(`org_coop_${ownerUid}`);
+          candidateCoopIds.add(`org_coop_${ownerUid.slice(0, 8)}`);
+
+          const memberFarmerIds = new Set<string>();
+
+          for (const cid of candidateCoopIds) {
+            try {
+              const assocSnap = await getDocs(query(collection(db, "farmerCooperativeAssociations"), where("cooperativeOrgId", "==", cid)));
+              assocSnap.forEach((d) => {
+                const data = d.data() as any;
+                if (data.status !== "withdrawn" && data.status !== "inactive" && data.farmerId) {
+                  memberFarmerIds.add(data.farmerId);
+                }
+              });
+
+              const memSnap = await getDocs(query(collection(db, "cooperative_memberships"), where("cooperativeOrgId", "==", cid)));
+              memSnap.forEach((d) => {
+                const data = d.data() as any;
+                if (data.farmerId) {
+                  memberFarmerIds.add(data.farmerId);
+                }
+              });
+
+              const coopFarmSnap = await getDocs(query(farmsRef, where("cooperativeOrgId", "==", cid)));
+              coopFarmSnap.forEach((d) => {
+                const f = { ...d.data(), id: d.id } as FarmRecord;
+                fetchedFarmsMap.set(f.id, f);
+                if (f.farmerId) memberFarmerIds.add(f.farmerId);
+              });
+            } catch (e) {
+              console.warn("Coop association load warning:", e);
+            }
+          }
+
+          for (const fId of memberFarmerIds) {
+            try {
+              const fSnap = await getDocs(query(farmsRef, where("farmerId", "==", fId)));
+              fSnap.forEach((d) => {
+                const f = { ...d.data(), id: d.id } as FarmRecord;
+                fetchedFarmsMap.set(f.id, f);
+              });
+            } catch (e) {
+              console.warn("Member farm load warning:", e);
+            }
+          }
         }
 
-        console.error("Could not fetch user farms:", error);
-
-        // Do not leave potentially stale private records visible.
-        setFarms([]);
+        if (active && auth.currentUser?.uid === ownerUid) {
+          setFarms(Array.from(fetchedFarmsMap.values()));
+        }
+      } catch (err) {
+        console.error("Error loading farms:", err);
       }
-    );
+    };
+
+    loadAllFarms();
 
     return () => {
       active = false;
-      unsubscribe();
     };
-  }, [user]);
+  }, [user, userRole, userProfile, cooperativeProfile]);
 
 
   const loginWithGoogle = async () => {

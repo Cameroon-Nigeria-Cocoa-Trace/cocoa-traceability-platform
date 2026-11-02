@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 
 export default function ProductionRecordsPage() {
-  const { user, farms, loading: authLoading } = useFirebase();
+  const { user, farms, userProfile, userRole, loading: authLoading } = useFirebase();
 
   const requestVersion = useRef(0);
 
@@ -45,13 +45,40 @@ export default function ProductionRecordsPage() {
     });
   }, [user]);
 
-  // Show only farms belonging to the authenticated Firebase UID.
+  const isCooperativeUser = useMemo(() => {
+    return (
+      userRole === "cooperative" ||
+      userProfile?.role === "cooperative" ||
+      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+    );
+  }, [userRole, userProfile, farms]);
+
+  const [selectedFarmerFilter, setSelectedFarmerFilter] = useState<string>("ALL");
+
+  const associatedFarmers = useMemo(() => {
+    const map = new Map<string, string>();
+    farms.forEach((f) => {
+      if (f.farmerId && f.farmerId !== user?.uid) {
+        map.set(f.farmerId, f.farmerName || `Farmer ${f.farmerId.slice(-6)}`);
+      }
+    });
+    return Array.from(map.entries()).map(([farmerId, farmerName]) => ({ farmerId, farmerName }));
+  }, [farms, user]);
+
+  // Show only farms belonging to the authenticated Firebase UID or associated member farms for cooperatives.
   const userFarms = useMemo(() => {
     if (!user) {
       return [];
     }
+    if (isCooperativeUser) {
+      let list = farms;
+      if (selectedFarmerFilter !== "ALL") {
+        list = list.filter((f) => f.farmerId === selectedFarmerFilter);
+      }
+      return list;
+    }
     return farms.filter((farm) => farm.farmerId === user.uid);
-  }, [farms, user]);
+  }, [farms, user, isCooperativeUser, selectedFarmerFilter]);
 
   const [selectedFarmId, setSelectedFarmId] = useState<string>("");
   const [records, setRecords] = useState<ProductionRecord[]>([]);
@@ -144,7 +171,7 @@ export default function ProductionRecordsPage() {
       userFarms.some(
         (farm) =>
           farm.id === selectedFarmId &&
-          farm.farmerId === ownerUid
+          (farm.farmerId === ownerUid || isCooperativeUser)
       );
 
     if (
@@ -500,27 +527,49 @@ export default function ProductionRecordsPage() {
 
         {/* Farm Selector Banner */}
         <div className="mb-8 rounded-3xl border border-[#dfe7d8] bg-white p-5 sm:p-6 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf7e8] text-[#2d6130]">
-                <MapPin size={22} />
-              </div>
-              <div>
-                <label htmlFor="farmSelect" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider">
-                  Target Cameroon Farm Plot
-                </label>
-                <select
-                  id="farmSelect"
-                  value={selectedFarmId}
-                  onChange={(e) => setSelectedFarmId(e.target.value)}
-                  className="mt-1 rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-1.5 text-sm font-bold text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
-                >
-                  {userFarms.map((farm) => (
-                    <option key={farm.id} value={farm.id}>
-                      {farm.farmName} ({farm.region}) — {farm.sizeHectares || 3.5} Ha
-                    </option>
-                  ))}
-                </select>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-4">
+              {isCooperativeUser && (
+                <div>
+                  <label htmlFor="farmerFilter" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider">
+                    Associated Farmer Filter
+                  </label>
+                  <select
+                    id="farmerFilter"
+                    value={selectedFarmerFilter}
+                    onChange={(e) => setSelectedFarmerFilter(e.target.value)}
+                    className="mt-1 rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-1.5 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
+                  >
+                    <option value="ALL">All Associated Farmers ({associatedFarmers.length})</option>
+                    {associatedFarmers.map((f) => (
+                      <option key={f.farmerId} value={f.farmerId}>
+                        {f.farmerName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf7e8] text-[#2d6130]">
+                  <MapPin size={22} />
+                </div>
+                <div>
+                  <label htmlFor="farmSelect" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider">
+                    Target Cameroon Farm Plot
+                  </label>
+                  <select
+                    id="farmSelect"
+                    value={selectedFarmId}
+                    onChange={(e) => setSelectedFarmId(e.target.value)}
+                    className="mt-1 rounded-xl border border-[#dfe7d8] bg-[#fafcf9] px-3 py-1.5 text-sm font-bold text-[#10251d] outline-none focus:border-[#2d6130] cursor-pointer"
+                  >
+                    {userFarms.map((farm) => (
+                      <option key={farm.id} value={farm.id}>
+                        {farm.farmName} {farm.farmerName ? `(${farm.farmerName})` : ""} — {farm.sizeHectares || 3.5} Ha
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 

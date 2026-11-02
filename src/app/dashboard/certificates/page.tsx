@@ -144,7 +144,7 @@ function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
 }
 
 export default function OriginCertificatesPage() {
-  const { user, farms, loading: authLoading, isCooperative, userRole } = useFirebase();
+  const { user, farms, loading: authLoading, isCooperative, userRole, userProfile } = useFirebase();
 
   const apiClient = useMemo(() => {
     return createCocoaApiClient(async () => {
@@ -153,8 +153,30 @@ export default function OriginCertificatesPage() {
     });
   }, [user]);
 
+  const isCooperativeUser = useMemo(() => {
+    return (
+      userRole === "cooperative" ||
+      userProfile?.role === "cooperative" ||
+      isCooperative ||
+      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+    );
+  }, [userRole, userProfile, isCooperative, farms]);
+
+  const [selectedFarmerFilter, setSelectedFarmerFilter] = useState<string>("ALL");
+
+  const associatedFarmers = useMemo(() => {
+    const map = new Map<string, string>();
+    farms.forEach((f) => {
+      if (f.farmerId && f.farmerId !== user?.uid) {
+        map.set(f.farmerId, f.farmerName || `Farmer ${f.farmerId.slice(-6)}`);
+      }
+    });
+    return Array.from(map.entries()).map(([farmerId, farmerName]) => ({ farmerId, farmerName }));
+  }, [farms, user]);
+
   // Tab State: "certificates" | "applications"
   const [activeTab, setActiveTab] = useState<"certificates" | "applications">("certificates");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Certificates & Applications State
   const [certificates, setCertificates] = useState<TraceCertificate[]>([]);
@@ -162,6 +184,43 @@ export default function OriginCertificatesPage() {
   const [lots, setLots] = useState<CocoaLot[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const filteredCertificates = useMemo(() => {
+    let list = certificates;
+    if (isCooperativeUser && selectedFarmerFilter !== "ALL") {
+      const farmerFarmIds = new Set(farms.filter(f => f.farmerId === selectedFarmerFilter).map(f => f.id));
+      const farmerLotIds = new Set(lots.filter(l => farmerFarmIds.has(l.farmId)).map(l => l.lotId));
+      list = list.filter(c => farmerFarmIds.has(c.farmId) || farmerLotIds.has(c.lotId));
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (c) =>
+          c.certificateNumber.toLowerCase().includes(q) ||
+          c.lotId.toLowerCase().includes(q) ||
+          c.productionPeriod?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [certificates, isCooperativeUser, selectedFarmerFilter, farms, lots, searchQuery]);
+
+  const filteredApplications = useMemo(() => {
+    let list = applications;
+    if (isCooperativeUser && selectedFarmerFilter !== "ALL") {
+      const farmerFarmIds = new Set(farms.filter(f => f.farmerId === selectedFarmerFilter).map(f => f.id));
+      list = list.filter(a => farmerFarmIds.has(a.farmId) || a.applicantId === selectedFarmerFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(
+        (a) =>
+          a.applicationNumber.toLowerCase().includes(q) ||
+          a.lotId.toLowerCase().includes(q) ||
+          a.status.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [applications, isCooperativeUser, selectedFarmerFilter, farms, searchQuery]);
 
   // Modals & Inspector State
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -199,9 +258,6 @@ export default function OriginCertificatesPage() {
   const [issuingAppId, setIssuingAppId] = useState<string | null>(null);
   const [issueLoading, setIssueLoading] = useState(false);
   const [issueError, setIssueError] = useState<string | null>(null);
-
-  // Search & Filter
-  const [searchQuery, setSearchQuery] = useState("");
 
   // Load Cocoa Lots (for application form & cross-referencing)
   const loadLots = useCallback(async () => {
@@ -422,29 +478,6 @@ export default function OriginCertificatesPage() {
     }
   };
 
-  // Filtered lists
-  const filteredCertificates = useMemo(() => {
-    if (!searchQuery.trim()) return certificates;
-    const q = searchQuery.toLowerCase();
-    return certificates.filter(
-      (c) =>
-        c.certificateNumber.toLowerCase().includes(q) ||
-        c.lotId.toLowerCase().includes(q) ||
-        c.productionPeriod?.toLowerCase().includes(q)
-    );
-  }, [certificates, searchQuery]);
-
-  const filteredApplications = useMemo(() => {
-    if (!searchQuery.trim()) return applications;
-    const q = searchQuery.toLowerCase();
-    return applications.filter(
-      (a) =>
-        a.applicationNumber.toLowerCase().includes(q) ||
-        a.lotId.toLowerCase().includes(q) ||
-        a.status.toLowerCase().includes(q)
-    );
-  }, [applications, searchQuery]);
-
   return (
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
       <Navbar />
@@ -491,6 +524,27 @@ export default function OriginCertificatesPage() {
             </Link>
           </div>
         </div>
+
+        {isCooperativeUser && (
+          <div className="mb-6 rounded-3xl border border-[#dfe7d8] bg-white p-5 shadow-sm">
+            <label htmlFor="farmerFilter" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider mb-1">
+              Associated Farmer Filter
+            </label>
+            <select
+              id="farmerFilter"
+              value={selectedFarmerFilter}
+              onChange={(e) => setSelectedFarmerFilter(e.target.value)}
+              className="w-full sm:w-80 rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
+            >
+              <option value="ALL">All Associated Farmers ({associatedFarmers.length})</option>
+              {associatedFarmers.map((f) => (
+                <option key={f.farmerId} value={f.farmerId}>
+                  {f.farmerName} ({f.farmerId.slice(-6)})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Tab Controls & Search Bar */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

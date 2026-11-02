@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 
 export default function CertificateHoldingsPage() {
-  const { user } = useFirebase();
+  const { user, farms, userProfile, userRole, isCooperative } = useFirebase();
 
   const apiClient = useMemo(() => {
     return createCocoaApiClient(async () => {
@@ -42,6 +42,27 @@ export default function CertificateHoldingsPage() {
       return await user.getIdToken();
     });
   }, [user]);
+
+  const isCooperativeUser = useMemo(() => {
+    return (
+      userRole === "cooperative" ||
+      userProfile?.role === "cooperative" ||
+      isCooperative ||
+      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+    );
+  }, [userRole, userProfile, isCooperative, farms]);
+
+  const [selectedFarmerFilter, setSelectedFarmerFilter] = useState<string>("ALL");
+
+  const associatedFarmers = useMemo(() => {
+    const map = new Map<string, string>();
+    farms.forEach((f) => {
+      if (f.farmerId && f.farmerId !== user?.uid) {
+        map.set(f.farmerId, f.farmerName || `Farmer ${f.farmerId.slice(-6)}`);
+      }
+    });
+    return Array.from(map.entries()).map(([farmerId, farmerName]) => ({ farmerId, farmerName }));
+  }, [farms, user]);
 
   const [holdings, setHoldings] = useState<CertificateHolding[]>([]);
   const [loading, setLoading] = useState(false);
@@ -127,6 +148,13 @@ export default function CertificateHoldingsPage() {
   // Filtered Holdings
   const filteredHoldings = useMemo(() => {
     return holdings.filter((h) => {
+      if (isCooperativeUser && selectedFarmerFilter !== "ALL") {
+        const farmerFarmIds = new Set(farms.filter(f => f.farmerId === selectedFarmerFilter).map(f => f.id));
+        if (!farmerFarmIds.has(h.farmId) && h.holderId !== selectedFarmerFilter) {
+          return false;
+        }
+      }
+
       const matchesStatus =
         statusFilter === "all" || h.status === statusFilter;
       const matchesSearch =
@@ -136,7 +164,7 @@ export default function CertificateHoldingsPage() {
         h.lotId.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesStatus && matchesSearch;
     });
-  }, [holdings, statusFilter, searchQuery]);
+  }, [holdings, statusFilter, searchQuery, isCooperativeUser, selectedFarmerFilter, farms]);
 
   // Inventory Totals
   const activeVolume = useMemo(() => {
@@ -155,6 +183,27 @@ export default function CertificateHoldingsPage() {
 
       <main className="mx-auto max-w-7xl px-4 pt-28 pb-16 sm:px-6 sm:pt-32 lg:px-8">
         <DashboardWorkflowNav currentTab="traceability-certification" />
+
+        {isCooperativeUser && (
+          <div className="mb-6 rounded-3xl border border-[#dfe7d8] bg-white p-5 shadow-sm">
+            <label htmlFor="farmerFilter" className="block text-xs font-bold text-[#6f7e73] uppercase tracking-wider mb-1">
+              Associated Farmer Filter
+            </label>
+            <select
+              id="farmerFilter"
+              value={selectedFarmerFilter}
+              onChange={(e) => setSelectedFarmerFilter(e.target.value)}
+              className="w-full sm:w-80 rounded-xl border border-[#dfe7d8] bg-[#fafcf9] p-3 text-xs font-bold text-[#10251d] outline-none focus:border-[#2d6130]"
+            >
+              <option value="ALL">All Associated Farmers ({associatedFarmers.length})</option>
+              {associatedFarmers.map((f) => (
+                <option key={f.farmerId} value={f.farmerId}>
+                  {f.farmerName} ({f.farmerId.slice(-6)})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Top Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
