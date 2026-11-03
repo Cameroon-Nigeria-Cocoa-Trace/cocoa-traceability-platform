@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { firebaseAdminDb, firebaseAdminAuth } from "@/lib/firebaseAdmin";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
 import { validateCameroonFarmLocation } from "@/lib/geo/cameroonBoundary";
 import { isAuthorizedCadastralReviewer } from "@/lib/cadastralAuthorization";
@@ -181,6 +181,63 @@ export async function POST(req: NextRequest) {
       isCooperativeRegistering = true;
     }
 
+    // Process new farmer credentials if provided by cooperative
+    const rawCredentialType =
+      typeof input.farmerCredentialType === "string" && input.farmerCredentialType === "phone"
+        ? "phone"
+        : "email";
+    const rawPassword = typeof input.farmerPassword === "string" ? input.farmerPassword.trim() : "";
+    const rawPhone = typeof safeInput.farmerPhone === "string" ? safeInput.farmerPhone.trim() : "";
+    const rawEmail = typeof safeInput.farmerEmail === "string" ? safeInput.farmerEmail.trim() : "";
+    const rawFarmerName =
+      (typeof safeInput.farmerName === "string" && safeInput.farmerName.trim()) || "Member Farmer";
+
+    let authEmail = rawEmail;
+    if (rawCredentialType === "phone") {
+      const cleanPhone = rawPhone.replace(/\D/g, "");
+      authEmail = cleanPhone
+        ? `phone_${cleanPhone}@phone.tracetrade.cm`
+        : `phone_${Date.now()}@phone.tracetrade.cm`;
+    } else if (!authEmail) {
+      const slug = rawFarmerName.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 16);
+      authEmail = `${slug}.${Date.now().toString(36)}@cocoatrace.cm`;
+    }
+
+    // If cooperative registered a new farmer and provided a password, create or link Firebase Auth account
+    if (isCooperativeRegistering && rawPassword && rawPassword.length >= 6) {
+      try {
+        let authUser;
+        try {
+          authUser = await firebaseAdminAuth.createUser({
+            email: authEmail,
+            password: rawPassword,
+            displayName: rawFarmerName,
+          });
+        } catch (createErr: unknown) {
+          const errCode = (createErr as { code?: string })?.code;
+          if (errCode === "auth/email-already-exists") {
+            authUser = await firebaseAdminAuth.getUserByEmail(authEmail);
+            try {
+              await firebaseAdminAuth.updateUser(authUser.uid, {
+                password: rawPassword,
+                displayName: rawFarmerName,
+              });
+            } catch (updateErr) {
+              console.warn("Notice: could not update existing Auth user password:", updateErr);
+            }
+          } else {
+            console.warn("Notice: Firebase Auth user creation error:", createErr);
+          }
+        }
+
+        if (authUser?.uid) {
+          effectiveFarmerId = authUser.uid;
+        }
+      } catch (authErr) {
+        console.warn("Notice: Firebase Auth account setup error:", authErr);
+      }
+    }
+
     // Explicitly construct the persisted record.
     // Ownership and official metadata are server-controlled.
     const newFarm: Record<string, unknown> = {
@@ -189,9 +246,9 @@ export async function POST(req: NextRequest) {
       farmId,
       farmUniqueId: `TTN-CM-${now.getFullYear()}-${uniqueSuffix}`,
       farmerId: effectiveFarmerId,
-      farmerName:
-        (typeof safeInput.farmerName === "string" && safeInput.farmerName.trim()) ||
-        "Registered Farmer",
+      farmerName: rawFarmerName,
+      farmerPhone: rawPhone || undefined,
+      farmerEmail: rawEmail || (rawCredentialType === "email" ? authEmail : undefined),
       createdAt: nowIso,
       registrationDate: nowIso.split("T")[0],
       sizeHectares:
@@ -243,63 +300,52 @@ export async function POST(req: NextRequest) {
     // Existing farm documents cannot be overwritten using a supplied ID.
     await farmRef.create(newFarm);
 
-    // 5. If cooperative registered for a farmer, ensure user profile and automatic cooperative associations exist
+    // 5. If cooperative registered for a farmer, ensure user profile and automatic cooperative associations exist with full permissions
     if (isCooperativeRegistering && effectiveFarmerId !== user.userId) {
       try {
         const farmerUserRef = firebaseAdminDb.collection("users").doc(effectiveFarmerId);
-        const farmerSnap = await farmerUserRef.get();
-        if (!farmerSnap.exists) {
-          await farmerUserRef.set({
+        const resolvedEmail =
+          rawCredentialType === "email"
+            ? (rawEmail || authEmail)
+            : (rawEmail || authEmail);
+
+        await farmerUserRef.set(
+          {
             id: effectiveFarmerId,
             uid: effectiveFarmerId,
-            displayName: safeInput.farmerName || "Member Farmer",
-            fullName: safeInput.farmerName || "Member Farmer",
-            email: safeInput.farmerEmail || `${effectiveFarmerId}@cocoatrace.cm`,
-            phone: safeInput.farmerPhone || "",
+            displayName: rawFarmerName,
+            fullName: rawFarmerName,
+            email: resolvedEmail,
+            phone: rawPhone,
+            credentialType: rawCredentialType,
             role: "farmer",
             accountType: "farmer",
             cooperativeOrgId: coopInfo.primaryOrgId || user.userId,
             cooperativeUserId: user.userId,
-            cooperativeName: safeInput.cooperative || "Cooperative Society",
+            cooperativeName: (safeInput.cooperative as string) || "Cooperative Society",
             createdAt: nowIso,
             updatedAt: nowIso,
-          }, { merge: true });
-        }
-
-        // Active association in farmerCooperativeAssociations
-        const assocKey1 = `${effectiveFarmerId}_${user.userId}`;
-        await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey1).set({
-          id: assocKey1,
-          farmerId: effectiveFarmerId,
-          farmerName: safeInput.farmerName || "Associated Farmer",
-          cooperativeUserId: user.userId,
-          cooperativeOrgId: coopInfo.primaryOrgId || user.userId,
-          cooperativeName: safeInput.cooperative || "Cooperative Society",
-          status: "active",
-          farmScope: "all_farms",
-          manageEverything: true,
-          permissions: {
-            farmsManagement: true,
-            harvestRecords: true,
-            lotCreation: true,
-            certificateIssuance: true,
-            tradeExecution: true,
           },
-          linkedAt: nowIso,
-          updatedAt: nowIso,
-        }, { merge: true });
+          { merge: true }
+        );
 
-        if (coopInfo.primaryOrgId && coopInfo.primaryOrgId !== user.userId) {
-          const assocKey2 = `${effectiveFarmerId}_${coopInfo.primaryOrgId}`;
-          await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey2).set({
-            id: assocKey2,
+        // Active association in farmerCooperativeAssociations with FULL cooperative management rights
+        const assocKey1 = `${effectiveFarmerId}_${user.userId}`;
+        await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey1).set(
+          {
+            id: assocKey1,
+            associationId: assocKey1,
             farmerId: effectiveFarmerId,
-            farmerName: safeInput.farmerName || "Associated Farmer",
+            farmerName: rawFarmerName,
+            farmerEmail: resolvedEmail,
+            farmerPhone: rawPhone,
             cooperativeUserId: user.userId,
-            cooperativeOrgId: coopInfo.primaryOrgId,
-            cooperativeName: safeInput.cooperative || "Cooperative Society",
+            cooperativeOrgId: coopInfo.primaryOrgId || user.userId,
+            cooperativeOrgName: (safeInput.cooperative as string) || "Cooperative Society",
+            cooperativeName: (safeInput.cooperative as string) || "Cooperative Society",
             status: "active",
             farmScope: "all_farms",
+            delegatedFarmIds: ["ALL"],
             manageEverything: true,
             permissions: {
               farmsManagement: true,
@@ -307,32 +353,87 @@ export async function POST(req: NextRequest) {
               lotCreation: true,
               certificateIssuance: true,
               tradeExecution: true,
+              productionInventory: true,
+              certificatesManagement: true,
+              tradingManagement: true,
             },
+            associatedAt: nowIso,
             linkedAt: nowIso,
             updatedAt: nowIso,
-          }, { merge: true });
+          },
+          { merge: true }
+        );
+
+        if (coopInfo.primaryOrgId && coopInfo.primaryOrgId !== user.userId) {
+          const assocKey2 = `${effectiveFarmerId}_${coopInfo.primaryOrgId}`;
+          await firebaseAdminDb.collection("farmerCooperativeAssociations").doc(assocKey2).set(
+            {
+              id: assocKey2,
+              associationId: assocKey2,
+              farmerId: effectiveFarmerId,
+              farmerName: rawFarmerName,
+              farmerEmail: resolvedEmail,
+              farmerPhone: rawPhone,
+              cooperativeUserId: user.userId,
+              cooperativeOrgId: coopInfo.primaryOrgId,
+              cooperativeOrgName: (safeInput.cooperative as string) || "Cooperative Society",
+              cooperativeName: (safeInput.cooperative as string) || "Cooperative Society",
+              status: "active",
+              farmScope: "all_farms",
+              delegatedFarmIds: ["ALL"],
+              manageEverything: true,
+              permissions: {
+                farmsManagement: true,
+                harvestRecords: true,
+                lotCreation: true,
+                certificateIssuance: true,
+                tradeExecution: true,
+                productionInventory: true,
+                certificatesManagement: true,
+                tradingManagement: true,
+              },
+              associatedAt: nowIso,
+              linkedAt: nowIso,
+              updatedAt: nowIso,
+            },
+            { merge: true }
+          );
         }
 
         // Active membership in cooperative_memberships
         const memKey = `mem_${effectiveFarmerId}_${user.userId}`;
-        await firebaseAdminDb.collection("cooperative_memberships").doc(memKey).set({
-          id: memKey,
-          cooperativeOrgId: coopInfo.primaryOrgId || user.userId,
-          farmerId: effectiveFarmerId,
-          farmerName: safeInput.farmerName || "Associated Farmer",
-          farmerPhone: safeInput.farmerPhone || "",
-          villageOrCommunity: safeInput.village || safeInput.region || "",
-          status: "active",
-          joinedAt: nowIso,
-          updatedAt: nowIso,
-        }, { merge: true });
+        await firebaseAdminDb.collection("cooperative_memberships").doc(memKey).set(
+          {
+            id: memKey,
+            cooperativeOrgId: coopInfo.primaryOrgId || user.userId,
+            farmerId: effectiveFarmerId,
+            farmerName: rawFarmerName,
+            farmerPhone: rawPhone,
+            farmerEmail: resolvedEmail,
+            villageOrCommunity: (safeInput.village as string) || (safeInput.region as string) || "",
+            status: "active",
+            joinedAt: nowIso,
+            updatedAt: nowIso,
+          },
+          { merge: true }
+        );
       } catch (assocErr) {
         console.warn("Notice: could not auto-create cooperative association on farm registration:", assocErr);
       }
     }
 
     return NextResponse.json(
-      { success: true, farm: newFarm },
+      {
+        success: true,
+        farm: newFarm,
+        farmerAccount: {
+          farmerId: effectiveFarmerId,
+          farmerName: rawFarmerName,
+          credentialType: rawCredentialType,
+          identifier: rawCredentialType === "email" ? rawEmail : rawPhone,
+          accountCreated: Boolean(rawPassword && rawPassword.length >= 6),
+        },
+      },
       { status: 201 }
     );
   } catch (error: unknown) {

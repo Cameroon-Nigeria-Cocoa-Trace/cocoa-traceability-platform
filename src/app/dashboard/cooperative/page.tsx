@@ -216,8 +216,12 @@ function CooperativeDashboardContent() {
   const [farmFarmerIdInput, setFarmFarmerIdInput] = useState("");
   // New farmer fields
   const [newFarmerName, setNewFarmerName] = useState("");
+  const [newFarmerCredentialType, setNewFarmerCredentialType] = useState<"email" | "phone">("email");
   const [newFarmerPhone, setNewFarmerPhone] = useState("");
   const [newFarmerEmail, setNewFarmerEmail] = useState("");
+  const [newFarmerPassword, setNewFarmerPassword] = useState("");
+  const [newFarmerConfirmPassword, setNewFarmerConfirmPassword] = useState("");
+  const [showFarmerPassword, setShowFarmerPassword] = useState(false);
   const [newFarmerNationalId, setNewFarmerNationalId] = useState("");
   // Farm & Location fields
   const [farmNameInput, setFarmNameInput] = useState("");
@@ -1011,11 +1015,42 @@ function CooperativeDashboardContent() {
         setFarmModalTab("farmer");
         return;
       }
+
+      if (newFarmerCredentialType === "email") {
+        if (!newFarmerEmail.trim() || !newFarmerEmail.includes("@")) {
+          setError("Please provide a valid email address for the new farmer.");
+          setFarmModalTab("farmer");
+          return;
+        }
+      } else {
+        const cleanPhone = newFarmerPhone.replace(/\D/g, "");
+        if (cleanPhone.length < 8) {
+          setError("Please provide a valid phone number (at least 8 digits) for the new farmer.");
+          setFarmModalTab("farmer");
+          return;
+        }
+      }
+
+      if (!newFarmerPassword || newFarmerPassword.length < 6) {
+        setError("Farmer account password must be at least 6 characters.");
+        setFarmModalTab("farmer");
+        return;
+      }
+
+      if (newFarmerPassword !== newFarmerConfirmPassword) {
+        setError("Farmer account passwords do not match. Please verify and confirm.");
+        setFarmModalTab("farmer");
+        return;
+      }
+
       effectiveFarmerName = newFarmerName.trim();
       effectiveFarmerPhone = newFarmerPhone.trim();
       const slug = effectiveFarmerName.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 16);
       effectiveFarmerId = `farmer_${slug}_${Date.now().toString(36)}`;
-      effectiveFarmerEmail = newFarmerEmail.trim() || `${slug}.${Date.now().toString(36)}@cocoatrace.cm`;
+      effectiveFarmerEmail =
+        newFarmerCredentialType === "email"
+          ? newFarmerEmail.trim()
+          : (newFarmerEmail.trim() || `phone_${effectiveFarmerPhone.replace(/\D/g, "")}@phone.tracetrade.cm`);
     }
 
     if (!farmNameInput.trim()) {
@@ -1041,6 +1076,8 @@ function CooperativeDashboardContent() {
         farmerName: effectiveFarmerName,
         farmerPhone: effectiveFarmerPhone || undefined,
         farmerEmail: effectiveFarmerEmail || undefined,
+        farmerCredentialType: farmerMode === "new" ? newFarmerCredentialType : undefined,
+        farmerPassword: farmerMode === "new" ? newFarmerPassword : undefined,
         nationalId: newFarmerNationalId.trim() || undefined,
         region: farmRegionInput || "Southwest Region",
         village: farmVillageInput.trim() || "Manyu Basin",
@@ -1077,7 +1114,7 @@ function CooperativeDashboardContent() {
 
       setSuccessMsg(
         farmerMode === "new"
-          ? `New farmer "${effectiveFarmerName}" and farm "${payload.farmName}" successfully registered and linked to ${coopOrgName}!`
+          ? `New farmer "${effectiveFarmerName}" account created successfully (${newFarmerCredentialType === "email" ? effectiveFarmerEmail : effectiveFarmerPhone}) and linked to ${coopOrgName}!`
           : `Farm "${payload.farmName}" successfully registered on behalf of ${effectiveFarmerName}!`
       );
 
@@ -1088,6 +1125,10 @@ function CooperativeDashboardContent() {
       setNewFarmerPhone("");
       setNewFarmerEmail("");
       setNewFarmerNationalId("");
+      setNewFarmerPassword("");
+      setNewFarmerConfirmPassword("");
+      setNewFarmerCredentialType("email");
+      setShowFarmerPassword(false);
       setFarmGeofencePolygon([]);
       setFarmModalTab("farmer");
 
@@ -1978,68 +2019,213 @@ function CooperativeDashboardContent() {
                       )}
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
+                      {/* Farmer Full Name */}
+                      <div>
+                        <label className="block font-semibold text-[#10251d] mb-1">
+                          Farmer Full Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newFarmerName}
+                          onChange={(e) => setNewFarmerName(e.target.value)}
+                          placeholder="e.g. Alain Nkweta or Jean-Pierre Mbida"
+                          className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                        />
+                      </div>
+
+                      {/* Credential Selection Mode (Email vs Phone) */}
+                      <div className="rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3.5">
+                        <label className="block font-bold text-[#10251d] mb-1 text-xs">
+                          Select Login Credential For This Farmer *
+                        </label>
+                        <p className="text-[11px] text-[#57655d] mb-2.5">
+                          Choose whether this farmer will use their Email Address or Phone Number to log in to CocoaTrace.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNewFarmerCredentialType("email")}
+                            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-bold transition cursor-pointer border ${
+                              newFarmerCredentialType === "email"
+                                ? "bg-[#0b3528] text-white border-[#0b3528] shadow-xs"
+                                : "bg-white text-[#10251d] border-[#dfe7d8] hover:bg-gray-50"
+                            }`}
+                          >
+                            <Mail size={13} />
+                            Email Address
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewFarmerCredentialType("phone")}
+                            className={`flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-bold transition cursor-pointer border ${
+                              newFarmerCredentialType === "phone"
+                                ? "bg-[#0b3528] text-white border-[#0b3528] shadow-xs"
+                                : "bg-white text-[#10251d] border-[#dfe7d8] hover:bg-gray-50"
+                            }`}
+                          >
+                            <Phone size={13} />
+                            Phone Number
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Inputs for Email & Phone */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="block font-semibold text-[#10251d] mb-1">
-                            Farmer Full Name *
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-semibold text-[#10251d]">
+                              {newFarmerCredentialType === "email" ? "Farmer Email Address *" : "Farmer Email Address"}
+                            </label>
+                            {newFarmerCredentialType === "email" ? (
+                              <span className="text-[10px] text-[#2d6130] font-bold uppercase tracking-wider bg-[#edf7e8] px-1.5 py-0.5 rounded-md">
+                                Primary Login
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400 font-medium">Optional</span>
+                            )}
+                          </div>
                           <input
-                            type="text"
-                            required
-                            value={newFarmerName}
-                            onChange={(e) => setNewFarmerName(e.target.value)}
-                            placeholder="e.g. Alain Nkweta or Jean-Pierre Mbida"
-                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                            type="email"
+                            required={newFarmerCredentialType === "email"}
+                            value={newFarmerEmail}
+                            onChange={(e) => setNewFarmerEmail(e.target.value)}
+                            placeholder={newFarmerCredentialType === "email" ? "e.g. alain.nkweta@cocoatrace.cm" : "e.g. alain.nkweta@cocoatrace.cm (Optional)"}
+                            className={`w-full rounded-2xl border p-3 outline-none font-medium text-xs ${
+                              newFarmerCredentialType === "email"
+                                ? "border-[#2d6130] bg-white ring-1 ring-[#2d6130]/20"
+                                : "border-[#dfe7d8] bg-[#f7f8f3]"
+                            }`}
                           />
                         </div>
 
                         <div>
-                          <label className="block font-semibold text-[#10251d] mb-1">
-                            Farmer Phone Number
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-semibold text-[#10251d]">
+                              {newFarmerCredentialType === "phone" ? "Farmer Phone Number *" : "Farmer Phone Number"}
+                            </label>
+                            {newFarmerCredentialType === "phone" ? (
+                              <span className="text-[10px] text-[#2d6130] font-bold uppercase tracking-wider bg-[#edf7e8] px-1.5 py-0.5 rounded-md">
+                                Primary Login
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400 font-medium">Optional</span>
+                            )}
+                          </div>
                           <input
                             type="tel"
+                            required={newFarmerCredentialType === "phone"}
                             value={newFarmerPhone}
                             onChange={(e) => setNewFarmerPhone(e.target.value)}
                             placeholder="e.g. +237 671 234 567"
-                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                            className={`w-full rounded-2xl border p-3 outline-none font-medium text-xs ${
+                              newFarmerCredentialType === "phone"
+                                ? "border-[#2d6130] bg-white ring-1 ring-[#2d6130]/20"
+                                : "border-[#dfe7d8] bg-[#f7f8f3]"
+                            }`}
                           />
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block font-semibold text-[#10251d] mb-1">
-                            Farmer Email Address <span className="font-normal text-gray-500">(Optional)</span>
-                          </label>
-                          <input
-                            type="email"
-                            value={newFarmerEmail}
-                            onChange={(e) => setNewFarmerEmail(e.target.value)}
-                            placeholder="e.g. alain.nkweta@cocoatrace.cm"
-                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
-                          />
+                      {/* Password and Confirmation Section */}
+                      <div className="rounded-2xl border border-[#dfe7d8] bg-white p-4 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#10251d]">
+                            <Lock size={14} className="text-[#2d6130]" />
+                            Farmer Account Password Setup *
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowFarmerPassword(!showFarmerPassword)}
+                            className="text-[11px] font-semibold text-[#2d6130] hover:underline cursor-pointer flex items-center gap-1"
+                          >
+                            <Eye size={12} />
+                            {showFarmerPassword ? "Hide password" : "Show password"}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-[#57655d]">
+                          Enter and confirm a secure password so the farmer can sign in directly to their producer account.
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-semibold text-[#10251d] mb-1">
+                              Account Password *
+                            </label>
+                            <input
+                              type={showFarmerPassword ? "text" : "password"}
+                              required
+                              minLength={6}
+                              value={newFarmerPassword}
+                              onChange={(e) => setNewFarmerPassword(e.target.value)}
+                              placeholder="Minimum 6 characters"
+                              className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block font-semibold text-[#10251d] mb-1">
+                              Confirm Password *
+                            </label>
+                            <input
+                              type={showFarmerPassword ? "text" : "password"}
+                              required
+                              minLength={6}
+                              value={newFarmerConfirmPassword}
+                              onChange={(e) => setNewFarmerConfirmPassword(e.target.value)}
+                              placeholder="Re-enter password to match"
+                              className={`w-full rounded-2xl border p-3 outline-none font-medium text-xs ${
+                                newFarmerConfirmPassword && newFarmerPassword !== newFarmerConfirmPassword
+                                  ? "border-red-400 bg-red-50/50"
+                                  : newFarmerConfirmPassword && newFarmerPassword === newFarmerConfirmPassword
+                                  ? "border-[#2d6130] bg-[#edf7e8]/40"
+                                  : "border-[#dfe7d8] bg-[#f7f8f3] focus:border-[#2d6130]"
+                              }`}
+                            />
+                          </div>
                         </div>
 
-                        <div>
-                          <label className="block font-semibold text-[#10251d] mb-1">
-                            National ID / CNI Number <span className="font-normal text-gray-500">(Optional)</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={newFarmerNationalId}
-                            onChange={(e) => setNewFarmerNationalId(e.target.value)}
-                            placeholder="e.g. CM-110294829"
-                            className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
-                          />
-                        </div>
+                        {/* Password match helper indicator */}
+                        {newFarmerPassword && (
+                          <div className="text-[11px] pt-1">
+                            {newFarmerPassword.length < 6 ? (
+                              <span className="text-amber-700 font-semibold">⚠️ Password must be at least 6 characters long</span>
+                            ) : newFarmerConfirmPassword ? (
+                              newFarmerPassword === newFarmerConfirmPassword ? (
+                                <span className="text-[#2d6130] font-bold flex items-center gap-1">
+                                  <CheckCircle2 size={13} /> Passwords match!
+                                </span>
+                              ) : (
+                                <span className="text-red-600 font-bold flex items-center gap-1">
+                                  ✕ Passwords do not match.
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-gray-500">Please re-enter password in the confirmation field.</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* National ID / CNI */}
+                      <div>
+                        <label className="block font-semibold text-[#10251d] mb-1">
+                          National ID / CNI Number <span className="font-normal text-gray-500">(Optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={newFarmerNationalId}
+                          onChange={(e) => setNewFarmerNationalId(e.target.value)}
+                          placeholder="e.g. CM-110294829"
+                          className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-3 outline-none font-medium text-xs focus:border-[#2d6130]"
+                        />
                       </div>
 
                       <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-3.5 text-xs text-[#1a4936] flex items-start gap-2.5">
                         <ShieldCheck size={18} className="text-[#2d6130] shrink-0 mt-0.5" />
                         <div>
-                          <span className="font-bold">Automatic Cooperative Association:</span> Upon registration, this producer will be automatically registered in the system and bound to <strong>{coopOrgName}</strong> with full delegated management permissions across farms, certificates, and production.
+                          <span className="font-bold">Full Cooperative Delegation Rights:</span> Upon registration, this producer account will be provisioned in the user registry and bound to <strong>{coopOrgName}</strong> with full delegated management permissions across farms, certificates, and production.
                         </div>
                       </div>
                     </div>
@@ -2339,19 +2525,59 @@ function CooperativeDashboardContent() {
                   </div>
 
                   {farmerMode === "new" && (
-                    <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-4 text-xs text-[#1a4936] space-y-2">
-                      <div className="flex items-center gap-1.5 font-bold text-[#0b3528] text-sm">
-                        <CheckCircle2 size={16} className="text-[#2d6130]" />
-                        Farmer Account &amp; Cooperative Linking Summary
+                    <div className="rounded-2xl border border-[#cdebc2] bg-[#edf7e8] p-4 text-xs text-[#1a4936] space-y-2.5 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-[#cdebc2] pb-2">
+                        <div className="flex items-center gap-1.5 font-bold text-[#0b3528] text-sm">
+                          <CheckCircle2 size={16} className="text-[#2d6130]" />
+                          Farmer Account &amp; Cooperative Linking Summary
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFarmModalTab("farmer")}
+                          className="text-[11px] font-bold text-[#2d6130] hover:underline cursor-pointer flex items-center gap-1"
+                        >
+                          Edit Credentials
+                        </button>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                        <div><strong>New Farmer:</strong> {newFarmerName || "Unspecified Name"}</div>
-                        <div><strong>Phone:</strong> {newFarmerPhone || "Not specified"}</div>
-                        <div><strong>Cooperative:</strong> {coopOrgName}</div>
-                        <div><strong>Permissions:</strong> Full Management Rights (Manage Everything)</div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                        <div>
+                          <strong>New Farmer Name:</strong> {newFarmerName || "Unspecified Name"}
+                        </div>
+                        <div>
+                          <strong>Sign-in Credential:</strong>{" "}
+                          <span className="font-semibold text-[#0b3528]">
+                            {newFarmerCredentialType === "email"
+                              ? (newFarmerEmail || "Email Address pending")
+                              : (newFarmerPhone || "Phone Number pending")}
+                          </span>
+                          {" "}
+                          <span className="rounded bg-white/70 px-1 py-0.5 text-[10px] font-bold text-[#2d6130] uppercase">
+                            {newFarmerCredentialType === "email" ? "Email" : "Phone"}
+                          </span>
+                        </div>
+                        <div>
+                          <strong>Account Password:</strong>{" "}
+                          {newFarmerPassword && newFarmerPassword.length >= 6 && newFarmerPassword === newFarmerConfirmPassword ? (
+                            <span className="font-mono text-[#2d6130] font-bold">
+                              ●●●●●● (Confirmed &amp; Validated)
+                            </span>
+                          ) : (
+                            <span className="text-red-600 font-bold">
+                              ⚠️ Password Incomplete (Return to Step 1)
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <strong>Target Cooperative:</strong> {coopOrgName}
+                        </div>
+                        <div className="sm:col-span-2">
+                          <strong>Delegation Status:</strong> Full Management Rights (Farms, Harvests, Cocoa Lots, Certificates, Trades)
+                        </div>
                       </div>
-                      <p className="text-[11px] text-[#2d6130] leading-relaxed pt-1 border-t border-[#cdebc2]">
-                        Upon registration, this farmer account will be automatically provisioned in the user registry, linked to <strong>{coopOrgName}</strong>, and granted full cooperative management permissions for this farm plot and future harvests.
+
+                      <p className="text-[11px] text-[#2d6130] leading-relaxed pt-2 border-t border-[#cdebc2]">
+                        Upon registration, this farmer account will be securely provisioned with their chosen {newFarmerCredentialType === "email" ? "email" : "phone number"} and password, linked to <strong>{coopOrgName}</strong>, and granted full cooperative management permissions automatically.
                       </p>
                     </div>
                   )}
