@@ -15,6 +15,59 @@ import {
   isCooperativeAuthorizedForFarmer,
 } from "@/lib/serverCooperativeAuth";
 
+async function syncCompletedTradesToHoldings() {
+  try {
+    const tradesSnap = await firebaseAdminDb
+      .collection("trades")
+      .where("tradeStatus", "==", "completed")
+      .get();
+
+    const batch = firebaseAdminDb.batch();
+    let batchCount = 0;
+
+    for (const docSnap of tradesSnap.docs) {
+      const trade = docSnap.data();
+      if (!trade.buyerId || !trade.tradeId) continue;
+      const holdingId = `hold_trade_${trade.tradeId}`;
+      const holdingRef = firebaseAdminDb.collection("certificateHoldings").doc(holdingId);
+      const hSnap = await holdingRef.get();
+
+      if (!hSnap.exists) {
+        const isUncertified = trade.certificationType === "uncertified";
+        const now = new Date().toISOString();
+        const holdingData = {
+          holdingId,
+          certificateId: isUncertified ? "uncertified" : (trade.certificateId || `cert_${trade.tradeId}`),
+          certificateNumber: isUncertified ? "UNCERTIFIED COCOA" : (trade.certificateId ? `CERT-${trade.certificateId.slice(-6).toUpperCase()}` : `CERT-${trade.tradeId.slice(-6).toUpperCase()}`),
+          lotId: trade.lotId || "",
+          farmId: trade.sellerHolderId || trade.lotId || "",
+          holderId: trade.buyerId,
+          holderType: trade.buyerHolderType || "farmer",
+          quantityKg: trade.quantityKg || 0,
+          availableQuantityKg: trade.quantityKg || 0,
+          sourceTransferId: trade.tradeId,
+          status: "active",
+          certificationType: isUncertified ? "uncertified" : "certified",
+          isUncertified,
+          createdAt: trade.createdAt || now,
+          updatedAt: now,
+        };
+        batch.set(holdingRef, holdingData);
+        batchCount++;
+        if (batchCount >= 400) {
+          await batch.commit();
+          batchCount = 0;
+        }
+      }
+    }
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+  } catch {
+    // Non-blocking background sync
+  }
+}
+
 export async function GET(req: NextRequest) {
   let userId: string | undefined;
   try {
@@ -25,6 +78,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    await syncCompletedTradesToHoldings();
+
     const { searchParams } = new URL(req.url);
     const certificateId = searchParams.get("certificateId");
     const explicitHolderId = searchParams.get("holderId")?.trim();

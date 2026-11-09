@@ -12,13 +12,18 @@ export function Navbar() {
   const { user, logout, isCooperative, userRole, setUserRole } = useFirebase();
 
   const isCoop = isCooperative || userRole === "cooperative";
-  const dashboardHref = isCoop ? "/dashboard/cooperative" : "/dashboard";
+  const isAgent = userRole === "agent";
+  const dashboardHref = isAgent ? "/dashboard/agent" : isCoop ? "/dashboard/cooperative" : "/dashboard";
 
   const links = [
     ["Home", "/"],
     ["Marketplace", "/marketplace"],
     ...(user ? [["Dashboard", dashboardHref]] : []),
-    ...(isCoop ? [["Cooperative Workspace", "/dashboard/cooperative"]] : [["For Farmers", user ? "/dashboard" : "/signup"]]),
+    ...(isAgent
+      ? [["Agent Workspace", "/dashboard/agent"]]
+      : isCoop
+      ? [["Cooperative Workspace", "/dashboard/cooperative"]]
+      : [["For Farmers", user ? "/dashboard" : "/signup"]]),
     ["Traceability", "/marketplace"],
     ["Portal", "/login"],
   ];
@@ -96,12 +101,14 @@ export function Navbar() {
               <div className="flex items-center gap-2">
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border whitespace-nowrap ${
-                    isCoop
+                    isAgent
+                      ? "bg-amber-400/20 text-amber-300 border-amber-400/40"
+                      : isCoop
                       ? "bg-[#b8f58b]/20 text-[#b8f58b] border-[#b8f58b]/30"
                       : "bg-[#2d6130]/40 text-[#b8f58b] border-[#2d6130]"
                   }`}
                 >
-                  {isCoop ? "Cooperative" : "Farmer"}
+                  {isAgent ? "Agent" : isCoop ? "Cooperative" : "Farmer"}
                 </span>
                 <span className="text-xs font-semibold text-white/80 max-w-[110px] truncate whitespace-nowrap">
                   {user.displayName || user.email}
@@ -121,7 +128,11 @@ export function Navbar() {
             )}
 
             {user ? (
-              isCoop ? (
+              isAgent ? (
+                <Link href="/dashboard/agent" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
+                  Agent Workspace
+                </Link>
+              ) : isCoop ? (
                 <Link href="/dashboard/cooperative" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
                   Cooperative Workspace
                 </Link>

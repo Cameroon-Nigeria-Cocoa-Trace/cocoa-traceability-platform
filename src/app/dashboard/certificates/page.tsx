@@ -19,21 +19,13 @@ import {
   Plus,
   ShieldCheck,
   Building2,
-  Boxes,
   FileCheck2,
-  Calendar,
-  Layers,
   CheckCircle2,
-  Clock,
   AlertCircle,
-  ExternalLink,
   Search,
-  Filter,
   RefreshCw,
   X,
   Eye,
-  ArrowRight,
-  Sparkles,
   ChevronRight,
 } from "lucide-react";
 
@@ -144,7 +136,7 @@ function SignatureCanvas({ onSign }: { onSign: (dataUrl: string) => void }) {
 }
 
 export default function OriginCertificatesPage() {
-  const { user, farms, loading: authLoading, isCooperative, userRole, userProfile } = useFirebase();
+  const { user, farms, isCooperative, userRole, userProfile } = useFirebase();
 
   const apiClient = useMemo(() => {
     return createCocoaApiClient(async () => {
@@ -158,7 +150,7 @@ export default function OriginCertificatesPage() {
       userRole === "cooperative" ||
       userProfile?.role === "cooperative" ||
       isCooperative ||
-      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+      farms.some((f) => f.cooperativeOrgId || (f as unknown as { cooperative?: string }).cooperative)
     );
   }, [userRole, userProfile, isCooperative, farms]);
 

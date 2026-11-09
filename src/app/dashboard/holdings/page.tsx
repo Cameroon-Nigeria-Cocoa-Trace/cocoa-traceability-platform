@@ -48,7 +48,7 @@ export default function CertificateHoldingsPage() {
       userRole === "cooperative" ||
       userProfile?.role === "cooperative" ||
       isCooperative ||
-      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+      farms.some((f) => f.cooperativeOrgId || (f as unknown as { cooperative?: string }).cooperative)
     );
   }, [userRole, userProfile, isCooperative, farms]);
 
@@ -360,9 +360,15 @@ export default function CertificateHoldingsPage() {
                 <div>
                   {/* Status & Identifiers */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[11px] font-extrabold text-[#2d6130] bg-[#edf7e8] px-2.5 py-1 rounded-md">
-                      {holding.certificateNumber}
-                    </span>
+                    {((holding as unknown as { isUncertified?: boolean }).isUncertified || holding.certificationType === "uncertified" || holding.certificateId === "uncertified") ? (
+                      <span className="font-mono text-[11px] font-extrabold text-amber-900 bg-amber-100 px-2.5 py-1 rounded-md">
+                        UNCERTIFIED COCOA
+                      </span>
+                    ) : (
+                      <span className="font-mono text-[11px] font-extrabold text-[#2d6130] bg-[#edf7e8] px-2.5 py-1 rounded-md">
+                        {holding.certificateNumber}
+                      </span>
+                    )}
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
                         holding.status === "active"
@@ -377,6 +383,12 @@ export default function CertificateHoldingsPage() {
                       {holding.status.replace("_", " ")}
                     </span>
                   </div>
+
+                  {((holding as unknown as { isUncertified?: boolean }).isUncertified || holding.certificationType === "uncertified" || holding.certificateId === "uncertified") && (
+                    <div className="mt-2.5 rounded-2xl bg-amber-50 p-2.5 border border-amber-200 text-[11px] text-amber-900 font-medium leading-relaxed">
+                      Uncertified Cocoa. You can resell not more than that exact quantity (<strong>{holding.availableQuantityKg.toLocaleString()} kg</strong>) again in the marketplace.
+                    </div>
+                  )}
 
                   <div className="mt-3">
                     <span className="font-mono text-[10px] text-[#6f7e73] block truncate">
@@ -425,7 +437,7 @@ export default function CertificateHoldingsPage() {
                     </div>
                     {holding.sourceTransferId && (
                       <div className="flex justify-between pt-1 border-t border-[#edf1ea]">
-                        <span>Inward Transfer:</span>
+                        <span>Inward Trade/Transfer:</span>
                         <span className="font-mono text-[10px] text-[#2d6130]">
                           {holding.sourceTransferId.slice(0, 16)}...
                         </span>
@@ -445,13 +457,23 @@ export default function CertificateHoldingsPage() {
                   </button>
 
                   {holding.availableQuantityKg > 0 ? (
-                    <Link
-                      href={`/dashboard/transfers?sourceHoldingId=${holding.holdingId}`}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-[#2d6130] hover:text-[#1a382d]"
-                    >
-                      <span>Transfer</span>
-                      <ArrowLeftRight size={13} />
-                    </Link>
+                    ((holding as unknown as { isUncertified?: boolean }).isUncertified || holding.certificationType === "uncertified" || holding.certificateId === "uncertified") ? (
+                      <Link
+                        href={`/marketplace?lotId=${holding.lotId}&maxQty=${holding.availableQuantityKg}`}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:text-amber-950"
+                      >
+                        <span>Resell in Marketplace</span>
+                        <ArrowUpRight size={13} />
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/dashboard/transfers?sourceHoldingId=${holding.holdingId}`}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-[#2d6130] hover:text-[#1a382d]"
+                      >
+                        <span>Transfer</span>
+                        <ArrowLeftRight size={13} />
+                      </Link>
+                    )
                   ) : (
                     <span className="text-[11px] text-[#8e9d92] italic">
                       Fully Depleted

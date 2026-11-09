@@ -18,6 +18,7 @@ import {
   Clock,
   Sparkles,
   CheckCircle2,
+  Truck,
 } from "lucide-react";
 
 export interface NavGroupItem {
@@ -159,6 +160,99 @@ export const WORKFLOW_GROUPS: NavGroup[] = [
   },
 ];
 
+export const AGENT_WORKFLOW_GROUPS: NavGroup[] = [
+  {
+    id: "warehouse-management",
+    title: "Warehouse Management",
+    subtitle: "Bonded terminals, custodial handoffs & warehouse delivery operations",
+    items: [
+      {
+        name: "Custody & Dispatches",
+        href: "/dashboard/agent",
+        icon: Truck,
+        isReady: true,
+        description: "Corridor inventory aggregation, active custody balance, and warehouse dispatches",
+      },
+      {
+        name: "Warehouse Directory",
+        href: "/dashboard/agent?tab=linkages",
+        icon: Building2,
+        isReady: true,
+        description: "Partner destination warehouses, bonded custody facilities, and reception status",
+      },
+      {
+        name: "Delivery Dispatches",
+        href: "/dashboard/agent?tab=operations",
+        icon: Boxes,
+        isReady: true,
+        description: "Physical deliveries to destination warehouses with zero-fee transfer policy",
+      },
+    ],
+  },
+  {
+    id: "traceability-certification",
+    title: "Traceability",
+    subtitle: "Custody holdings, atomic transfers & bag QR codes",
+    items: [
+      {
+        name: "Certificate Holdings",
+        href: "/dashboard/holdings",
+        icon: Building2,
+        isReady: true,
+        stageBadge: "Stage 3",
+        description: "Distinct custody units across supply-chain holders and physical custody balance",
+      },
+      {
+        name: "Cocoa Transfers",
+        href: "/dashboard/transfers",
+        icon: ArrowLeftRight,
+        isReady: true,
+        stageBadge: "Stage 3",
+        description: "Atomic transfers across verified routes (Farmer -> Agent, Agent -> Warehouse)",
+      },
+      {
+        name: "QR Traceability",
+        href: "/dashboard/qr",
+        icon: QrCode,
+        isReady: true,
+        stageBadge: "Stage 4",
+        description: "Bag-level permanent QR packages & public consumer trace verification",
+      },
+    ],
+  },
+  {
+    id: "cocoa-trade",
+    title: "Cocoa Trade",
+    subtitle: "Exchange catalog, off-platform sales & payments",
+    items: [
+      {
+        name: "Cocoa Marketplace",
+        href: "/marketplace",
+        icon: Store,
+        isReady: true,
+        stageBadge: "Stage 5",
+        description: "Certified and uncertified cocoa listing exchange",
+      },
+      {
+        name: "Trade Management",
+        href: "/dashboard/trades",
+        icon: Handshake,
+        isReady: true,
+        stageBadge: "Stage 5",
+        description: "On-platform purchases & off-platform sale declarations",
+      },
+      {
+        name: "Seller Information & Payments",
+        href: "/dashboard/payments",
+        icon: CreditCard,
+        isReady: false,
+        stageBadge: "Stage 5",
+        description: "Flutterwave 0.5% seller-info access fee checkout",
+      },
+    ],
+  },
+];
+
 interface DashboardWorkflowNavProps {
   currentTab?: string;
   onSelectTab?: (tabId: string) => void;
@@ -168,17 +262,27 @@ export function DashboardWorkflowNav({
   currentTab = "farm-management",
   onSelectTab,
 }: DashboardWorkflowNavProps) {
-  const { isCooperative } = useFirebase();
-  const normalizedTab = currentTab === "production-inventory" ? "cooperative-management" : currentTab;
+  const { isCooperative, userRole } = useFirebase();
+  const isAgent = userRole === "agent";
+  const activeGroups = isAgent ? AGENT_WORKFLOW_GROUPS : WORKFLOW_GROUPS;
+
+  const defaultGroupId = isAgent ? "warehouse-management" : "farm-management";
+  let normalizedTab = currentTab === "production-inventory" ? "cooperative-management" : currentTab;
+  if (isAgent && (normalizedTab === "farm-management" || normalizedTab === "cooperative-management")) {
+    normalizedTab = "warehouse-management";
+  } else if (!normalizedTab) {
+    normalizedTab = defaultGroupId;
+  }
+
   const [selectedGroupOverride, setSelectedGroupOverride] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("active_workflow_group") || null;
+      return localStorage.getItem(isAgent ? "active_agent_workflow_group" : "active_workflow_group") || null;
     }
     return null;
   });
 
   const activeGroupId = selectedGroupOverride ?? normalizedTab;
-  const activeIndexCalculated = WORKFLOW_GROUPS.findIndex((g) => g.id === activeGroupId);
+  const activeIndexCalculated = activeGroups.findIndex((g) => g.id === activeGroupId);
   const activeGroupIndex = activeIndexCalculated >= 0 ? activeIndexCalculated : 0;
 
   return (
@@ -197,14 +301,14 @@ export function DashboardWorkflowNav({
               Unified Workspace Hub
             </div>
             <div className="text-base sm:text-lg font-black text-[#10251d] mt-0.5">
-              Cameroon Cocoa Traceability, Inventory &amp; Trade
+              {isAgent ? "Agent Corridor Custody, Traceability & Trade" : "Cameroon Cocoa Traceability, Inventory & Trade"}
             </div>
           </div>
         </div>
 
         {/* View Switcher Pills */}
         <div className="flex flex-wrap items-center gap-2 bg-[#f7f8f3] p-2 rounded-2xl border border-[#dfe7d8]">
-          {WORKFLOW_GROUPS.map((group, index) => {
+          {activeGroups.map((group, index) => {
             const isSelected = activeGroupIndex === index;
             return (
               <button
@@ -213,7 +317,7 @@ export function DashboardWorkflowNav({
                 onClick={() => {
                   setSelectedGroupOverride(group.id);
                   if (typeof window !== "undefined") {
-                    localStorage.setItem("active_workflow_group", group.id);
+                    localStorage.setItem(isAgent ? "active_agent_workflow_group" : "active_workflow_group", group.id);
                   }
                   if (onSelectTab) onSelectTab(group.id);
                 }}
@@ -236,7 +340,7 @@ export function DashboardWorkflowNav({
       {/* Selected Group Details & Destination Cards */}
       <div className="mt-5">
         {(() => {
-          const group = WORKFLOW_GROUPS[activeGroupIndex];
+          const group = activeGroups[activeGroupIndex];
           return (
             <div>
               <div className="mb-4 flex items-center justify-between">
@@ -261,6 +365,8 @@ export function DashboardWorkflowNav({
                       itemHref = isCooperative ? "/dashboard/cooperative" : "/dashboard/cooperatives";
                     } else if (item.href === "/dashboard" && isCooperative) {
                       itemHref = "/dashboard/cooperative";
+                    } else if (item.href === "/dashboard" && userRole === "agent") {
+                      itemHref = "/dashboard/agent";
                     }
                     return (
                       <Link

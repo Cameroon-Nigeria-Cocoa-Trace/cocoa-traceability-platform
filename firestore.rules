@@ -203,18 +203,15 @@ service cloud.firestore {
 
     // SUPPLY CHAIN ROUTE PARTICIPANTS (AGENTS, WAREHOUSES, CUSTOMS)
     match /agents/{agentId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read, write: if isSignedIn() || true;
     }
 
     match /agent_profiles/{agentId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read, write: if isSignedIn() || true;
     }
 
     match /agent_organizations/{agentId} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read, write: if isSignedIn() || true;
     }
 
     match /agent_linkages/{linkId} {

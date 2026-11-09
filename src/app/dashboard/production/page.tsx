@@ -49,7 +49,7 @@ export default function ProductionRecordsPage() {
     return (
       userRole === "cooperative" ||
       userProfile?.role === "cooperative" ||
-      farms.some((f) => f.cooperativeOrgId || (f as any).cooperative)
+      farms.some((f) => f.cooperativeOrgId || (f as unknown as { cooperative?: string }).cooperative)
     );
   }, [userRole, userProfile, farms]);
 

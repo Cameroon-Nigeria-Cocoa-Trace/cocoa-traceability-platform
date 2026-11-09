@@ -258,6 +258,8 @@ export interface CertificateHolding {
   sourceTransferId?: string; // The exact CertificateTransfer record that created this holding unit
   sourceTransferIds?: string[]; // Legacy/compatibility field (new transfers use distinct holding units)
   status: CertificateHoldingStatus;
+  certificationType?: MarketplaceCertificationType;
+  isUncertified?: boolean;
   createdBy?: string; // Firebase UID of authenticated actor who initialized this holding
   createdAt: string; // ISO 8601 Timestamp
   updatedAt: string; // ISO 8601 Timestamp

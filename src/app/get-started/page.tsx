@@ -31,7 +31,7 @@ const ROLES = [
     description: "Manage regional cocoa purchasing, corridor logistics, and farmer-to-warehouse delivery operations.",
     icon: Truck,
     badge: "Supply Chain",
-    href: "/dashboard/agent",
+    href: "/signup/agent",
   },
   {
     id: "warehouse",
@@ -50,7 +50,15 @@ export default function GetStartedPage() {
 
   const handleContinue = () => {
     if (user) {
-      router.push("/dashboard");
+      if (selectedRole === "agent") {
+        router.push("/dashboard/agent");
+      } else if (selectedRole === "cooperative") {
+        router.push("/dashboard/cooperative");
+      } else if (selectedRole === "warehouse") {
+        router.push("/dashboard/warehouse");
+      } else {
+        router.push("/dashboard");
+      }
       return;
     }
     const roleObj = ROLES.find((r) => r.id === selectedRole);
@@ -122,17 +130,33 @@ export default function GetStartedPage() {
                     </p>
                   </div>
 
-                  <div className="mt-6 flex items-center justify-between border-t border-[#edf1ea] pt-4">
-                    <span className="text-xs font-semibold text-[#2d6130]">
-                      {isSelected ? "Selected" : "Click to select"}
-                    </span>
-                    <div
-                      className={`flex h-6 w-6 items-center justify-center rounded-full border ${
-                        isSelected ? "border-[#0b3528] bg-[#0b3528] text-white" : "border-gray-300 bg-white text-transparent"
-                      }`}
-                    >
-                      <CheckCircle2 size={14} />
+                  <div className="mt-6 flex flex-col gap-3 border-t border-[#edf1ea] pt-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[#2d6130]">
+                        {isSelected ? "Selected" : "Click to select"}
+                      </span>
+                      <div
+                        className={`flex h-6 w-6 items-center justify-center rounded-full border ${
+                          isSelected ? "border-[#0b3528] bg-[#0b3528] text-white" : "border-gray-300 bg-white text-transparent"
+                        }`}
+                      >
+                        <CheckCircle2 size={14} />
+                      </div>
                     </div>
+
+                    {isSelected && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleContinue();
+                        }}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#144737] cursor-pointer"
+                      >
+                        <span>Continue as {role.title}</span>
+                        <ArrowRight size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

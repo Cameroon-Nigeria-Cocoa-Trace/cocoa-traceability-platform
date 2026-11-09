@@ -1433,6 +1433,29 @@ export async function confirmTradeByBuyer(tradeId: string, buyerUid: string): Pr
       updatedAt: now,
     }));
 
+    // Automatically create holding for buyer in certificateHoldings
+    const holdingId = `hold_trade_${trade.tradeId}`;
+    const holdingRef = doc(db, COLLECTIONS.CERTIFICATE_HOLDINGS, holdingId);
+    const isUncertified = trade.certificationType === "uncertified";
+    const holdingData = {
+      holdingId,
+      certificateId: isUncertified ? "uncertified" : (trade.certificateId || `cert_${trade.tradeId}`),
+      certificateNumber: isUncertified ? "UNCERTIFIED COCOA" : (trade.certificateId ? `CERT-${trade.certificateId.slice(-6).toUpperCase()}` : `CERT-${trade.tradeId.slice(-6).toUpperCase()}`),
+      lotId: trade.lotId || "",
+      farmId: trade.sellerHolderId || trade.lotId || "",
+      holderId: cleanBuyerUid,
+      holderType: trade.buyerHolderType || "farmer",
+      quantityKg: trade.quantityKg || 0,
+      availableQuantityKg: trade.quantityKg || 0,
+      sourceTransferId: trade.tradeId,
+      status: "active",
+      certificationType: isUncertified ? "uncertified" : "certified",
+      isUncertified,
+      createdAt: now,
+      updatedAt: now,
+    };
+    tx.set(holdingRef, cleanData(holdingData), { merge: true });
+
     return updatedTrade;
   });
 }

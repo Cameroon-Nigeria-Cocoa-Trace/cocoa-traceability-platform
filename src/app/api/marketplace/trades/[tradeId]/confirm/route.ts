@@ -48,8 +48,8 @@ export async function POST(
           const listingRef = firebaseAdminDb.collection("marketplaceListings").doc(data.listingId);
           const lSnap = await listingRef.get();
           if (lSnap.exists) {
-            const lData = lSnap.data() as any;
-            const restored = (lData.quantityAvailableKg || 0) + (data.quantityKg || 0);
+            const lData = lSnap.data() as { quantityAvailableKg?: number } | undefined;
+            const restored = (lData?.quantityAvailableKg || 0) + (data.quantityKg || 0);
             await listingRef.update({
               quantityAvailableKg: restored,
               listingStatus: "available",

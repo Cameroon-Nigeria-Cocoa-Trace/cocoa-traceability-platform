@@ -5,7 +5,7 @@ import {
   AgentCocoaOperation,
 } from "@/types/agent";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 function cleanData<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -28,47 +28,7 @@ class AgentMemoryStore {
   operations: AgentCocoaOperation[] = [];
 
   constructor() {
-    this.seedDefaults();
-  }
-
-  private seedDefaults() {
-    const defaultOrg: AgentOrganization = {
-      id: "org_agt_crossriver_agg",
-      name: "Cross River Border Commodities & Aggregation Agency",
-      registrationNumber: "RC-AGT-CR-2026-009",
-      licenseCode: "CRS-LBA-CORP-011",
-      headquarters: "Ikom Cocoa Exchange Building, Ikom, Cross River State",
-      contactEmail: "ops@crb-commodities.ng",
-      contactPhone: "+234 802 334 5566",
-      operatingCorridors: [
-        "Ikom-Etung-Mamfe Corridor",
-        "Mfum Border Transit Route",
-        "Calabar Export Corridor",
-      ],
-      status: "active",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    };
-    this.organizations.set(defaultOrg.id, defaultOrg);
-
-    const defaultProfile: AgentProfile = {
-      id: "agt_usr_lead_01",
-      userId: "usr_agent_lead_01",
-      fullName: "Chief Bassey Ekpeyong",
-      email: "bassey.ekpeyong@crb-commodities.ng",
-      phone: "+234 802 334 5566",
-      accountType: "organizational",
-      agencyId: "org_agt_crossriver_agg",
-      agencyName: "Cross River Border Commodities & Aggregation Agency",
-      role: "licensed_buying_agent",
-      licenseNumber: "CRS-LBA-2026-0042",
-      primaryCorridor: "Ikom-Etung-Mamfe Corridor",
-      status: "active",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    };
-    this.profiles.set(defaultProfile.id, defaultProfile);
-    this.profiles.set(defaultProfile.userId, defaultProfile);
+    // Memory store holds only live active session data, no demo seed data
   }
 }
 
@@ -77,17 +37,80 @@ const memoryStore = new AgentMemoryStore();
 export class AgentStore {
   // Profiles
   async getProfile(idOrUserId: string): Promise<AgentProfile | null> {
+    if (!idOrUserId) return null;
+
     try {
-      const snap = await getDoc(doc(db, "agent_profiles", idOrUserId));
+      // 1. Direct document check in agent_profiles
+      let snap = await getDoc(doc(db, "agent_profiles", idOrUserId));
       if (snap.exists()) {
         const data = snap.data() as AgentProfile;
         memoryStore.profiles.set(data.id, data);
         memoryStore.profiles.set(data.userId, data);
         return data;
       }
+
+      // 2. Try prefix agt_usr_
+      if (!idOrUserId.startsWith("agt_usr_")) {
+        snap = await getDoc(doc(db, "agent_profiles", `agt_usr_${idOrUserId}`));
+        if (snap.exists()) {
+          const data = snap.data() as AgentProfile;
+          memoryStore.profiles.set(data.id, data);
+          memoryStore.profiles.set(data.userId, data);
+          return data;
+        }
+      } else {
+        // Try stripping prefix
+        const rawUid = idOrUserId.replace("agt_usr_", "");
+        snap = await getDoc(doc(db, "agent_profiles", rawUid));
+        if (snap.exists()) {
+          const data = snap.data() as AgentProfile;
+          memoryStore.profiles.set(data.id, data);
+          memoryStore.profiles.set(data.userId, data);
+          return data;
+        }
+      }
+
+      // 3. Query by userId in Firestore
+      const q = query(collection(db, "agent_profiles"), where("userId", "==", idOrUserId));
+      const qs = await getDocs(q);
+      if (!qs.empty) {
+        const data = qs.docs[0].data() as AgentProfile;
+        memoryStore.profiles.set(data.id, data);
+        memoryStore.profiles.set(data.userId, data);
+        return data;
+      }
+
+      // 4. Query users collection for registered agent accounts
+      const rawUserUid = idOrUserId.replace("agt_usr_", "");
+      const userSnap = await getDoc(doc(db, "users", rawUserUid));
+      if (userSnap.exists()) {
+        const uData = userSnap.data();
+        if (uData.role === "agent" || uData.accountType === "agent") {
+          const profile: AgentProfile = {
+            id: `agt_usr_${userSnap.id}`,
+            userId: userSnap.id,
+            fullName: uData.displayName || "Licensed Buying Agent",
+            email: uData.email || "",
+            phone: uData.phone || "",
+            accountType: uData.accountType === "personal" ? "personal" : "organizational",
+            agencyId: uData.agencyId || `org_agt_${userSnap.id}`,
+            agencyName: uData.agencyName || "Licensed Buying Agency",
+            role: uData.agentRole || "licensed_buying_agent",
+            licenseNumber: uData.licenseNumber || `CRS-LBA-2026-${userSnap.id.slice(-4)}`,
+            primaryCorridor: uData.primaryCorridor || "Ikom-Etung-Mamfe Cross-Border Corridor",
+            status: "active",
+            createdAt: uData.createdAt || new Date().toISOString(),
+            updatedAt: uData.updatedAt || new Date().toISOString(),
+          };
+          memoryStore.profiles.set(profile.id, profile);
+          memoryStore.profiles.set(profile.userId, profile);
+          return profile;
+        }
+      }
     } catch {
       // Fallback
     }
+
     return (
       memoryStore.profiles.get(idOrUserId) ||
       Array.from(memoryStore.profiles.values()).find(
@@ -101,10 +124,11 @@ export class AgentStore {
     memoryStore.profiles.set(profile.id, profile);
     memoryStore.profiles.set(profile.userId, profile);
     try {
-      await setDoc(
-        doc(db, "agent_profiles", profile.id),
-        cleanData(profile as unknown as Record<string, unknown>)
-      );
+      const payload = cleanData(profile as unknown as Record<string, unknown>);
+      await setDoc(doc(db, "agent_profiles", profile.id), payload);
+      if (profile.userId && profile.userId !== profile.id) {
+        await setDoc(doc(db, "agent_profiles", profile.userId), payload);
+      }
     } catch (err) {
       console.warn("Firestore notice saving agent_profile:", err);
     }
@@ -113,6 +137,7 @@ export class AgentStore {
 
   // Organizations
   async getOrganization(orgId: string): Promise<AgentOrganization | null> {
+    if (!orgId) return null;
     try {
       const snap = await getDoc(doc(db, "agent_organizations", orgId));
       if (snap.exists()) {
@@ -154,9 +179,39 @@ export class AgentStore {
   }
 
   async listLinkages(agentId: string): Promise<AgentLinkageRecord[]> {
-    return Array.from(memoryStore.linkages.values()).filter(
-      (l) => l.agentId === agentId && l.status === "active"
-    );
+    if (!agentId) return [];
+    const listMap = new Map<string, AgentLinkageRecord>();
+
+    const candidateIds = [agentId];
+    if (agentId.startsWith("agt_usr_")) {
+      candidateIds.push(agentId.replace("agt_usr_", ""));
+    } else {
+      candidateIds.push(`agt_usr_${agentId}`);
+    }
+
+    // Check memoryStore first
+    Array.from(memoryStore.linkages.values())
+      .filter((l) => candidateIds.includes(l.agentId) && l.status === "active")
+      .forEach((l) => listMap.set(l.id, l));
+
+    // Also query Firestore for all candidate IDs
+    for (const cid of candidateIds) {
+      try {
+        const q = query(collection(db, "agent_linkages"), where("agentId", "==", cid));
+        const qs = await getDocs(q);
+        qs.forEach((d) => {
+          const record = d.data() as AgentLinkageRecord;
+          if (record.status === "active") {
+            listMap.set(record.id, record);
+            memoryStore.linkages.set(record.id, record);
+          }
+        });
+      } catch {
+        // Return memory results
+      }
+    }
+
+    return Array.from(listMap.values());
   }
 
   // Operations
@@ -174,7 +229,38 @@ export class AgentStore {
   }
 
   async listOperations(agentId: string): Promise<AgentCocoaOperation[]> {
-    return memoryStore.operations.filter((op) => op.agentId === agentId);
+    if (!agentId) return [];
+    const opsMap = new Map<string, AgentCocoaOperation>();
+
+    const candidateIds = [agentId];
+    if (agentId.startsWith("agt_usr_")) {
+      candidateIds.push(agentId.replace("agt_usr_", ""));
+    } else {
+      candidateIds.push(`agt_usr_${agentId}`);
+    }
+
+    // Check memoryStore
+    memoryStore.operations
+      .filter((op) => candidateIds.includes(op.agentId))
+      .forEach((op) => opsMap.set(op.id, op));
+
+    // Also query Firestore for all candidate IDs
+    for (const cid of candidateIds) {
+      try {
+        const q = query(collection(db, "agent_operations"), where("agentId", "==", cid));
+        const qs = await getDocs(q);
+        qs.forEach((d) => {
+          const op = d.data() as AgentCocoaOperation;
+          opsMap.set(op.id, op);
+        });
+      } catch {
+        // Return memory results
+      }
+    }
+
+    const allOps = Array.from(opsMap.values());
+    allOps.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    return allOps;
   }
 }
 

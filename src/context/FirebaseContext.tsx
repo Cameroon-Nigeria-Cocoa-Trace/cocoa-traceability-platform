@@ -86,20 +86,23 @@ export interface UserProfileData {
   id: string;
   displayName: string;
   email: string;
-  role: "farmer" | "cooperative" | "buyer" | "admin";
+  role: "farmer" | "cooperative" | "buyer" | "admin" | "agent";
   accountType?: string;
   cooperativeOrgId?: string;
   cooperativeOrgName?: string;
+  agencyId?: string;
+  agencyName?: string;
 }
 
 interface FirebaseContextType {
   user: User | null;
   loading: boolean;
-  userRole: "farmer" | "cooperative" | "buyer" | "admin";
+  userRole: "farmer" | "cooperative" | "buyer" | "admin" | "agent";
   isCooperative: boolean;
+  isAgent: boolean;
   userProfile: UserProfileData | null;
   cooperativeProfile: CooperativeProfile | null;
-  setUserRole: (role: "farmer" | "cooperative") => void;
+  setUserRole: (role: "farmer" | "cooperative" | "agent") => void;
   login: () => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
@@ -119,6 +122,7 @@ const FirebaseContext = createContext<FirebaseContextType>({
   loading: true,
   userRole: "farmer",
   isCooperative: false,
+  isAgent: false,
   userProfile: null,
   cooperativeProfile: null,
   setUserRole: () => {},
@@ -143,10 +147,10 @@ const FirebaseContext = createContext<FirebaseContextType>({
 export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRoleState] = useState<"farmer" | "cooperative" | "buyer" | "admin">(() => {
+  const [userRole, setUserRoleState] = useState<"farmer" | "cooperative" | "buyer" | "admin" | "agent">(() => {
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem("cocoatrace_user_role");
-      if (cached === "cooperative" || cached === "farmer" || cached === "buyer" || cached === "admin") {
+      if (cached === "cooperative" || cached === "farmer" || cached === "buyer" || cached === "admin" || cached === "agent") {
         return cached;
       }
     }
@@ -158,7 +162,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
   const [farms, setFarms] = useState<FarmRecord[]>([]);
   const [pendingDrafts, setPendingDrafts] = useState<PendingFarmDraft[]>([]);
 
-  const setUserRole = useCallback((newRole: "farmer" | "cooperative") => {
+  const setUserRole = useCallback((newRole: "farmer" | "cooperative" | "agent") => {
     setUserRoleState(newRole);
     if (typeof window !== "undefined") {
       localStorage.setItem("cocoatrace_user_role", newRole);
@@ -262,13 +266,15 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
           const cachedRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_user_role") : null;
           const cachedPendingRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_pending_role") : null;
-          let roleToSet: "farmer" | "cooperative" | "buyer" | "admin" = "farmer";
+          let roleToSet: "farmer" | "cooperative" | "buyer" | "admin" | "agent" = "farmer";
 
           if (userSnap.exists()) {
             const existingData = userSnap.data();
 
-            // Check if existing user account is marked as cooperative
-            if (existingData.role === "cooperative" || existingData.accountType === "cooperative") {
+            // Check if user is agent
+            if (existingData.role === "agent" || existingData.accountType === "agent" || cachedRole === "agent" || cachedPendingRole === "agent") {
+              roleToSet = "agent";
+            } else if (existingData.role === "cooperative" || existingData.accountType === "cooperative") {
               roleToSet = "cooperative";
             } else if (coopProf || coopOrgId) {
               // Has associated cooperative profile or organization
@@ -302,10 +308,14 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
               accountType: roleToSet,
               cooperativeOrgId: existingData.cooperativeOrgId || coopProf?.cooperativeOrgId || coopOrgId,
               cooperativeOrgName: existingData.cooperativeOrgName || coopProf?.cooperativeOrgName || coopOrgName,
+              agencyId: existingData.agencyId,
+              agencyName: existingData.agencyName,
             });
           } else {
             // New user registration
-            if (cachedRole === "cooperative" || cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
+            if (cachedRole === "agent" || cachedPendingRole === "agent") {
+              roleToSet = "agent";
+            } else if (cachedRole === "cooperative" || cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
               roleToSet = "cooperative";
             } else {
               roleToSet = "farmer";
@@ -821,6 +831,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         loading,
         userRole,
         isCooperative: userRole === "cooperative",
+        isAgent: userRole === "agent",
         userProfile,
         cooperativeProfile,
         setUserRole,

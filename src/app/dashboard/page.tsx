@@ -435,7 +435,7 @@ function DashboardContent() {
                     My Registered Cocoa Plots
                   </h2>
                   <p className="text-xs text-[#57655d]">
-                    Farm details from the signed-in farmer's saved records.
+                    Farm details from the signed-in farmer&apos;s saved records.
                   </p>
                 </div>
 
@@ -587,7 +587,11 @@ function DashboardContent() {
                           <MapboxGeofenceMap
                             initialCenter={[9.1245, 4.5912]}
                             initialZoom={13}
-                            activePolygon={farm.geofencePolygon.map((p: any) => Array.isArray(p) ? [p[0], p[1]] : [p.lng || 0, p.lat || 0])}
+                            activePolygon={farm.geofencePolygon.map((p: unknown) => {
+                              if (Array.isArray(p)) return [Number(p[0]) || 0, Number(p[1]) || 0] as [number, number];
+                              const pointObj = p as { lng?: number; lat?: number };
+                              return [pointObj.lng || 0, pointObj.lat || 0] as [number, number];
+                            })}
                             heightClass="h-[220px]"
                             showForestReservesDefault={true}
                           />
