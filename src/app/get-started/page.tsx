@@ -39,7 +39,7 @@ const ROLES = [
     description: "Manage storage facilities, inspect incoming consignments, monitor moisture content, and oversee custodial stock.",
     icon: Building2,
     badge: "Storage & Export",
-    href: "/dashboard/warehouse",
+    href: "/signup/warehouse",
   },
 ];
 

@@ -5,7 +5,16 @@ import {
   CrossRiverStateTraceCertificateRequest,
 } from "@/types/warehouse";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 
 function cleanData<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -88,6 +97,19 @@ export class WarehouseStore {
       const snap = await getDoc(doc(db, "warehouse_facilities", idOrManagerUid));
       if (snap.exists()) {
         const data = snap.data() as WarehouseFacility;
+        memoryStore.facilities.set(data.id, data);
+        memoryStore.facilities.set(data.managerUserId, data);
+        return data;
+      }
+
+      // Query by managerUserId
+      const q = query(
+        collection(db, "warehouse_facilities"),
+        where("managerUserId", "==", idOrManagerUid)
+      );
+      const querySnap = await getDocs(q);
+      if (!querySnap.empty) {
+        const data = querySnap.docs[0].data() as WarehouseFacility;
         memoryStore.facilities.set(data.id, data);
         memoryStore.facilities.set(data.managerUserId, data);
         return data;
@@ -187,7 +209,28 @@ export class WarehouseStore {
   }
 
   async listReceipts(facilityId: string): Promise<WarehouseReceiptRecord[]> {
-    return memoryStore.receipts.filter((r) => r.facilityId === facilityId);
+    const listMap = new Map<string, WarehouseReceiptRecord>();
+    memoryStore.receipts
+      .filter((r) => r.facilityId === facilityId)
+      .forEach((r) => listMap.set(r.id, r));
+
+    try {
+      const q = query(
+        collection(db, "warehouse_receipts"),
+        where("facilityId", "==", facilityId)
+      );
+      const snap = await getDocs(q);
+      snap.forEach((d) => {
+        const item = d.data() as WarehouseReceiptRecord;
+        listMap.set(item.id, item);
+      });
+    } catch {
+      // Fallback
+    }
+
+    return Array.from(listMap.values()).sort(
+      (a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime()
+    );
   }
 
   // Cross River State Full Trace Requests
@@ -207,7 +250,28 @@ export class WarehouseStore {
   }
 
   async listCrsRequests(facilityId: string): Promise<CrossRiverStateTraceCertificateRequest[]> {
-    return Array.from(memoryStore.crsRequests.values()).filter((r) => r.facilityId === facilityId);
+    const listMap = new Map<string, CrossRiverStateTraceCertificateRequest>();
+    Array.from(memoryStore.crsRequests.values())
+      .filter((r) => r.facilityId === facilityId)
+      .forEach((r) => listMap.set(r.id, r));
+
+    try {
+      const q = query(
+        collection(db, "warehouse_crs_requests"),
+        where("facilityId", "==", facilityId)
+      );
+      const snap = await getDocs(q);
+      snap.forEach((d) => {
+        const item = d.data() as CrossRiverStateTraceCertificateRequest;
+        listMap.set(item.id, item);
+      });
+    } catch {
+      // Fallback
+    }
+
+    return Array.from(listMap.values()).sort(
+      (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
+    );
   }
 }
 

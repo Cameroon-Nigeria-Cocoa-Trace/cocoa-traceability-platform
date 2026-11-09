@@ -367,6 +367,8 @@ export function DashboardWorkflowNav({
                       itemHref = "/dashboard/cooperative";
                     } else if (item.href === "/dashboard" && userRole === "agent") {
                       itemHref = "/dashboard/agent";
+                    } else if (item.href === "/dashboard" && userRole === "warehouse") {
+                      itemHref = "/dashboard/warehouse";
                     }
                     return (
                       <Link
