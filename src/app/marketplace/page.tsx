@@ -214,8 +214,20 @@ export default function MarketplacePage() {
     return map;
   }, [listings]);
 
-  const availableHoldings = useMemo(() => {
+  const certifiedHoldings = useMemo(() => {
     return myHoldings.filter((h) => {
+      const isUnc = h.isUncertified || h.certificationType === "uncertified" || h.certificateId === "uncertified";
+      if (isUnc) return false;
+      const listedKg = holdingToListedKgMap[h.holdingId] || 0;
+      const availableKg = h.availableQuantityKg || 0;
+      return listedKg < availableKg;
+    });
+  }, [myHoldings, holdingToListedKgMap]);
+
+  const uncertifiedHoldings = useMemo(() => {
+    return myHoldings.filter((h) => {
+      const isUnc = h.isUncertified || h.certificationType === "uncertified" || h.certificateId === "uncertified";
+      if (!isUnc) return false;
       const listedKg = holdingToListedKgMap[h.holdingId] || 0;
       const availableKg = h.availableQuantityKg || 0;
       return listedKg < availableKg;
@@ -232,32 +244,56 @@ export default function MarketplacePage() {
 
   // Active holding and lot selected in creation form
   const activeHolding = useMemo(() => {
-    if (formCertificationType !== "certified" || !formHoldingId) return null;
-    return availableHoldings.find((h) => h.holdingId === formHoldingId) || null;
-  }, [formCertificationType, formHoldingId, availableHoldings]);
+    if (!formHoldingId) return null;
+    return myHoldings.find((h) => h.holdingId === formHoldingId) || null;
+  }, [formHoldingId, myHoldings]);
 
   const activeLot = useMemo(() => {
-    if (formCertificationType === "certified") {
-      if (!activeHolding) return null;
+    if (activeHolding) {
       return myLots.find((l) => l.lotId === activeHolding.lotId) || null;
     }
     if (!formLotId) return null;
     return availableLots.find((l) => l.lotId === formLotId) || null;
-  }, [formCertificationType, activeHolding, formLotId, myLots, availableLots]);
+  }, [activeHolding, formLotId, myLots, availableLots]);
 
   // Maximum allowable quantity for this selection
   const maxAvailableKg = useMemo(() => {
-    if (formCertificationType === "certified") {
-      if (!activeHolding) return 0;
+    if (formHoldingId && activeHolding) {
       return activeHolding.availableQuantityKg || 0;
+    }
+    if (formCertificationType === "certified") {
+      return 0;
     }
     if (!activeLot) return 0;
     return activeLot.availableQuantityKg ?? activeLot.quantityKg ?? 0;
-  }, [formCertificationType, activeHolding, activeLot]);
+  }, [formHoldingId, activeHolding, formCertificationType, activeLot]);
 
-  // When holding is picked in certified mode, automatically sync Lot, Grade, and Quantity
+  // Read URL search params on mount to auto-open modal with preselected holding/lot
   useEffect(() => {
-    if (formHoldingId && formCertificationType === "certified" && activeHolding) {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const holdingIdParam = params.get("holdingId");
+      const lotIdParam = params.get("lotId");
+      const maxQtyParam = params.get("maxQty");
+      const typeParam = params.get("type");
+
+      if (holdingIdParam || lotIdParam) {
+        setShowCreateModal(true);
+        if (typeParam === "uncertified") {
+          setFormCertificationType("uncertified");
+        } else if (typeParam === "certified") {
+          setFormCertificationType("certified");
+        }
+        if (holdingIdParam) setFormHoldingId(holdingIdParam);
+        if (lotIdParam) setFormLotId(lotIdParam);
+        if (maxQtyParam) setFormQuantityKg(Number(maxQtyParam) || 0);
+      }
+    }
+  }, []);
+
+  // When holding is picked, automatically sync Lot, Grade, and Quantity
+  useEffect(() => {
+    if (formHoldingId && activeHolding) {
       setFormLotId(activeHolding.lotId);
       if (activeLot?.qualityGrade) {
         setFormQualityGrade(activeLot.qualityGrade);
@@ -266,18 +302,18 @@ export default function MarketplacePage() {
         setFormQuantityKg(activeHolding.availableQuantityKg || 0);
       }
     }
-  }, [formHoldingId, formCertificationType, formInventoryMode, activeHolding, activeLot]);
+  }, [formHoldingId, formInventoryMode, activeHolding, activeLot]);
 
   // When physical lot is picked in uncertified mode, automatically sync Grade and Quantity
   useEffect(() => {
-    if (formLotId && formCertificationType === "uncertified" && activeLot) {
+    if (formLotId && formCertificationType === "uncertified" && activeLot && !formHoldingId) {
       if (activeLot.qualityGrade) {
         setFormQualityGrade(activeLot.qualityGrade);
       }
       const avail = activeLot.availableQuantityKg ?? activeLot.quantityKg ?? 0;
       setFormQuantityKg(avail);
     }
-  }, [formLotId, formCertificationType, activeLot]);
+  }, [formLotId, formCertificationType, activeLot, formHoldingId]);
 
   // Automatically compute selected QR quantity in QR_PACKAGES mode
   useEffect(() => {
@@ -373,8 +409,16 @@ export default function MarketplacePage() {
         }
       } else {
         // Uncertified
-        if (!formLotId) throw new Error("Please select a Cocoa Lot.");
-        payload.lotId = formLotId;
+        if (formHoldingId) {
+          const holding = myHoldings.find((h) => h.holdingId === formHoldingId);
+          if (holding) {
+            payload.sourceHoldingId = holding.holdingId;
+            payload.lotId = holding.lotId;
+          }
+        } else {
+          if (!formLotId) throw new Error("Please select a Cocoa Lot or Uncertified Holding.");
+          payload.lotId = formLotId;
+        }
       }
 
       let imageRefToUse = activeLot?.cocoaImage;
@@ -1023,15 +1067,15 @@ export default function MarketplacePage() {
                         className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
                       >
                         <option value="">-- Choose Eligible Holding --</option>
-                        {availableHoldings.map((h) => (
+                        {certifiedHoldings.map((h: CertificateHolding) => (
                           <option key={h.holdingId} value={h.holdingId}>
                             {h.holdingId} — Lot: {h.lotId} ({h.availableQuantityKg} kg available)
                           </option>
                         ))}
                       </select>
-                      {availableHoldings.length === 0 && (
+                      {certifiedHoldings.length === 0 && (
                         <p className="mt-1 text-[11px] text-amber-700">
-                          No available certificate holdings (all holdings have been fully listed or none exist).
+                          No available certified holdings (all holdings have been fully listed or none exist).
                         </p>
                       )}
                     </div>
@@ -1143,29 +1187,55 @@ export default function MarketplacePage() {
                     )}
                   </div>
                 ) : (
-                  // Uncertified Mode: Cocoa Lot selector
-                  <div className="rounded-2xl border border-[#e5e0cc] bg-[#faf8f0] p-3.5 space-y-3.5">
+                  // Uncertified Mode: Uncertified Holding or Cocoa Lot selector
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3.5 space-y-3.5">
                     <div>
                       <label className="block font-semibold text-[#10251d] mb-1">
-                        Select Physical Cocoa Lot <span className="text-red-500">*</span>
+                        Select Uncertified Holding or Physical Lot <span className="text-red-500">*</span>
                       </label>
                       <select
-                        value={formLotId}
+                        value={formHoldingId || formLotId}
                         onChange={(e) => {
-                          setFormLotId(e.target.value);
+                          const val = e.target.value;
+                          const matchHold = uncertifiedHoldings.find((h) => h.holdingId === val);
+                          if (matchHold) {
+                            setFormHoldingId(matchHold.holdingId);
+                            setFormLotId(matchHold.lotId);
+                            setFormQuantityKg(matchHold.availableQuantityKg || 0);
+                          } else {
+                            setFormHoldingId("");
+                            setFormLotId(val);
+                            const matchLot = availableLots.find((l) => l.lotId === val);
+                            if (matchLot) {
+                              setFormQuantityKg(matchLot.availableQuantityKg ?? matchLot.quantityKg ?? 0);
+                            }
+                          }
                         }}
-                        className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
+                        className="w-full rounded-xl border border-amber-300 bg-white p-2.5 outline-none font-medium text-xs"
                       >
-                        <option value="">-- Choose Cocoa Lot --</option>
-                        {availableLots.map((l) => (
-                          <option key={l.lotId} value={l.lotId}>
-                            {l.lotNumber || l.lotId} — Farm: {l.farmId} ({l.availableQuantityKg ?? l.quantityKg} kg available)
-                          </option>
-                        ))}
+                        <option value="">-- Choose Uncertified Holding or Lot --</option>
+                        {uncertifiedHoldings.length > 0 && (
+                          <optgroup label="Uncertified Holdings (from trades)">
+                            {uncertifiedHoldings.map((h) => (
+                              <option key={h.holdingId} value={h.holdingId}>
+                                Holding: {h.holdingId} — Lot: {h.lotId} ({h.availableQuantityKg} kg available)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {availableLots.length > 0 && (
+                          <optgroup label="Raw Cocoa Lots">
+                            {availableLots.map((l) => (
+                              <option key={l.lotId} value={l.lotId}>
+                                Lot: {l.lotNumber || l.lotId} — Farm: {l.farmId} ({l.availableQuantityKg ?? l.quantityKg} kg available)
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
-                      {availableLots.length === 0 && (
+                      {uncertifiedHoldings.length === 0 && availableLots.length === 0 && (
                         <p className="mt-1 text-[11px] text-amber-700">
-                          No available uncertified lots (all lots have been fully listed or none exist).
+                          No available uncertified holdings or lots.
                         </p>
                       )}
                     </div>

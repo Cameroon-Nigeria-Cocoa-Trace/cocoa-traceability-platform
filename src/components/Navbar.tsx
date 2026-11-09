@@ -1,29 +1,36 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Globe2, Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useFirebase } from "@/context/FirebaseContext";
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
-  const { user, logout, isCooperative, userRole, setUserRole } = useFirebase();
+  const { user, logout, isCooperative, userRole } = useFirebase();
 
-  const isCoop = isCooperative || userRole === "cooperative";
-  const isAgent = userRole === "agent";
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const effectiveUser = mounted ? user : null;
+  const isCoop = (mounted ? isCooperative : false) || (mounted ? userRole === "cooperative" : false);
+  const isAgent = mounted ? userRole === "agent" : false;
   const dashboardHref = isAgent ? "/dashboard/agent" : isCoop ? "/dashboard/cooperative" : "/dashboard";
 
   const links = [
     ["Home", "/"],
     ["Marketplace", "/marketplace"],
-    ...(user ? [["Dashboard", dashboardHref]] : []),
+    ...(effectiveUser ? [["Dashboard", dashboardHref]] : []),
     ...(isAgent
       ? [["Agent Workspace", "/dashboard/agent"]]
       : isCoop
       ? [["Cooperative Workspace", "/dashboard/cooperative"]]
-      : [["For Farmers", user ? "/dashboard" : "/signup"]]),
+      : [["For Farmers", effectiveUser ? "/dashboard" : "/signup"]]),
     ["Traceability", "/marketplace"],
     ["Portal", "/login"],
   ];
@@ -97,7 +104,7 @@ export function Navbar() {
               </svg>
             </div>
 
-            {user ? (
+            {effectiveUser ? (
               <div className="flex items-center gap-2">
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border whitespace-nowrap ${
@@ -111,7 +118,7 @@ export function Navbar() {
                   {isAgent ? "Agent" : isCoop ? "Cooperative" : "Farmer"}
                 </span>
                 <span className="text-xs font-semibold text-white/80 max-w-[110px] truncate whitespace-nowrap">
-                  {user.displayName || user.email}
+                  {effectiveUser.displayName || effectiveUser.email}
                 </span>
                 <button
                   type="button"
@@ -127,7 +134,7 @@ export function Navbar() {
               </Link>
             )}
 
-            {user ? (
+            {effectiveUser ? (
               isAgent ? (
                 <Link href="/dashboard/agent" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
                   Agent Workspace
@@ -167,7 +174,7 @@ export function Navbar() {
               ))}
 
               <div className="border-t border-white/10 pt-4 flex flex-col gap-3">
-                {user ? (
+                {effectiveUser ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -176,7 +183,7 @@ export function Navbar() {
                     }}
                     className="text-left text-sm text-red-300 py-1"
                   >
-                    Log out ({user.displayName || user.email})
+                    Log out ({effectiveUser.displayName || effectiveUser.email})
                   </button>
                 ) : (
                   <Link href="/login" className="text-white! text-sm py-1" onClick={() => setOpen(false)}>
