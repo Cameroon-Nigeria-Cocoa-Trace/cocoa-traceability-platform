@@ -59,7 +59,7 @@ export default function ContactPage() {
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Phone size={18} className="shrink-0 text-[#2d6130]" />
-                  <span className="font-mono font-bold text-[#10251d]">+237 72 11 53 66</span>
+                  <span className="font-mono font-bold text-[#10251d]">+237 55 93 22 99</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Mail size={18} className="shrink-0 text-[#2d6130]" />
