@@ -1,5 +1,8 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
+import { useLanguage } from "@/context/LanguageContext";
 
 interface SliteGlyphProps {
   className?: string;
@@ -99,6 +102,12 @@ export function SliteWordmark({
  * Combines the navy tile icon, the SLITE wordmark, and the TraceTradeNetwork subtitle.
  */
 export function SliteNavbarBrand() {
+  const { language } = useLanguage();
+  const subtitle =
+    language === "fr"
+      ? "TraceTradeNetwork - De la Ferme au Monde"
+      : "TraceTradeNetwork - From Farm to World";
+
   return (
     <Link
       href="/"
@@ -112,7 +121,7 @@ export function SliteNavbarBrand() {
           <SliteWordmark variant="dark" showSolutions={true} />
         </div>
         <div className="text-[8px] uppercase tracking-[0.14em] text-white/60 font-medium mt-0.5">
-          TraceTradeNetwork - From Farm to World
+          {subtitle}
         </div>
       </div>
     </Link>
@@ -123,6 +132,12 @@ export function SliteNavbarBrand() {
  * SliteFooterBrand: Brand lockup for the page footer
  */
 export function SliteFooterBrand() {
+  const { language } = useLanguage();
+  const subtitle =
+    language === "fr"
+      ? "TraceTradeNetwork - De la Ferme au Monde"
+      : "TraceTradeNetwork - From Farm to World";
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-3">
@@ -132,7 +147,7 @@ export function SliteFooterBrand() {
             <SliteWordmark variant="dark" showSolutions={true} />
           </div>
           <div className="text-[9px] uppercase tracking-[0.14em] text-white/50 font-medium mt-1">
-            TraceTradeNetwork - From Farm to World
+            {subtitle}
           </div>
         </div>
       </div>

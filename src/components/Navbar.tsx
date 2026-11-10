@@ -1,18 +1,20 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Globe2, Menu, X } from "lucide-react";
-import { useState, useEffect } from "react";
 import { useFirebase } from "@/context/FirebaseContext";
 import { SliteNavbarBrand } from "@/components/SliteLogo";
+import { useLanguage, type Language } from "@/context/LanguageContext";
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const { user, logout, isCooperative, userRole } = useFirebase();
+  const { language, setLanguage, t } = useLanguage();
 
   useEffect(() => {
     setMounted(true);
@@ -31,18 +33,18 @@ export function Navbar() {
     : "/dashboard";
 
   const links = [
-    ["Home", "/"],
-    ["Marketplace", "/marketplace"],
-    ...(effectiveUser ? [["Dashboard", dashboardHref]] : []),
+    [t("nav.home", "Home"), "/"],
+    [t("nav.marketplace", "Marketplace"), "/marketplace"],
+    ...(effectiveUser ? [[t("nav.dashboard", "Dashboard"), dashboardHref]] : []),
     ...(isWarehouse
-      ? [["Warehouse Workspace", "/dashboard/warehouse"]]
+      ? [[t("nav.warehouse", "Warehouse Workspace"), "/dashboard/warehouse"]]
       : isAgent
-      ? [["Agent Workspace", "/dashboard/agent"]]
+      ? [[t("nav.agent", "Agent Workspace"), "/dashboard/agent"]]
       : isCoop
-      ? [["Cooperative Workspace", "/dashboard/cooperative"]]
-      : [["For Farmers", effectiveUser ? "/dashboard" : "/signup"]]),
-    ["Traceability", "/marketplace"],
-    ["Portal", "/login"],
+      ? [[t("nav.cooperative", "Cooperative Workspace"), "/dashboard/cooperative"]]
+      : [[t("nav.farmers", "For Farmers"), effectiveUser ? "/dashboard" : "/signup"]]),
+    [t("nav.traceability", "Traceability"), "/marketplace"],
+    [t("nav.portal", "Portal"), "/login"],
   ];
 
   return (
@@ -83,7 +85,8 @@ export function Navbar() {
               <Globe2 size={16} className="text-white/70 group-hover:text-[#b8f58b] transition-colors duration-200" />
               
               <select 
-                defaultValue="en"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as Language)}
                 className="bg-transparent pl-1.5 pr-4 font-semibold appearance-none cursor-pointer outline-none border-none text-white! focus:ring-0 [&>option]:bg-[#062d22] [&>option]:text-white! [&>option]:py-2 text-xs"
                 aria-label="Select Language"
               >
@@ -118,7 +121,7 @@ export function Navbar() {
                       : "bg-[#2d6130]/40 text-[#b8f58b] border-[#2d6130]"
                   }`}
                 >
-                  {isWarehouse ? "Warehouse" : isAgent ? "Agent" : isCoop ? "Cooperative" : "Farmer"}
+                  {isWarehouse ? t("role.warehouse", "Warehouse") : isAgent ? t("role.agent", "Agent") : isCoop ? t("role.cooperative", "Cooperative") : t("role.farmer", "Farmer")}
                 </span>
                 <span className="text-xs font-semibold text-white/80 max-w-[110px] truncate whitespace-nowrap">
                   {effectiveUser.displayName || effectiveUser.email}
@@ -128,36 +131,36 @@ export function Navbar() {
                   onClick={() => logout()}
                   className="rounded-full border border-white/25 bg-white/5 px-3 py-1.5 text-xs font-medium text-white! transition hover:bg-white/10 cursor-pointer whitespace-nowrap"
                 >
-                  Log out
+                  {t("nav.logout", "Log out")}
                 </button>
               </div>
             ) : (
               <Link href="/login" className="rounded-full border border-white/25 bg-white/5 px-4 py-2 text-xs font-medium text-white! transition hover:bg-white/10 whitespace-nowrap">
-                Login
+                {t("nav.login", "Login")}
               </Link>
             )}
 
             {effectiveUser ? (
               isWarehouse ? (
                 <Link href="/dashboard/warehouse" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  Warehouse Workspace
+                  {t("nav.warehouse", "Warehouse Workspace")}
                 </Link>
               ) : isAgent ? (
                 <Link href="/dashboard/agent" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  Agent Workspace
+                  {t("nav.agent", "Agent Workspace")}
                 </Link>
               ) : isCoop ? (
                 <Link href="/dashboard/cooperative" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  Cooperative Workspace
+                  {t("nav.cooperative", "Cooperative Workspace")}
                 </Link>
               ) : (
                 <Link href="/dashboard" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  Farmer Workspace
+                  {t("nav.farmer_workspace", "Farmer Workspace")}
                 </Link>
               )
             ) : (
               <Link href="/signup" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                Register Your Farm
+                {t("nav.register_farm", "Register Your Farm")}
               </Link>
             )}
           </div>
@@ -181,6 +184,36 @@ export function Navbar() {
               ))}
 
               <div className="border-t border-white/10 pt-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <span className="text-xs text-white/70 flex items-center gap-1.5">
+                    <Globe2 size={14} /> {language === "fr" ? "Langue" : "Language"}
+                  </span>
+                  <div className="flex items-center gap-1.5 bg-black/20 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setLanguage("en")}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                        language === "en"
+                          ? "bg-[#b8f58b] text-[#073b2b]"
+                          : "text-white/70 hover:text-white"
+                      }`}
+                    >
+                      EN
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLanguage("fr")}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                        language === "fr"
+                          ? "bg-[#b8f58b] text-[#073b2b]"
+                          : "text-white/70 hover:text-white"
+                      }`}
+                    >
+                      FR
+                    </button>
+                  </div>
+                </div>
+
                 {effectiveUser ? (
                   <button
                     type="button"
@@ -190,16 +223,16 @@ export function Navbar() {
                     }}
                     className="text-left text-sm text-red-300 py-1"
                   >
-                    Log out ({effectiveUser.displayName || effectiveUser.email})
+                    {t("nav.logout", "Log out")} ({effectiveUser.displayName || effectiveUser.email})
                   </button>
                 ) : (
                   <Link href="/login" className="text-white! text-sm py-1" onClick={() => setOpen(false)}>
-                    Login to Account
+                    {t("nav.login", "Login to Account")}
                   </Link>
                 )}
 
                 <Link href="/signup" className="rounded-full bg-[#b8f58b] px-5 py-3 text-center font-semibold text-[#073b2b] text-sm" onClick={() => setOpen(false)}>
-                  Register Your Farm
+                  {t("nav.register_farm", "Register Your Farm")}
                 </Link>
               </div>
             </div>

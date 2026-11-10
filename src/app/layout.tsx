@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { FirebaseProvider } from "@/context/FirebaseContext";
+import { LanguageProvider } from "@/context/LanguageContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,7 +34,9 @@ export default function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       {/* FIXED: Enforced a full viewport canvas anchor for absolute components */}
       <body className="min-h-screen w-full relative antialiased bg-[#031d16]">
-        <FirebaseProvider>{children}</FirebaseProvider>
+        <FirebaseProvider>
+          <LanguageProvider>{children}</LanguageProvider>
+        </FirebaseProvider>
       </body>
     </html>
   );
