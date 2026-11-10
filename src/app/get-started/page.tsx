@@ -76,7 +76,7 @@ export default function GetStartedPage() {
       <main className="mx-auto max-w-5xl px-4 pt-28 pb-20 sm:px-6 sm:pt-36 lg:px-8">
         <div className="text-center">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf7e8] px-3.5 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[#2d6130] border border-[#d2ecc8]">
-            <ShieldCheck size={14} /> TraceTradeNetwork Onboarding
+            <ShieldCheck size={14} /> SLITE Trace Onboarding
           </span>
           <h1 className="mt-4 text-3xl font-bold tracking-tight text-[#10251d] sm:text-5xl">
             {user ? "Welcome Back!" : "Who are you in the supply chain?"}

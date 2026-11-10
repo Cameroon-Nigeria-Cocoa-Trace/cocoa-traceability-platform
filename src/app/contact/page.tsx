@@ -27,7 +27,7 @@ export default function ContactPage() {
             Get in Touch
           </span>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#10251d] sm:text-5xl">
-            Contact TraceTradeNetwork
+            Contact SLITE Trace Platform
           </h1>
           <p className="mt-4 text-base sm:text-lg leading-relaxed text-[#57655d]">
             Have inquiries about cocoa traceability, buyer accounts, or cross-border logistics? Reach out to our regional operations teams in Cameroon and Nigeria.
@@ -110,7 +110,7 @@ export default function ContactPage() {
                 <CheckCircle2 size={32} className="mx-auto text-green-600 mb-2" />
                 <h3 className="text-base font-bold text-green-900">Message Sent Successfully!</h3>
                 <p className="mt-1 text-xs text-green-700">
-                  Thank you for contacting TraceTradeNetwork. Our regional team will get back to you shortly.
+                  Thank you for contacting SLITE Solutions Trace Platform. Our regional team will get back to you shortly.
                 </p>
                 <button
                   type="button"

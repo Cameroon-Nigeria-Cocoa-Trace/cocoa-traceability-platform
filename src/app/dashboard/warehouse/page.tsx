@@ -1172,7 +1172,7 @@ export default function WarehouseDashboardPage() {
                   Capacity Guardrails
                 </h4>
                 <p className="text-xs text-white/80 leading-relaxed mb-4">
-                  The TraceTradeNetwork platform automatically enforces warehouse storage limits. Any intake attempt
+                  The SLITE Trace platform automatically enforces warehouse storage limits. Any intake attempt
                   exceeding available capacity is rejected at the gate.
                 </p>
 

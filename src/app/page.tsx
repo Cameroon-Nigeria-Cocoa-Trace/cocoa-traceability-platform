@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, BadgeCheck, CreditCard, FileCheck2, MapPin, MapPinned, Network, Play, ShieldCheck, ShoppingBag, ShoppingCart, Smartphone, Truck } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { SliteFooterBrand } from "@/components/SliteLogo";
 
 const features = [
   {
@@ -265,7 +266,7 @@ export default function HomePage() {
 
             {/* Main Heading */}
             <h2 className="mt-2 text-xl font-bold leading-tight text-white sm:text-3xl md:text-4xl">
-              TraceTradeNetwork connects Cameroon&apos;s cocoa to the world.
+              SLITE Trace Platform connects Cameroon&apos;s cocoa to the world.
             </h2>
 
             {/* 4-Column Stats Grid */}
@@ -310,7 +311,7 @@ export default function HomePage() {
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-x-16 gap-y-8 opacity-60 grayscale">
           <span className="text-xl font-bold">MTN MoMo</span>
-          <span className="text-xl font-bold">TraceTradeNetwork</span>
+          <span className="text-xl font-bold font-galano">SLITE Solutions</span>
           <span className="text-xl font-bold">Cameroon</span>
           <span className="text-xl font-bold">Cross River</span>
           <span className="text-xl font-bold">EUDR</span>
@@ -351,22 +352,11 @@ export default function HomePage() {
       <div className="mx-auto max-w-[88rem] px-6 py-16 lg:px-8">
         <div className="grid gap-12 md:grid-cols-4">
           <div className="md:col-span-2">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#b8f58b]">
-                🌿
-              </div>
+            <SliteFooterBrand />
 
-               <div>
-                <div className="font-bold">TraceTradeNetwork</div>
-                <div className="text-[10px] uppercase tracking-widest text-white/40">
-                  From Farm to World
-                </div>
-              </div>
-            </div>
-
-            <p className="mt-6 max-w-md text-sm leading-7 text-white/45">
+            <p className="mt-6 max-w-md text-sm leading-7 text-white/55">
               Digital traceability infrastructure for preserving cocoa
-              provenance, ownership and supply-chain visibility.
+              provenance, ownership and supply-chain visibility, engineered by SLITE Solutions.
             </p>
           </div>
 
@@ -394,8 +384,8 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="mt-16 border-t border-white/10 pt-7 text-sm text-white/30">
-          © {new Date().getFullYear()} TraceTradeNetwork. All rights reserved.
+        <div className="mt-16 border-t border-white/10 pt-7 text-sm text-white/40">
+          © {new Date().getFullYear()} SLITE Solutions. All rights reserved.
         </div>
       </div>
     </footer>

@@ -1,6 +1,17 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Galano Grotesque';
+  src: local('Galano Grotesque'), local('GalanoGrotesque'), local('GalanoGrotesque-Bold');
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+.font-galano {
+  font-family: 'Galano Grotesque', 'GalanoGrotesque', 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
 :root {
   --background: #f2efe6;
   --panel: #fffdf9;

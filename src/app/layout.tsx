@@ -14,9 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cameroon-Cross River Cocoa Traceability Platform",
+  title: "SLITE Trace | Cameroon-Cross River Cocoa Traceability Platform",
   description:
-    "EUDR-oriented Cameroon-origin cocoa traceability system preserving origin through Cross River and Nigerian export channels.",
+    "EUDR-oriented Cameroon-origin cocoa traceability system by SLITE Solutions, preserving origin through Cross River and Nigerian export channels.",
+  icons: {
+    icon: "/slite-app-icon.svg",
+    apple: "/slite-app-icon.svg",
+  },
 };
 
 // FIXED: Added LayoutProps typing and injected body dimension constraints

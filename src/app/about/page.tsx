@@ -11,13 +11,13 @@ export default function AboutPage() {
         {/* Header */}
         <div className="max-w-3xl">
           <span className="rounded-full bg-[#edf7e8] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
-            About TraceTradeNetwork
+            About SLITE Trace Platform
           </span>
           <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#10251d] sm:text-5xl">
             Empowering the Cross-Border Cocoa Supply Chain
           </h1>
           <p className="mt-4 text-base sm:text-lg leading-relaxed text-[#57655d]">
-            TraceTradeNetwork is a premier digital traceability and trade platform connecting cocoa producers, cooperatives, licensed buying agents, and exporters across Cameroon and Nigeria.
+            SLITE Trace Platform, engineered by SLITE Solutions, is a premier digital traceability and trade platform connecting cocoa producers, cooperatives, licensed buying agents, and exporters across Cameroon and Nigeria.
           </p>
         </div>
 
@@ -64,7 +64,7 @@ export default function AboutPage() {
               Powered by Leading Regional Partners
             </h2>
             <p className="mt-2 text-sm text-[#57655d]">
-              TraceTradeNetwork is jointly engineered and operated by trusted logistics and technology leaders across Central and West Africa.
+              SLITE Trace is engineered and operated by SLITE Solutions in partnership with trusted logistics and agricultural leaders across Central and West Africa.
             </p>
           </div>
 

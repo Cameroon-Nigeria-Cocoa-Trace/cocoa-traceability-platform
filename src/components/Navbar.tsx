@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Globe2, Menu, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useFirebase } from "@/context/FirebaseContext";
+import { SliteNavbarBrand } from "@/components/SliteLogo";
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
@@ -51,16 +52,7 @@ export function Navbar() {
           
           {/* Left: Brand Logo */}
           <div className="flex shrink-0 items-center">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#b8f58b] shadow-[0_12px_25px_rgba(184,245,139,0.30)]">
-                <span className="text-xl">🌿</span>
-              </div>
-
-              <div>
-                <div className="text-base font-bold tracking-tight text-white!">TraceTradeNetwork</div>
-                <div className="text-[9px] uppercase tracking-[0.18em] text-white/60">From Farm to World</div>
-              </div>
-            </Link>
+            <SliteNavbarBrand />
           </div>
 
           {/* Center: Main Navigation Links (No wrapping, flexible spacing) */}
