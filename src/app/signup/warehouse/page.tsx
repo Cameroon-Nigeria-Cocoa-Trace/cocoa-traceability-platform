@@ -17,49 +17,9 @@ import {
   ArrowRight,
   Boxes,
   Clock,
-  FileCheck,
 } from "lucide-react";
 import { WarehouseFacility, WarehouseOrganization } from "@/types/warehouse";
 import { warehouseStore } from "@/lib/warehouse/warehouseStore";
-
-const LOCATION_PRESETS = [
-  {
-    label: "Calabar Port Maritime Export Facility (Cross River)",
-    cityOrLGA: "Calabar South",
-    stateOrRegion: "Cross River State",
-    country: "Nigeria" as const,
-    lat: 4.9757,
-    lng: 8.3417,
-    operatingHours: "06:00 - 20:00 WAT",
-  },
-  {
-    label: "Ikom Central Aggregation Terminal (Border Corridor)",
-    cityOrLGA: "Ikom",
-    stateOrRegion: "Cross River State",
-    country: "Nigeria" as const,
-    lat: 5.9614,
-    lng: 8.7188,
-    operatingHours: "07:00 - 19:00 WAT",
-  },
-  {
-    label: "Akamkpa Upcountry Storage Depot",
-    cityOrLGA: "Akamkpa",
-    stateOrRegion: "Cross River State",
-    country: "Nigeria" as const,
-    lat: 5.3094,
-    lng: 8.3582,
-    operatingHours: "07:30 - 18:30 WAT",
-  },
-  {
-    label: "Mamfe Central Transit Depot (Cameroon Cross-Border Axis)",
-    cityOrLGA: "Mamfe Central",
-    stateOrRegion: "South-West Region",
-    country: "Cameroon" as const,
-    lat: 5.7667,
-    lng: 9.3167,
-    operatingHours: "07:00 - 18:00 WAT",
-  },
-];
 
 export default function WarehouseSignupPage() {
   const router = useRouter();
@@ -72,21 +32,13 @@ export default function WarehouseSignupPage() {
   const [facilityName, setFacilityName] = useState("");
   const [licenseNumber, setLicenseNumber] = useState("");
   const [address, setAddress] = useState("");
-  const [cityOrLGA, setCityOrLGA] = useState(LOCATION_PRESETS[0].cityOrLGA);
-  const [stateOrRegion, setStateOrRegion] = useState(LOCATION_PRESETS[0].stateOrRegion);
-  const [country, setCountry] = useState<"Nigeria" | "Cameroon">(LOCATION_PRESETS[0].country);
-  const [operatingHours, setOperatingHours] = useState(LOCATION_PRESETS[0].operatingHours);
-  const [latitude, setLatitude] = useState<number>(LOCATION_PRESETS[0].lat);
-  const [longitude, setLongitude] = useState<number>(LOCATION_PRESETS[0].lng);
+  const [cityOrLGA, setCityOrLGA] = useState("");
+  const [stateOrRegion, setStateOrRegion] = useState("Cross River State");
+  const [country, setCountry] = useState<"Nigeria" | "Cameroon">("Nigeria");
+  const [operatingHours, setOperatingHours] = useState("07:00 - 19:00 WAT");
+  const [latitude, setLatitude] = useState<string>("");
+  const [longitude, setLongitude] = useState<string>("");
   const [capacityTonnes, setCapacityTonnes] = useState<number>(300);
-
-  // Corporate Organization Details
-  const [orgName, setOrgName] = useState("");
-  const [registrationNumber, setRegistrationNumber] = useState("");
-  const [customsBondedCode, setCustomsBondedCode] = useState("");
-  const [hqAddress, setHqAddress] = useState("");
-  const [orgEmail, setOrgEmail] = useState("");
-  const [orgPhone, setOrgPhone] = useState("");
 
   // Facility Custodian / Manager Details
   const [managerFullName, setManagerFullName] = useState("");
@@ -103,15 +55,6 @@ export default function WarehouseSignupPage() {
 
   const capacityKg = Math.max(0, capacityTonnes * 1000);
   const capacityBags = Math.floor(capacityKg / 64);
-
-  const applyPreset = (preset: typeof LOCATION_PRESETS[0]) => {
-    setCityOrLGA(preset.cityOrLGA);
-    setStateOrRegion(preset.stateOrRegion);
-    setCountry(preset.country);
-    setLatitude(preset.lat);
-    setLongitude(preset.lng);
-    setOperatingHours(preset.operatingHours);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,10 +73,33 @@ export default function WarehouseSignupPage() {
       return;
     }
 
-    const cleanOrgName = orgName.trim() || `${cleanFacilityName} Custody Ltd`;
-    const cleanRegNo = registrationNumber.trim();
-    if (!cleanRegNo) {
-      setError("CAC or official registration number is required for the corporate entity.");
+    const cleanAddress = address.trim();
+    if (!cleanAddress) {
+      setError("Physical terminal address is required.");
+      return;
+    }
+
+    const cleanCityOrLGA = cityOrLGA.trim();
+    if (!cleanCityOrLGA) {
+      setError("City or LGA is required.");
+      return;
+    }
+
+    const cleanLat = String(latitude).trim();
+    const cleanLng = String(longitude).trim();
+    if (!cleanLat || !cleanLng) {
+      setError("Please provide both GPS Latitude and GPS Longitude.");
+      return;
+    }
+
+    const numLat = Number(cleanLat);
+    const numLng = Number(cleanLng);
+    if (isNaN(numLat) || numLat < -90 || numLat > 90) {
+      setError("Please enter a valid GPS latitude between -90 and 90.");
+      return;
+    }
+    if (isNaN(numLng) || numLng < -180 || numLng > 180) {
+      setError("Please enter a valid GPS longitude between -180 and 180.");
       return;
     }
 
@@ -145,7 +111,11 @@ export default function WarehouseSignupPage() {
 
     const cleanIdentifier = identifier.trim();
     if (!cleanIdentifier) {
-      setError(credentialType === "email" ? "Manager email address is required." : "Manager phone number is required.");
+      setError(
+        credentialType === "email"
+          ? "Manager email address is required."
+          : "Manager phone number is required."
+      );
       return;
     }
 
@@ -189,23 +159,28 @@ export default function WarehouseSignupPage() {
       }
 
       const now = new Date().toISOString();
-      const orgId = `org_wh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const facilityId = `wh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const orgId = `org_${facilityId}`;
       const effectiveLicense =
         licenseNumber.trim() ||
         (facilityType === "bonded"
           ? `NCS-WH-CAL-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
           : `CRS-INL-WH-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
 
-      // 2. Build Organization Record
+      // 2. Automatically link corporate organization record without demanding separate redundant paperwork
       const orgRecord: WarehouseOrganization = {
         id: orgId,
-        name: cleanOrgName,
-        registrationNumber: cleanRegNo,
-        customsBondedWarehouseCode: customsBondedCode.trim() || undefined,
-        headquartersAddress: hqAddress.trim() || address.trim() || `${cityOrLGA}, ${stateOrRegion}`,
-        contactEmail: orgEmail.trim() || (credentialType === "email" ? cleanIdentifier : `${authUser.uid}@tracetrade.cm`),
-        contactPhone: orgPhone.trim() || managerPhone.trim() || "+234 800 000 0000",
+        name: cleanFacilityName,
+        registrationNumber: `REG-WH-${Date.now().toString().slice(-6)}`,
+        customsBondedWarehouseCode:
+          facilityType === "bonded" ? effectiveLicense : undefined,
+        headquartersAddress:
+          address.trim() || `${cityOrLGA} Industrial Hub, ${stateOrRegion}`,
+        contactEmail:
+          credentialType === "email"
+            ? cleanIdentifier
+            : `${authUser.uid}@tracetrade.cm`,
+        contactPhone: managerPhone.trim() || cleanIdentifier,
         facilities: [facilityId],
         status: "active",
         createdAt: now,
@@ -219,12 +194,12 @@ export default function WarehouseSignupPage() {
         name: cleanFacilityName,
         licenseNumber: effectiveLicense,
         location: {
-          address: address.trim() || `${cityOrLGA} Industrial Hub, ${stateOrRegion}`,
-          cityOrLGA: cityOrLGA.trim() || "Calabar South",
+          address: cleanAddress,
+          cityOrLGA: cleanCityOrLGA,
           stateOrRegion: stateOrRegion.trim() || "Cross River State",
           country,
-          latitude: Number(latitude) || 4.9757,
-          longitude: Number(longitude) || 8.3417,
+          latitude: numLat,
+          longitude: numLng,
           operatingHours: operatingHours.trim() || "07:00 - 19:00 WAT",
         },
         capacityKg,
@@ -235,8 +210,11 @@ export default function WarehouseSignupPage() {
         operationalStatus: "operational",
         adminStatus: "active",
         managerUserId: authUser.uid,
-        contactEmail: credentialType === "email" ? cleanIdentifier : orgEmail.trim() || `${authUser.uid}@tracetrade.cm`,
-        contactPhone: managerPhone.trim() || orgPhone.trim() || cleanIdentifier,
+        contactEmail:
+          credentialType === "email"
+            ? cleanIdentifier
+            : `${authUser.uid}@tracetrade.cm`,
+        contactPhone: managerPhone.trim() || cleanIdentifier,
         createdAt: now,
         updatedAt: now,
       };
@@ -260,7 +238,7 @@ export default function WarehouseSignupPage() {
         facilityId,
         facilityName: cleanFacilityName,
         organizationId: orgId,
-        organizationName: cleanOrgName,
+        organizationName: cleanFacilityName,
         licenseNumber: effectiveLicense,
         updatedAt: now,
       };
@@ -273,10 +251,10 @@ export default function WarehouseSignupPage() {
       await warehouseStore.saveFacility(facilityRecord);
       await warehouseStore.saveOrganization(orgRecord);
 
-      setSuccess("Warehouse facility registered successfully! Launching your workspace...");
+      setSuccess("Warehouse facility registered successfully! Opening your workspace...");
       setTimeout(() => {
         router.push("/dashboard/warehouse");
-      }, 1200);
+      }, 1000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg || "Failed to complete registration. Please check your details and try again.");
@@ -289,18 +267,18 @@ export default function WarehouseSignupPage() {
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
       <Navbar />
 
-      <main className="mx-auto max-w-4xl px-4 pt-28 pb-20 sm:px-6 sm:pt-36 lg:px-8">
+      <main className="mx-auto max-w-3xl px-4 pt-28 pb-20 sm:px-6 sm:pt-36 lg:px-8">
         {/* Header */}
         <div className="text-center">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf7e8] px-3.5 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[#2d6130] border border-[#d2ecc8]">
-            <Building2 size={14} /> Warehouse Custody & Export Facility
+            <Building2 size={14} /> Warehouse Custody Onboarding
           </span>
           <h1 className="mt-4 text-3xl font-bold tracking-tight text-[#10251d] sm:text-4xl">
             Register Warehouse Facility
           </h1>
-          <p className="mt-2 text-sm sm:text-base text-[#57655d] max-w-2xl mx-auto">
-            Onboard your customs bonded terminal, inland aggregation warehouse, or port storage facility to manage
-            traceable cocoa stock, consignment receiving, and Cross River State statutory trace certifications.
+          <p className="mt-2 text-sm sm:text-base text-[#57655d] max-w-xl mx-auto">
+            Set up your storage facility to receive traceable cocoa lots, manage physical custody,
+            inspect moisture, and apply for Cross River State statutory export trace certificates.
           </p>
         </div>
 
@@ -316,13 +294,13 @@ export default function WarehouseSignupPage() {
             }`}
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-[#10251d]">Customs Bonded Port Terminal</span>
+              <span className="font-bold text-[#10251d]">Customs Bonded Terminal</span>
               <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-[#0b3528] text-white">
                 Export Terminal
               </span>
             </div>
             <p className="text-xs text-[#57655d] leading-relaxed">
-              Export terminal or maritime port complex handling export-ready cocoa consignments, international fumigation, and customs clearance.
+              Export terminal or port complex handling export-ready cocoa, international fumigation, and customs clearance.
             </p>
           </button>
 
@@ -342,18 +320,18 @@ export default function WarehouseSignupPage() {
               </span>
             </div>
             <p className="text-xs text-[#57655d] leading-relaxed">
-              Upcountry storage or border-corridor transit depot (Ikom, Akamkpa, Mamfe axis) receiving cocoa from LBAs and farming cooperatives.
+              Upcountry aggregation depot or border transit hub (Ikom, Akamkpa, Mamfe corridor) receiving lots from agents and cooperatives.
             </p>
           </button>
         </div>
 
-        {/* Registration Form */}
-        <form onSubmit={handleSubmit} className="mt-8 space-y-8">
+        {/* Streamlined Registration Form */}
+        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
           {error && (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-start gap-3">
               <AlertCircle size={18} className="shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold">Registration Notice</p>
+                <p className="font-semibold">Notice</p>
                 <p className="text-xs mt-0.5">{error}</p>
               </div>
             </div>
@@ -369,15 +347,15 @@ export default function WarehouseSignupPage() {
             </div>
           )}
 
-          {/* Section 1: Facility Specifications */}
+          {/* Section 1: Facility & Storage Specifications */}
           <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 sm:p-8 shadow-sm">
             <div className="flex items-center gap-3 border-b border-gray-100 pb-4 mb-6">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edf7e8] text-[#2d6130]">
                 <Boxes size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-[#10251d]">1. Facility & Storage Specifications</h2>
-                <p className="text-xs text-[#57655d]">Physical storage location, capacity, and operational parameters</p>
+                <h2 className="text-lg font-bold text-[#10251d]">1. Facility & Storage Details</h2>
+                <p className="text-xs text-[#57655d]">Location, rated capacity, and operating corridor</p>
               </div>
             </div>
 
@@ -391,14 +369,14 @@ export default function WarehouseSignupPage() {
                   required
                   value={facilityName}
                   onChange={(e) => setFacilityName(e.target.value)}
-                  placeholder="e.g. Calabar Port Maritime Export Facility"
+                  placeholder="e.g. Calabar Port Maritime Export Facility or Ikom Central Depot"
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  License / Terminal Code
+                  License / Terminal Code (Optional)
                 </label>
                 <input
                   type="text"
@@ -460,29 +438,6 @@ export default function WarehouseSignupPage() {
                 </div>
               </div>
 
-              {/* Location Presets & Coordinates */}
-              <div className="sm:col-span-2 mt-2">
-                <span className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  Corridor Location Presets (Click to autofill)
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {LOCATION_PRESETS.map((p) => (
-                    <button
-                      key={p.label}
-                      type="button"
-                      onClick={() => applyPreset(p)}
-                      className={`text-xs px-3 py-1.5 rounded-full border transition cursor-pointer ${
-                        cityOrLGA === p.cityOrLGA && stateOrRegion === p.stateOrRegion
-                          ? "bg-[#0b3528] text-white border-[#0b3528]"
-                          : "bg-white text-[#57655d] border-gray-200 hover:border-gray-300"
-                      }`}
-                    >
-                      {p.cityOrLGA} ({p.country})
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
                   Physical Terminal Address *
@@ -537,135 +492,50 @@ export default function WarehouseSignupPage() {
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  GPS Latitude
+                  GPS Latitude *
                 </label>
                 <input
                   type="number"
-                  step="0.0001"
+                  step="any"
+                  required
                   value={latitude}
-                  onChange={(e) => setLatitude(Number(e.target.value))}
+                  onChange={(e) => setLatitude(e.target.value)}
+                  placeholder="e.g. 4.9757"
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
                 />
+                <span className="text-[10px] text-[#57655d] mt-1 block">
+                  Decimal degrees between -90 and 90
+                </span>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  GPS Longitude
+                  GPS Longitude *
                 </label>
                 <input
                   type="number"
-                  step="0.0001"
+                  step="any"
+                  required
                   value={longitude}
-                  onChange={(e) => setLongitude(Number(e.target.value))}
+                  onChange={(e) => setLongitude(e.target.value)}
+                  placeholder="e.g. 8.3417"
                   className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
                 />
+                <span className="text-[10px] text-[#57655d] mt-1 block">
+                  Decimal degrees between -180 and 180
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Section 2: Corporate Operating Entity */}
-          <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 sm:p-8 shadow-sm">
-            <div className="flex items-center gap-3 border-b border-gray-100 pb-4 mb-6">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edf7e8] text-[#2d6130]">
-                <FileCheck size={20} />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-[#10251d]">2. Corporate Custodian Entity</h2>
-                <p className="text-xs text-[#57655d]">Incorporated company or customs terminal license holder</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  Corporate / Entity Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="e.g. Cross River State Maritime & Inland Cocoa Terminal Ltd"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  CAC / Corporate Registration Number *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={registrationNumber}
-                  onChange={(e) => setRegistrationNumber(e.target.value)}
-                  placeholder="e.g. RC-WH-CR-2026-081"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  Customs Bonded Warehouse Code (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={customsBondedCode}
-                  onChange={(e) => setCustomsBondedCode(e.target.value)}
-                  placeholder="e.g. NCS-BOND-CR-0012"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  Headquarters / Registered Address
-                </label>
-                <input
-                  type="text"
-                  value={hqAddress}
-                  onChange={(e) => setHqAddress(e.target.value)}
-                  placeholder="e.g. Free Trade Zone Expressway, Calabar"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  Official Corporate Email
-                </label>
-                <input
-                  type="email"
-                  value={orgEmail}
-                  onChange={(e) => setOrgEmail(e.target.value)}
-                  placeholder="terminal-ops@cr-cocoaterminal.com"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#57655d] mb-1.5">
-                  Official Corporate Phone
-                </label>
-                <input
-                  type="text"
-                  value={orgPhone}
-                  onChange={(e) => setOrgPhone(e.target.value)}
-                  placeholder="+234 803 777 6543"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm text-[#10251d] focus:border-[#2d6130] focus:ring-1 focus:ring-[#2d6130] outline-none"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Custodian / Manager Account Credentials */}
+          {/* Section 2: Custodian / Manager Account & Credentials */}
           <div className="rounded-3xl border border-[#dfe7d8] bg-white p-6 sm:p-8 shadow-sm">
             <div className="flex items-center gap-3 border-b border-gray-100 pb-4 mb-6">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edf7e8] text-[#2d6130]">
                 <ShieldCheck size={20} />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-[#10251d]">3. Facility Custodian & Login Setup</h2>
+                <h2 className="text-lg font-bold text-[#10251d]">2. Facility Custodian & Account Setup</h2>
                 <p className="text-xs text-[#57655d]">Authorized manager account for workspace access and logging receipts</p>
               </div>
             </div>
@@ -786,7 +656,7 @@ export default function WarehouseSignupPage() {
           </div>
 
           {/* Submit Action */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
             <Link
               href="/get-started"
               className="text-xs font-semibold text-[#57655d] hover:text-[#10251d] transition"
