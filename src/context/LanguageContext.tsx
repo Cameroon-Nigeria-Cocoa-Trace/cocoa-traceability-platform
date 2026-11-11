@@ -433,10 +433,20 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         }
       };
 
-      // Run initially and observe mutations for dynamically rendered content
+      // Run initially and observe mutations safely with a debounce/throttle
       applyFrenchTranslations();
+      let timeoutId: NodeJS.Timeout | null = null;
       const observer = new MutationObserver(() => {
-        applyFrenchTranslations();
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          observer.disconnect();
+          applyFrenchTranslations();
+          observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+          });
+        }, 300);
       });
 
       observer.observe(document.body, {
@@ -445,7 +455,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         characterData: true,
       });
 
-      return () => observer.disconnect();
+      return () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        observer.disconnect();
+      };
     } else {
       // Revert when switching back to English
       const applyEnglishReversion = () => {
