@@ -116,13 +116,22 @@ function LoginContent() {
   const resolvePostLoginDestination = async (fallback: string | null): Promise<string> => {
     if (fallback) return fallback;
     if (auth.currentUser) {
+      if (auth.currentUser.email?.trim().toLowerCase() === "afumbomboyo@gmail.com") {
+        return "/dashboard/admin";
+      }
       try {
+        const adminSnap = await getDoc(doc(db, "admins", auth.currentUser.uid));
+        if (adminSnap.exists()) {
+          return "/dashboard/admin";
+        }
         const uDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
         if (uDoc.exists()) {
           const d = uDoc.data();
-          if (d.role === "cooperative" || d.accountType === "cooperative") {
-            return "/dashboard/cooperative";
-          }
+          const r = d.role || d.accountType;
+          if (r === "admin") return "/dashboard/admin";
+          if (r === "warehouse") return "/dashboard/warehouse";
+          if (r === "agent") return "/dashboard/agent";
+          if (r === "cooperative") return "/dashboard/cooperative";
         }
         const coopSnap = await getDoc(doc(db, "cooperative_profiles", `coop_usr_${auth.currentUser.uid}`));
         if (coopSnap.exists()) {
@@ -133,9 +142,10 @@ function LoginContent() {
       }
     }
     const cachedRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_user_role") : null;
-    if (cachedRole === "cooperative") {
-      return "/dashboard/cooperative";
-    }
+    if (cachedRole === "admin") return "/dashboard/admin";
+    if (cachedRole === "warehouse") return "/dashboard/warehouse";
+    if (cachedRole === "agent") return "/dashboard/agent";
+    if (cachedRole === "cooperative") return "/dashboard/cooperative";
     return "/dashboard";
   };
 

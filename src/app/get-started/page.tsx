@@ -45,16 +45,18 @@ const ROLES = [
 
 export default function GetStartedPage() {
   const router = useRouter();
-  const { user } = useFirebase();
+  const { user, userRole, isAdmin } = useFirebase();
   const [selectedRole, setSelectedRole] = useState<string>("farmer");
 
   const handleContinue = () => {
     if (user) {
-      if (selectedRole === "agent") {
+      if (isAdmin || userRole === "admin") {
+        router.push("/dashboard/admin");
+      } else if (userRole === "agent" || selectedRole === "agent") {
         router.push("/dashboard/agent");
-      } else if (selectedRole === "cooperative") {
+      } else if (userRole === "cooperative" || selectedRole === "cooperative") {
         router.push("/dashboard/cooperative");
-      } else if (selectedRole === "warehouse") {
+      } else if (userRole === "warehouse" || selectedRole === "warehouse") {
         router.push("/dashboard/warehouse");
       } else {
         router.push("/dashboard");

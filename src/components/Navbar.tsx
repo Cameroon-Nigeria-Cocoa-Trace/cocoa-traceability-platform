@@ -13,7 +13,7 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
-  const { user, logout, isCooperative, userRole } = useFirebase();
+  const { user, logout, isCooperative, userRole, isAdmin: contextIsAdmin } = useFirebase();
   const { language, setLanguage, t } = useLanguage();
 
   useEffect(() => {
@@ -21,10 +21,13 @@ export function Navbar() {
   }, []);
 
   const effectiveUser = mounted ? user : null;
-  const isWarehouse = mounted ? userRole === "warehouse" : false;
-  const isCoop = (mounted ? isCooperative : false) || (mounted ? userRole === "cooperative" : false);
-  const isAgent = mounted ? userRole === "agent" : false;
-  const dashboardHref = isWarehouse
+  const isAdmin = mounted ? contextIsAdmin || userRole === "admin" : false;
+  const isWarehouse = mounted ? !isAdmin && userRole === "warehouse" : false;
+  const isCoop = !isAdmin && ((mounted ? isCooperative : false) || (mounted ? userRole === "cooperative" : false));
+  const isAgent = mounted ? !isAdmin && userRole === "agent" : false;
+  const dashboardHref = isAdmin
+    ? "/dashboard/admin"
+    : isWarehouse
     ? "/dashboard/warehouse"
     : isAgent
     ? "/dashboard/agent"
@@ -36,7 +39,9 @@ export function Navbar() {
     [t("nav.home", "Home"), "/"],
     [t("nav.marketplace", "Marketplace"), "/marketplace"],
     ...(effectiveUser ? [[t("nav.dashboard", "Dashboard"), dashboardHref]] : []),
-    ...(isWarehouse
+    ...(isAdmin
+      ? [[t("nav.admin", "Admin Workspace"), "/dashboard/admin"]]
+      : isWarehouse
       ? [[t("nav.warehouse", "Warehouse Workspace"), "/dashboard/warehouse"]]
       : isAgent
       ? [[t("nav.agent", "Agent Workspace"), "/dashboard/agent"]]
@@ -112,7 +117,9 @@ export function Navbar() {
               <div className="flex items-center gap-2">
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border whitespace-nowrap ${
-                    isWarehouse
+                    isAdmin
+                      ? "bg-[#b8f58b]/20 text-[#b8f58b] border-[#b8f58b]/40"
+                      : isWarehouse
                       ? "bg-teal-400/20 text-teal-300 border-teal-400/40"
                       : isAgent
                       ? "bg-amber-400/20 text-amber-300 border-amber-400/40"
@@ -121,7 +128,15 @@ export function Navbar() {
                       : "bg-[#2d6130]/40 text-[#b8f58b] border-[#2d6130]"
                   }`}
                 >
-                  {isWarehouse ? t("role.warehouse", "Warehouse") : isAgent ? t("role.agent", "Agent") : isCoop ? t("role.cooperative", "Cooperative") : t("role.farmer", "Farmer")}
+                  {isAdmin
+                    ? t("role.admin", "Admin")
+                    : isWarehouse
+                    ? t("role.warehouse", "Warehouse")
+                    : isAgent
+                    ? t("role.agent", "Agent")
+                    : isCoop
+                    ? t("role.cooperative", "Cooperative")
+                    : t("role.farmer", "Farmer")}
                 </span>
                 <span className="text-xs font-semibold text-white/80 max-w-[110px] truncate whitespace-nowrap">
                   {effectiveUser.displayName || effectiveUser.email}
@@ -141,7 +156,11 @@ export function Navbar() {
             )}
 
             {effectiveUser ? (
-              isWarehouse ? (
+              isAdmin ? (
+                <Link href="/dashboard/admin" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
+                  {t("nav.admin", "Admin Workspace")}
+                </Link>
+              ) : isWarehouse ? (
                 <Link href="/dashboard/warehouse" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
                   {t("nav.warehouse", "Warehouse Workspace")}
                 </Link>

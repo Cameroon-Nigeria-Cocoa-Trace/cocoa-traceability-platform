@@ -15,6 +15,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "nav.warehouse": "Warehouse Workspace",
     "nav.agent": "Agent Workspace",
     "nav.cooperative": "Cooperative Workspace",
+    "nav.admin": "Admin Workspace",
     "nav.farmers": "For Farmers",
     "nav.traceability": "Traceability",
     "nav.portal": "Portal",
@@ -30,6 +31,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "role.cooperative": "Cooperative",
     "role.farmer": "Farmer",
     "role.buyer": "Buyer",
+    "role.admin": "Admin",
 
     // Landing Hero
     "hero.headline": "SLITE Trace Platform connects Cameroon's cocoa to the world.",
@@ -82,6 +84,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "nav.warehouse": "Espace Entrepôt",
     "nav.agent": "Espace Acheteur Agréé",
     "nav.cooperative": "Espace Coopérative",
+    "nav.admin": "Espace Administrateur",
     "nav.farmers": "Pour les Planteurs",
     "nav.traceability": "Traçabilité",
     "nav.portal": "Portail",
@@ -97,6 +100,7 @@ export const translations: Record<Language, Record<string, string>> = {
     "role.cooperative": "Coopérative",
     "role.farmer": "Planteur",
     "role.buyer": "Acheteur",
+    "role.admin": "Admin",
 
     // Landing Hero
     "hero.headline": "La plateforme SLITE Trace connecte le cacao du Cameroun au monde entier.",
@@ -153,6 +157,15 @@ const phrasePairs: [string, string][] = [
   ["Warehouse Workspace", "Espace Entrepôt"],
   ["Agent Workspace", "Espace Acheteur Agréé"],
   ["Cooperative Workspace", "Espace Coopérative"],
+  ["Admin Workspace", "Espace Administrateur"],
+  ["Platform Governance Console", "Console de Gouvernance de la Plateforme"],
+  ["System Status", "État du Système"],
+  ["Statutory Fee Schedule", "Barème des Frais Statutaires"],
+  ["Supply Chain Entities", "Entités de la Chaîne"],
+  ["Compliance & Oversight", "Conformité & Supervision"],
+  ["Immutable Audit Trail", "Journal d'Audit Immuable"],
+  ["Emergency Stop", "Arrêt d'Urgence"],
+  ["Under Investigation", "Sous Enquête"],
   ["Farmer Workspace", "Espace Planteur"],
   ["For Farmers", "Pour les Planteurs"],
   ["Register Your Farm", "Enregistrer Votre Exploitation"],
