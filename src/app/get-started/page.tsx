@@ -19,7 +19,7 @@ const ROLES = [
   },
   {
     id: "cooperative",
-    title: "Cooperative",
+    title: "Cooperative/Farmers Group",
     description: "Coordinate farmer groups, manage collection centers, oversee cooperative inventory, and execute certificate transfers.",
     icon: Store,
     badge: "Collection Hub",
