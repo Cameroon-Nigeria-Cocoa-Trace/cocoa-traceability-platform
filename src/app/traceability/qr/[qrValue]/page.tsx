@@ -219,7 +219,7 @@ export default function PublicQRTraceabilityVerificationPage() {
         <Navbar />
       </div>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 print:p-0 print:max-w-none">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-8 print:pt-0 print:p-0 print:max-w-none">
         {loading ? (
           <div className="bg-white rounded-2xl p-16 text-center border border-stone-200 shadow-xs my-12">
             <RefreshCw className="h-10 w-10 text-emerald-700 animate-spin mx-auto mb-4" />
