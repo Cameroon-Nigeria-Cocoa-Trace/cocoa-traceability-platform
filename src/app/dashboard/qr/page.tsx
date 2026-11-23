@@ -7,6 +7,7 @@ import { Navbar } from "@/components/Navbar";
 import { DashboardWorkflowNav } from "@/components/DashboardWorkflowNav";
 import { useFirebase } from "@/context/FirebaseContext";
 import { createCocoaApiClient, CocoaApiError } from "@/lib/cocoaApiClient";
+import { buildQRVerificationUrl } from "@/lib/qrUrl";
 import {
   QRCode,
   CertificateHolding,
@@ -16,8 +17,6 @@ import QRCodeLib from "qrcode";
 import {
   QrCode,
   Package,
-  Layers,
-  ShieldCheck,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
@@ -33,13 +32,10 @@ import {
   Ban,
   RotateCcw,
   Sparkles,
-  ArrowRight,
   Boxes,
   Scale,
   Award,
-  Calendar,
   Check,
-  ChevronRight,
   Info,
 } from "lucide-react";
 
@@ -166,7 +162,7 @@ export default function QRTraceabilityPage() {
     return holdings.find((h) => h.holdingId === selectedHoldingId) || null;
   }, [holdings, selectedHoldingId]);
 
-  // Generate QR Image Data URL when previewQR opens
+  // Generate QR Image Data URL (encoding the full verification URL) when previewQR opens
   useEffect(() => {
     if (!previewQR) {
       setPreviewDataUrl(null);
@@ -174,7 +170,12 @@ export default function QRTraceabilityPage() {
     }
 
     let isMounted = true;
-    QRCodeLib.toDataURL(previewQR.qrValue, {
+    const verificationUrl = buildQRVerificationUrl(
+      previewQR.qrValue,
+      typeof window !== "undefined" ? window.location.origin : undefined
+    );
+
+    QRCodeLib.toDataURL(verificationUrl, {
       width: 320,
       margin: 2,
       errorCorrectionLevel: "H",
@@ -243,7 +244,7 @@ export default function QRTraceabilityPage() {
         setSuccessMessage(`Successfully generated package ${res.qrCode.packageNumber} (${res.qrCode.representedQuantityKg} kg)!`);
         setShowCreateModal(false);
         setQrGroupId("");
-        await loadQRPackages();
+        await Promise.all([loadHoldings(), loadQRPackages()]);
       }
     } catch (err: unknown) {
       if (err instanceof CocoaApiError) {
@@ -293,7 +294,7 @@ export default function QRTraceabilityPage() {
         setSuccessMessage(`Successfully generated batch of ${res.count} packages (${totalBatchWeight} kg total)!`);
         setShowCreateModal(false);
         setQrGroupId("");
-        await loadQRPackages();
+        await Promise.all([loadHoldings(), loadQRPackages()]);
       }
     } catch (err: unknown) {
       if (err instanceof CocoaApiError) {
@@ -321,7 +322,7 @@ export default function QRTraceabilityPage() {
       );
       if (res && res.success) {
         setSuccessMessage(`Package ${qr.packageNumber} deactivated.`);
-        await loadQRPackages();
+        await Promise.all([loadHoldings(), loadQRPackages()]);
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to deactivate package.");
@@ -349,7 +350,7 @@ export default function QRTraceabilityPage() {
         setSuccessMessage(`Package ${revokingQR.packageNumber} revoked.`);
         setRevokingQR(null);
         setRevocationReason("");
-        await loadQRPackages();
+        await Promise.all([loadHoldings(), loadQRPackages()]);
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to revoke package.");
@@ -373,7 +374,7 @@ export default function QRTraceabilityPage() {
         setSuccessMessage(`Package ${repackagingQR.packageNumber} returned to bulk! Released ${repackagingQR.representedQuantityKg} kg back to unpackaged capacity.`);
         setRepackagingQR(null);
         setRepackageNotes("");
-        await loadQRPackages();
+        await Promise.all([loadHoldings(), loadQRPackages()]);
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to return package to bulk.");
@@ -454,11 +455,19 @@ export default function QRTraceabilityPage() {
   // Filtered QR Packages
   const filteredQRs = useMemo(() => {
     return qrPackages.filter((qr) => {
+      const isRetiredAfterSale =
+        qr.retiredOnSale === true ||
+        qr.status === "transferred" ||
+        qr.status === "superseded";
+      const isManualReturnToBulk =
+        qr.returnedToBulk === true && !isRetiredAfterSale;
+
       // Status filter
-      if (statusFilter === "active" && qr.status !== "active") return false;
-      if (statusFilter === "inactive" && qr.status !== "inactive") return false;
-      if (statusFilter === "revoked" && (qr.status !== "revoked" || qr.returnedToBulk === true)) return false;
-      if (statusFilter === "repackaged" && qr.returnedToBulk !== true) return false;
+      if (statusFilter === "active" && (qr.status !== "active" || isRetiredAfterSale)) return false;
+      if (statusFilter === "inactive" && (qr.status !== "inactive" || isRetiredAfterSale)) return false;
+      if (statusFilter === "retired" && !isRetiredAfterSale) return false;
+      if (statusFilter === "revoked" && (qr.status !== "revoked" || qr.returnedToBulk === true || isRetiredAfterSale)) return false;
+      if (statusFilter === "repackaged" && !isManualReturnToBulk) return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -485,20 +494,15 @@ export default function QRTraceabilityPage() {
         {/* Hero Section */}
         <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-stone-200">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                Stage 4: Bag-Level Traceability
-              </span>
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                EUDR Compliant
-              </span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900 mt-2 flex items-center gap-2.5">
+            <p className="text-xs font-semibold text-emerald-800 tracking-wide">
+              Stage 4 · Bag-Level Traceability · EUDR Compliant
+            </p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900 mt-1.5 flex items-center gap-2.5">
               <QrCode className="h-7 w-7 text-emerald-700" />
               QR Package Management & Accounting
             </h1>
             <p className="mt-1 text-sm text-stone-600 max-w-3xl">
-              Generate permanent, sequence-numbered QR codes for individual cocoa bags. Manage virtual packaging allocations, enforce strict bulk balance limits, and enable public consumer provenance tracking.
+              Generate scannable URL QR codes for cocoa bags on your current holding. When cocoa is sold or transferred, the seller&apos;s QR code is retired permanently so the recipient generates a fresh QR code for their own custody.
             </p>
           </div>
 
@@ -565,26 +569,27 @@ export default function QRTraceabilityPage() {
                 <span className="text-xs font-semibold tracking-wider text-emerald-400 uppercase">
                   Source Custody Holding
                 </span>
-                <div className="mt-1 flex items-center gap-3">
+                <div className="mt-1.5 flex flex-wrap items-center gap-3">
                   <select
                     value={selectedHoldingId}
                     onChange={(e) => setSelectedHoldingId(e.target.value)}
-                    className="bg-stone-800 border border-stone-700 text-white text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none min-w-[280px]"
+                    className="bg-stone-800 border border-stone-700 text-white text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none min-w-[300px] tabular-nums"
                   >
                     {holdings.length === 0 ? (
-                      <option value="">No active holdings found</option>
+                      <option value="">No custody holdings found</option>
                     ) : (
                       holdings.map((h) => (
                         <option key={h.holdingId} value={h.holdingId}>
-                          {h.holdingId} — Lot #{h.lotId} ({h.availableQuantityKg} kg available)
+                          Lot #{h.lotId} — {h.certificateNumber} — {h.availableQuantityKg} kg available ({h.holderType}, {h.status})
                         </option>
                       ))
                     )}
                   </select>
 
                   {currentHolding && (
-                    <span className="text-xs text-stone-300">
-                      Cert #{currentHolding.certificateNumber} • Holder: {currentHolding.holderType.toUpperCase()}
+                    <span className="text-xs text-stone-300 tabular-nums">
+                      Cert #{currentHolding.certificateNumber} · Holder: {currentHolding.holderType.toUpperCase()}
+                      {currentHolding.sourceTransferId ? " · Received via transfer/purchase (generate new QR here)" : ""}
                     </span>
                   )}
                 </div>
@@ -593,8 +598,8 @@ export default function QRTraceabilityPage() {
               {packagingState && (
                 <div className="flex items-center gap-2 bg-stone-800/80 px-4 py-2 rounded-xl border border-stone-700">
                   <Info className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <span className="text-xs text-stone-300">
-                    Packaging capacity is derived dynamically: <code className="text-emerald-300 font-mono">Unpackaged = Available - Active Bags</code>
+                  <span className="text-xs text-stone-300 tabular-nums">
+                    Unpackaged = Available ({packagingState.availableQuantityKg} kg) − Active Bags ({packagingState.allocatedPackageQuantityKg} kg)
                   </span>
                 </div>
               )}
@@ -719,6 +724,7 @@ export default function QRTraceabilityPage() {
             {[
               { id: "all", label: "All Packages" },
               { id: "active", label: "Active" },
+              { id: "retired", label: "Retired (Sold)" },
               { id: "inactive", label: "Inactive" },
               { id: "revoked", label: "Revoked" },
               { id: "repackaged", label: "Returned to Bulk" },
@@ -726,7 +732,7 @@ export default function QRTraceabilityPage() {
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors shrink-0 whitespace-nowrap ${
                   statusFilter === tab.id
                     ? "bg-stone-900 text-white"
                     : "bg-white border border-stone-200 text-stone-700 hover:bg-stone-100"
@@ -792,7 +798,12 @@ export default function QRTraceabilityPage() {
                 </thead>
                 <tbody className="divide-y divide-stone-100">
                   {filteredQRs.map((qr) => {
-                    const isReturnedToBulk = qr.returnedToBulk === true;
+                    const isRetiredAfterSale =
+                      qr.retiredOnSale === true ||
+                      qr.status === "transferred" ||
+                      qr.status === "superseded";
+                    const isReturnedToBulk =
+                      qr.returnedToBulk === true && !isRetiredAfterSale;
 
                     return (
                       <tr key={qr.qrId} className="hover:bg-stone-50/80 transition-colors">
@@ -802,9 +813,9 @@ export default function QRTraceabilityPage() {
                               <QrCode className="h-5 w-5" />
                             </div>
                             <div>
-                              <div className="font-semibold text-stone-900 flex items-center gap-1.5">
-                                {qr.packageNumber}
-                                <span className="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded font-mono">
+                              <div className="font-semibold text-stone-900 flex items-center gap-2 tabular-nums">
+                                <span>{qr.packageNumber}</span>
+                                <span className="text-[11px] font-mono text-stone-500 font-normal">
                                   Seq #{qr.sequenceNumber}
                                 </span>
                               </div>
@@ -815,19 +826,19 @@ export default function QRTraceabilityPage() {
                           </div>
                         </td>
 
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-stone-100 text-stone-800 border border-stone-200">
-                            <Scale className="h-3.5 w-3.5 mr-1 text-stone-500" />
+                        <td className="px-6 py-4 whitespace-nowrap tabular-nums">
+                          <div className="inline-flex items-center text-xs font-semibold text-stone-800">
+                            <Scale className="h-3.5 w-3.5 mr-1.5 text-stone-500" />
                             {qr.representedQuantityKg} kg
                           </div>
                           {qr.qrGroupId && (
-                            <div className="text-[11px] text-stone-500 mt-1">
+                            <div className="text-[11px] text-stone-500 mt-0.5">
                               Grp: <span className="font-medium text-stone-700">{qr.qrGroupId}</span>
                             </div>
                           )}
                         </td>
 
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap tabular-nums">
                           <div className="text-xs font-medium text-stone-900">
                             Lot: {qr.lotNumber}
                           </div>
@@ -838,21 +849,29 @@ export default function QRTraceabilityPage() {
                         </td>
 
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {isReturnedToBulk ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          {isRetiredAfterSale ? (
+                            <div>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-red-50 text-red-800 border border-red-200">
+                                Retired (Sold / Transferred)
+                              </span>
+                              <p className="text-[11px] text-stone-500 mt-0.5">
+                                Non-reusable · Buyer generates new QR
+                              </p>
+                            </div>
+                          ) : isReturnedToBulk ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-purple-50 text-purple-800 border border-purple-200">
                               Returned to Bulk
                             </span>
                           ) : qr.status === "active" ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 mr-1.5" />
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                               Active
                             </span>
                           ) : qr.status === "inactive" ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                               Inactive
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-red-50 text-red-800 border border-red-200">
                               Revoked
                             </span>
                           )}
@@ -898,7 +917,7 @@ export default function QRTraceabilityPage() {
                             </Link>
 
                             {/* Status Actions */}
-                            {qr.status === "active" && (
+                            {qr.status === "active" && !isRetiredAfterSale && (
                               <>
                                 <button
                                   onClick={() => handleDeactivate(qr)}
@@ -922,8 +941,8 @@ export default function QRTraceabilityPage() {
                               </>
                             )}
 
-                            {/* Repackage / Return to Bulk if revoked and not yet returned */}
-                            {qr.status === "revoked" && !isReturnedToBulk && (
+                            {/* Repackage / Return to Bulk if revoked manually and not yet returned */}
+                            {qr.status === "revoked" && !isRetiredAfterSale && !isReturnedToBulk && (
                               <button
                                 onClick={() => {
                                   setRepackagingQR(qr);
@@ -1236,7 +1255,7 @@ export default function QRTraceabilityPage() {
                   </div>
 
                   {/* Bag Metadata */}
-                  <div className="mt-3 text-center">
+                  <div className="mt-3 text-center tabular-nums">
                     <p className="text-lg font-black text-stone-900 tracking-tight">
                       {previewQR.packageNumber}
                     </p>
@@ -1244,7 +1263,19 @@ export default function QRTraceabilityPage() {
                       NET WEIGHT: {previewQR.representedQuantityKg} KG
                     </p>
                     <p className="text-[11px] text-stone-600 mt-1 font-mono">
-                      LOT: {previewQR.lotNumber} • CERT: #{previewQR.certificateNumber}
+                      LOT: {previewQR.lotNumber} · CERT: #{previewQR.certificateNumber}
+                    </p>
+                    <p
+                      className="text-[10px] text-stone-500 mt-1.5 font-mono truncate max-w-[300px] mx-auto"
+                      title={buildQRVerificationUrl(
+                        previewQR.qrValue,
+                        typeof window !== "undefined" ? window.location.origin : undefined
+                      )}
+                    >
+                      Scan URL: {buildQRVerificationUrl(
+                        previewQR.qrValue,
+                        typeof window !== "undefined" ? window.location.origin : undefined
+                      )}
                     </p>
                   </div>
 
@@ -1257,27 +1288,45 @@ export default function QRTraceabilityPage() {
 
               {/* Modal Actions */}
               <div className="p-4 bg-stone-50 border-t border-stone-200 flex flex-col gap-2 print:hidden">
-                <div className="flex items-center justify-between gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => handleCopyValue(previewQR.qrValue)}
-                    className="flex-1 py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5"
+                    type="button"
+                    onClick={() =>
+                      handleCopyValue(
+                        buildQRVerificationUrl(
+                          previewQR.qrValue,
+                          typeof window !== "undefined" ? window.location.origin : undefined
+                        )
+                      )
+                    }
+                    className="py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
                     {copiedValue ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copiedValue ? "Copied!" : "Copy Value"}
+                    {copiedValue ? "Copied URL!" : "Copy Scan Link"}
                   </button>
 
-                  <a
-                    href={`/api/qr-codes/${previewQR.qrId}/download?format=png`}
-                    download={`${previewQR.packageNumber}.png`}
-                    className="flex-1 py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5"
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadQR(previewQR, "png")}
+                    className="py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
                     <Download className="h-3.5 w-3.5" />
                     Download PNG
-                  </a>
+                  </button>
 
                   <button
+                    type="button"
+                    onClick={() => handleDownloadQR(previewQR, "svg")}
+                    className="py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download SVG
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => window.print()}
-                    className="flex-1 py-2 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                    className="py-2 px-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
                     <Printer className="h-3.5 w-3.5" />
                     Print Tag
@@ -1289,7 +1338,7 @@ export default function QRTraceabilityPage() {
                   target="_blank"
                   className="w-full py-2 px-3 text-center text-xs font-medium text-emerald-800 hover:text-emerald-950 flex items-center justify-center gap-1"
                 >
-                  Open Public Traceability Page <ExternalLink className="h-3.5 w-3.5" />
+                  Open Live Verification Page <ExternalLink className="h-3.5 w-3.5" />
                 </Link>
               </div>
             </div>

@@ -36,12 +36,18 @@ import {
   PublicQRTraceabilityResult,
   AuthorizedQRTraceabilityResult,
   CertificateHolding,
+  CertificateTransfer,
   TraceCertificate,
   CocoaLot,
+  ProductionRecord,
+  Harvest,
+  TradeRecord,
+  CocoaLotAdjustment,
 } from "@/types/traceability";
 import { resolveAuthenticatedUserUid } from "./productionService";
 import { resolveCertificateHoldingHistory } from "./transferService";
 import { assertActorCanActForHolder } from "@/lib/certificateAuthorization";
+import { buildQRVerificationUrl } from "@/lib/qrUrl";
 
 export const COLLECTIONS = {
   QR_CODES: "qrCodes",
@@ -49,8 +55,14 @@ export const COLLECTIONS = {
   LOT_COUNTERS: "lotCounters",
   CERTIFICATE_HOLDINGS: "certificateHoldings",
   CERTIFICATES: "certificates",
+  CERTIFICATE_TRANSFERS: "certificateTransfers",
   COCOA_LOTS: "cocoaLots",
   FARMS: "farms",
+  PRODUCTIONS: "productions",
+  PRODUCTION_RECORDS: "productionRecords",
+  HARVESTS: "harvests",
+  TRADES: "trades",
+  COCOA_LOT_ADJUSTMENTS: "cocoaLotAdjustments",
   MARKETPLACE_LISTINGS: "marketplaceListings",
 } as const;
 
@@ -144,7 +156,10 @@ export async function generateQRCode(
     }
     const holding = holdingSnap.data() as CertificateHolding;
 
-    if (holding.status !== "active" && holding.availableQuantityKg <= 0) {
+    if (
+      (holding.status !== "active" && holding.status !== "partially_transferred") ||
+      holding.availableQuantityKg <= 0
+    ) {
       throw new Error(
         `Holding Error: Holding "${holding.holdingId}" has status "${holding.status}" and no available balance.`
       );
@@ -292,7 +307,10 @@ export async function generateQRBatch(
     }
     const holding = holdingSnap.data() as CertificateHolding;
 
-    if (holding.status !== "active" && holding.availableQuantityKg <= 0) {
+    if (
+      (holding.status !== "active" && holding.status !== "partially_transferred") ||
+      holding.availableQuantityKg <= 0
+    ) {
       throw new Error(
         `Holding Error: Holding "${holding.holdingId}" has status "${holding.status}" and no available balance.`
       );
@@ -414,17 +432,31 @@ export async function getQRCode(qrId: string): Promise<QRCode | null> {
 }
 
 /**
- * Retrieves a QRCode by unique qrValue.
+ * Retrieves a QRCode by unique qrValue (or fallback packageNumber match for manual portal lookups).
  */
 export async function getQRCodeByValue(qrValue: string): Promise<QRCode | null> {
   if (!qrValue || !qrValue.trim()) return null;
+  const clean = qrValue.trim();
+
   const q = query(
     collection(db, COLLECTIONS.QR_CODES),
-    where("qrValue", "==", qrValue.trim())
+    where("qrValue", "==", clean)
   );
   const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return snap.docs[0].data() as QRCode;
+  if (!snap.empty) {
+    return snap.docs[0].data() as QRCode;
+  }
+
+  const pkgQuery = query(
+    collection(db, COLLECTIONS.QR_CODES),
+    where("packageNumber", "==", clean)
+  );
+  const pkgSnap = await getDocs(pkgQuery);
+  if (!pkgSnap.empty) {
+    return pkgSnap.docs[0].data() as QRCode;
+  }
+
+  return null;
 }
 
 /**
@@ -598,18 +630,21 @@ export async function repackageRevokedQRCode(
 
 /**
  * Server-side QR Code image generation for physical printing.
- * Encodes only the stable qrValue or public verification URL.
+ * Encodes the full scannable verification URL pointing to `/traceability/qr/<qrValue>`.
  */
 export async function generateQRImage(
   qrValue: string,
-  format: "svg" | "png" = "svg"
+  format: "svg" | "png" = "svg",
+  baseOrigin?: string
 ): Promise<{ data: Buffer | string; contentType: string }> {
   if (!qrValue || !qrValue.trim()) {
     throw new Error("Validation Error: qrValue is required to render QR image.");
   }
 
+  const verificationUrl = buildQRVerificationUrl(qrValue.trim(), baseOrigin);
+
   if (format === "png") {
-    const pngBuffer = await QRCodeLib.toBuffer(qrValue.trim(), {
+    const pngBuffer = await QRCodeLib.toBuffer(verificationUrl, {
       type: "png",
       width: 400,
       margin: 2,
@@ -618,7 +653,7 @@ export async function generateQRImage(
     return { data: pngBuffer, contentType: "image/png" };
   }
 
-  const svgString = await QRCodeLib.toString(qrValue.trim(), {
+  const svgString = await QRCodeLib.toString(verificationUrl, {
     type: "svg",
     width: 400,
     margin: 2,
@@ -627,15 +662,89 @@ export async function generateQRImage(
   return { data: svgString, contentType: "image/svg+xml" };
 }
 
+function formatPublicRoleTitle(holderType: string, isOrigin = false): string {
+  const t = (holderType || "holder").toLowerCase();
+  if (t === "farmer") return isOrigin ? "Origin Farmer" : "Farmer";
+  if (t === "cooperative") return "Cooperative Organization";
+  if (t === "agent") return "Licensed Export Agent";
+  if (t === "warehouse") return "Certified Warehouse Facility";
+  if (t === "buyer") return "Verified Cocoa Buyer";
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/**
+ * Resolves a public-safe display label for an entity without exposing personal UIDs,
+ * phone numbers, or email addresses.
+ */
+async function resolvePublicEntityLabel(
+  holderType: string,
+  holderId: string,
+  farmData?: Record<string, unknown> | null,
+  isOrigin = false,
+  cache?: Map<string, string>
+): Promise<string> {
+  const cacheKey = `${holderType}:${holderId}:${isOrigin ? "origin" : "node"}`;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey)!;
+
+  const cleanType = (holderType || "").toLowerCase();
+  const baseRole = formatPublicRoleTitle(cleanType, isOrigin);
+
+  if (cleanType === "farmer") {
+    const farmName =
+      typeof farmData?.farmName === "string" && farmData.farmName.trim()
+        ? farmData.farmName.trim()
+        : undefined;
+    const label = isOrigin && farmName ? `Origin Grower (${farmName})` : baseRole;
+    cache?.set(cacheKey, label);
+    return label;
+  }
+
+  if (holderId && holderId.trim()) {
+    const cleanId = holderId.trim();
+    const orgCollections =
+      cleanType === "cooperative"
+        ? ["cooperatives", "cooperative_organizations"]
+        : cleanType === "warehouse"
+          ? ["warehouses", "warehouse_facilities", "warehouse_organizations"]
+          : cleanType === "agent"
+            ? ["agents", "agent_organizations"]
+            : [];
+
+    for (const colName of orgCollections) {
+      try {
+        const snap = await getDoc(doc(db, colName, cleanId));
+        if (snap.exists()) {
+          const data = snap.data();
+          const orgName =
+            data?.name ||
+            data?.organizationName ||
+            data?.cooperativeName ||
+            data?.facilityName ||
+            data?.companyName;
+          if (typeof orgName === "string" && orgName.trim()) {
+            const label = `${baseRole}: ${orgName.trim()}`;
+            cache?.set(cacheKey, label);
+            return label;
+          }
+        }
+      } catch {
+        // Non-blocking public lookup
+      }
+    }
+  }
+
+  cache?.set(cacheKey, baseRole);
+  return baseRole;
+}
+
 /**
  * Publicly verifies and reconstructs complete bag-level traceability lineage from a QR value.
  *
  * Guarantees:
- * - Traverses upstream from currentHoldingId along the exact custody DAG.
- * - Preserves every historical transfer quantity.
- * - Identifies original farm, cocoa lot, and certificate.
- * - Separately reports: original lot quantity, certified quantity, current holding quantity, this package quantity.
- * - Completely sanitizes private Firebase UIDs, fee amounts, and internal reviewer notes.
+ * - Resolves full upstream & downstream chain (Farm -> Production -> Harvest -> Lot -> Cert -> Holdings -> Transfers).
+ * - Evaluates QR freshness and anti-reuse status (whether this is the latest lot QR or retired after sale/transfer).
+ * - Computes exact remaining cocoa balances in the lot (original, sold/transferred, remaining at origin, and per-holder).
+ * - Completely sanitizes private Firebase UIDs, fee amounts, contact info, and internal reviewer notes.
  */
 export async function resolvePublicQRTraceability(
   qrValue: string
@@ -645,46 +754,431 @@ export async function resolvePublicQRTraceability(
   const qr = await getQRCodeByValue(qrValue.trim());
   if (!qr) return null;
 
-  // Resolve upstream lineage from the package's current custody holding
-  const holdingHistory = await resolveCertificateHoldingHistory(qr.currentHoldingId);
+  const [
+    holdingHistory,
+    lotSnap,
+    certSnap,
+    farmSnap,
+    allLotQRsSnap,
+    allLotHoldingsSnap,
+    allLotTransfersSnap,
+    allLotTradesSnap,
+    allLotAdjustmentsSnap,
+  ] = await Promise.all([
+    resolveCertificateHoldingHistory(qr.currentHoldingId),
+    getDoc(doc(db, COLLECTIONS.COCOA_LOTS, qr.lotId)),
+    getDoc(doc(db, COLLECTIONS.CERTIFICATES, qr.certificateId)),
+    getDoc(doc(db, COLLECTIONS.FARMS, qr.farmId)),
+    getDocs(query(collection(db, COLLECTIONS.QR_CODES), where("lotId", "==", qr.lotId))),
+    getDocs(query(collection(db, COLLECTIONS.CERTIFICATE_HOLDINGS), where("lotId", "==", qr.lotId))),
+    getDocs(query(collection(db, COLLECTIONS.CERTIFICATE_TRANSFERS), where("lotId", "==", qr.lotId))),
+    getDocs(query(collection(db, COLLECTIONS.TRADES), where("lotId", "==", qr.lotId))),
+    getDocs(query(collection(db, COLLECTIONS.COCOA_LOT_ADJUSTMENTS), where("lotId", "==", qr.lotId))),
+  ]);
+
   if (!holdingHistory) return null;
 
-  // Resolve backing Lot, Farm, and Certificate
-  const lotSnap = await getDoc(doc(db, COLLECTIONS.COCOA_LOTS, qr.lotId));
   const lot = lotSnap.exists() ? (lotSnap.data() as CocoaLot) : null;
-
-  const certSnap = await getDoc(doc(db, COLLECTIONS.CERTIFICATES, qr.certificateId));
   const cert = certSnap.exists() ? (certSnap.data() as TraceCertificate) : null;
+  const farmData = farmSnap.exists() ? (farmSnap.data() as Record<string, unknown>) : null;
 
-  const farmSnap = await getDoc(doc(db, COLLECTIONS.FARMS, qr.farmId));
-  const farmData = farmSnap.exists() ? farmSnap.data() : null;
+  // Resolve upstream Production Season and Harvest event
+  let production: ProductionRecord | null = null;
+  if (lot?.productionRecordId) {
+    const prodSnap1 = await getDoc(doc(db, COLLECTIONS.PRODUCTIONS, lot.productionRecordId));
+    if (prodSnap1.exists()) {
+      production = prodSnap1.data() as ProductionRecord;
+    } else {
+      const prodSnap2 = await getDoc(
+        doc(db, COLLECTIONS.PRODUCTION_RECORDS, lot.productionRecordId)
+      );
+      if (prodSnap2.exists()) {
+        production = prodSnap2.data() as ProductionRecord;
+      }
+    }
+  }
 
-  // Format public custody chain hops
-  const custodyChain = holdingHistory.chronologicalTransferSequence.map((t, idx) => ({
-    stepOrder: idx + 1,
-    fromHolderPublicName: `${t.sourceHolderType.toUpperCase()}: ${t.sourceHolderId}`,
-    fromHolderType: t.sourceHolderType,
-    toHolderPublicName: `${t.destinationHolderType.toUpperCase()}: ${t.destinationHolderId}`,
-    toHolderType: t.destinationHolderType,
-    transferredQuantityKg: t.quantityKg,
-    transferredAt: t.completedAt || t.initiatedAt,
+  let harvest: Harvest | null = null;
+  if (lot?.harvestId) {
+    const harvSnap = await getDoc(doc(db, COLLECTIONS.HARVESTS, lot.harvestId));
+    if (harvSnap.exists()) {
+      harvest = harvSnap.data() as Harvest;
+    }
+  }
+
+  const allLotQRs = allLotQRsSnap.docs
+    .map((d) => d.data() as QRCode)
+    .sort((a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0));
+
+  const allLotHoldings = allLotHoldingsSnap.docs.map((d) => d.data() as CertificateHolding);
+  const allLotTransfers = allLotTransfersSnap.docs
+    .map((d) => d.data() as CertificateTransfer)
+    .filter((t) => t.transferStatus === "completed")
+    .sort((a, b) => (a.completedAt || a.initiatedAt).localeCompare(b.completedAt || b.initiatedAt));
+
+  const allLotTrades = allLotTradesSnap.docs.map((d) => d.data() as TradeRecord);
+  const allLotAdjustments = allLotAdjustmentsSnap.docs.map((d) => d.data() as CocoaLotAdjustment);
+
+  const holdingMap = new Map<string, CertificateHolding>(
+    allLotHoldings.map((h) => [h.holdingId, h])
+  );
+  const labelCache = new Map<string, string>();
+
+  // Identify root/origin holding ID
+  const rootHolding =
+    allLotHoldings.find((h) => !h.parentHoldingId && !h.sourceTransferId) ||
+    holdingMap.get(holdingHistory.originalHoldingId) ||
+    null;
+  const originHoldingId = rootHolding?.holdingId || holdingHistory.originalHoldingId;
+
+  // Evaluate freshness & anti-reuse status across all QRs on this lot
+  const qrHolding = holdingMap.get(qr.currentHoldingId);
+  const holdingDepleted =
+    qrHolding !== undefined &&
+    (qrHolding.availableQuantityKg <= 0 || qrHolding.status === "depleted");
+
+  const hasOutgoingAfterQr = allLotTransfers.some(
+    (t) =>
+      t.sourceHoldingId === qr.currentHoldingId &&
+      holdingDepleted &&
+      (t.completedAt || t.initiatedAt) >= qr.generatedAt
+  );
+
+  const isRetiredAfterSale =
+    qr.status === "transferred" ||
+    qr.status === "superseded" ||
+    qr.retiredOnSale === true ||
+    Boolean(qr.supersededByTransferId) ||
+    holdingDepleted ||
+    hasOutgoingAfterQr;
+
+  const isValidAndActive =
+    qr.status === "active" && qr.returnedToBulk !== true && !isRetiredAfterSale;
+
+  // Truly active QRs across the lot (excluding retired/depleted ones)
+  const activeLotQRs = allLotQRs.filter((q) => {
+    const h = holdingMap.get(q.currentHoldingId);
+    const hDepleted = h !== undefined && (h.availableQuantityKg <= 0 || h.status === "depleted");
+    return (
+      q.status === "active" &&
+      q.returnedToBulk !== true &&
+      q.retiredOnSale !== true &&
+      !q.supersededByTransferId &&
+      !hDepleted
+    );
+  });
+
+  const latestActiveQR =
+    activeLotQRs.length > 0 ? activeLotQRs[activeLotQRs.length - 1] : undefined;
+  const newerQRsGeneratedCount = allLotQRs.filter(
+    (q) => (q.sequenceNumber || 0) > (qr.sequenceNumber || 0)
+  ).length;
+  const isMostUpdatedForLot = isValidAndActive && newerQRsGeneratedCount === 0;
+
+  // Did the buyer / downstream holder already generate their own replacement QR?
+  const downstreamHoldingIds = new Set<string>();
+  if (qr.supersededByHoldingId) downstreamHoldingIds.add(qr.supersededByHoldingId);
+  allLotTransfers.forEach((t) => {
+    if (
+      (t.sourceHoldingId === qr.currentHoldingId ||
+        t.transferId === qr.supersededByTransferId) &&
+      t.destinationHoldingId
+    ) {
+      downstreamHoldingIds.add(t.destinationHoldingId);
+    }
+  });
+  const buyerReplacementQRs = allLotQRs.filter(
+    (q) =>
+      q.qrId !== qr.qrId &&
+      (downstreamHoldingIds.has(q.generatedFromHoldingId) ||
+        downstreamHoldingIds.has(q.currentHoldingId)) &&
+      q.status === "active" &&
+      q.returnedToBulk !== true
+  );
+  const buyerHasGeneratedReplacementQR = buyerReplacementQRs.length > 0;
+
+  // Build verdict & explanations
+  let verdictCode: NonNullable<PublicQRTraceabilityResult["freshness"]>["verdictCode"];
+  let statusHeadline: string;
+  let statusDetail: string;
+
+  if (isRetiredAfterSale) {
+    verdictCode = "RETIRED_AFTER_SALE";
+    statusHeadline = "Retired QR — Cocoa Already Sold or Transferred";
+    statusDetail = buyerHasGeneratedReplacementQR
+      ? "This batch has changed custody and cannot be reused. The new owner has generated their own replacement QR code for downstream tracking."
+      : "This cocoa batch was sold or transferred to another holder, so this QR code is permanently retired and cannot be reused. The buyer must generate their own new QR code from their custody holding.";
+  } else if (qr.status !== "active" || qr.returnedToBulk === true) {
+    verdictCode = "REVOKED_OR_INACTIVE";
+    statusHeadline =
+      qr.returnedToBulk === true
+        ? "Returned to Bulk — QR Retired"
+        : qr.status === "revoked"
+          ? "Revoked QR Code"
+          : "Inactive QR Code";
+    statusDetail =
+      qr.revocationReason ||
+      "This QR code is no longer active and must not be reused for trade or export verification.";
+  } else if (isMostUpdatedForLot) {
+    verdictCode = "MOST_UPDATED_ACTIVE";
+    statusHeadline = "Most Updated Active QR Code for This Lot";
+    statusDetail = `Package #${qr.sequenceNumber} is active, backed by verified cocoa in this lot, and is the most recent QR code generated (${allLotQRs.length} total generated on lot).`;
+  } else {
+    verdictCode = "OLDER_ACTIVE_LOT_QR";
+    statusHeadline = "Valid Active Bag — Newer QR Exists on This Lot";
+    statusDetail = `This ${qr.representedQuantityKg} kg bag QR (#${qr.sequenceNumber}) remains active for its custody holding, while ${newerQRsGeneratedCount} newer QR code(s) have subsequently been generated for other cocoa in this lot${
+      latestActiveQR ? ` (latest active: ${latestActiveQR.packageNumber})` : ""
+    }.`;
+  }
+
+  // Format custody chain hops directly leading to this QR's holding (sanitized labels)
+  const custodyChain = await Promise.all(
+    holdingHistory.chronologicalTransferSequence.map(async (t, idx) => {
+      const fromLabel = await resolvePublicEntityLabel(
+        t.sourceHolderType,
+        t.sourceHolderId,
+        farmData,
+        t.sourceHoldingId === originHoldingId,
+        labelCache
+      );
+      const toLabel = await resolvePublicEntityLabel(
+        t.destinationHolderType,
+        t.destinationHolderId,
+        farmData,
+        t.destinationHoldingId === originHoldingId,
+        labelCache
+      );
+      return {
+        stepOrder: idx + 1,
+        fromHolderPublicName: fromLabel,
+        fromHolderType: t.sourceHolderType,
+        toHolderPublicName: toLabel,
+        toHolderType: t.destinationHolderType,
+        transferredQuantityKg: t.quantityKg,
+        transferredAt: t.completedAt || t.initiatedAt,
+      };
+    })
+  );
+
+  // Format complete lot movements across ALL transfers & uncertified sales in this lot
+  const thisQrTransferIds = new Set(
+    holdingHistory.chronologicalTransferSequence.map((t) => t.transferId)
+  );
+  const transferIdsInTrades = new Set(
+    allLotTrades.filter((t) => t.transferId).map((t) => t.transferId!)
+  );
+
+  type RawMovement = {
+    eventType: "transfer" | "trade";
+    fromType: string;
+    fromId: string;
+    fromIsOrigin: boolean;
+    toType: string;
+    toId: string;
+    toIsOrigin: boolean;
+    destHoldingId?: string;
+    quantityKg: number;
+    timestamp: string;
+    status: string;
+    inThisQrLineage: boolean;
+  };
+
+  const rawMovements: RawMovement[] = allLotTransfers.map((t) => ({
+    eventType: "transfer",
+    fromType: t.sourceHolderType,
+    fromId: t.sourceHolderId,
+    fromIsOrigin: t.sourceHoldingId === originHoldingId,
+    toType: t.destinationHolderType,
+    toId: t.destinationHolderId,
+    toIsOrigin: t.destinationHoldingId === originHoldingId,
+    destHoldingId: t.destinationHoldingId,
+    quantityKg: t.quantityKg,
+    timestamp: t.completedAt || t.initiatedAt,
+    status: t.transferStatus,
+    inThisQrLineage: thisQrTransferIds.has(t.transferId),
   }));
 
-  const publicFarmName = farmData?.farmName || `Farm #${qr.farmId.substring(0, 8)}`;
-  const publicRegion = farmData?.region || "South-West Region";
+  for (const tr of allLotTrades) {
+    if (tr.tradeStatus === "cancelled" || tr.tradeStatus === "failed") continue;
+    if (tr.transferId && transferIdsInTrades.has(tr.transferId)) continue;
+    rawMovements.push({
+      eventType: "trade",
+      fromType: tr.sellerHolderType || "farmer",
+      fromId: tr.sellerHolderId || tr.sellerId,
+      fromIsOrigin: tr.sourceHoldingId === originHoldingId,
+      toType: tr.buyerHolderType || "buyer",
+      toId: tr.buyerId,
+      toIsOrigin: false,
+      destHoldingId: tr.destHoldingId,
+      quantityKg: tr.quantityKg,
+      timestamp: tr.tradeDate || tr.createdAt,
+      status: tr.tradeStatus,
+      inThisQrLineage: false,
+    });
+  }
+
+  rawMovements.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  const lotMovements = await Promise.all(
+    rawMovements.map(async (m, idx) => {
+      const fromHolderLabel = await resolvePublicEntityLabel(
+        m.fromType,
+        m.fromId,
+        farmData,
+        m.fromIsOrigin,
+        labelCache
+      );
+      const toHolderLabel = await resolvePublicEntityLabel(
+        m.toType,
+        m.toId,
+        farmData,
+        m.toIsOrigin,
+        labelCache
+      );
+      const buyerGeneratedQrCount = m.destHoldingId
+        ? allLotQRs.filter(
+            (q) =>
+              q.generatedFromHoldingId === m.destHoldingId &&
+              q.returnedToBulk !== true &&
+              q.retiredOnSale !== true
+          ).length
+        : 0;
+
+      return {
+        stepOrder: idx + 1,
+        eventType: m.eventType,
+        fromHolderLabel,
+        fromHolderType: m.fromType,
+        toHolderLabel,
+        toHolderType: m.toType,
+        quantityKg: m.quantityKg,
+        timestamp: m.timestamp,
+        status: m.status,
+        inThisQrLineage: m.inThisQrLineage,
+        buyerGeneratedQrCount,
+      };
+    })
+  );
+
+  // Compute remaining cocoa balances in this lot
+  const originalLotQuantityKg = lot?.quantityKg || 0;
+  const certifiedQuantityKg = cert?.certifiedQuantityKg || lot?.certifiedQuantityKg || 0;
+
+  const remainingAtOriginCertifiedKg = allLotHoldings
+    .filter((h) => h.holdingId === originHoldingId || (!h.parentHoldingId && !h.sourceTransferId))
+    .reduce((sum, h) => sum + Math.max(0, h.availableQuantityKg || 0), 0);
+
+  const totalActiveCertifiedHoldingKg = allLotHoldings.reduce(
+    (sum, h) => sum + Math.max(0, h.availableQuantityKg || 0),
+    0
+  );
+
+  const soldOrTransferredFromOriginKg = rootHolding
+    ? Math.max(0, certifiedQuantityKg - remainingAtOriginCertifiedKg)
+    : allLotTransfers
+        .filter((t) => t.sourceHoldingId === originHoldingId)
+        .reduce((sum, t) => sum + (t.quantityKg || 0), 0);
+
+  const uncertifiedCompletedSalesKg = allLotTrades
+    .filter((t) => t.certificationType === "uncertified" && t.tradeStatus === "completed")
+    .reduce((sum, t) => sum + (t.quantityKg || 0), 0);
+
+  const physicalDeductionsKg = allLotAdjustments
+    .filter((a) => a.isPhysicalDeduction === true)
+    .reduce((sum, a) => sum + (a.deductedQuantityKg || 0), 0);
+
+  const uncertifiedRemainingKg = Math.max(
+    0,
+    originalLotQuantityKg - certifiedQuantityKg - uncertifiedCompletedSalesKg - physicalDeductionsKg
+  );
+
+  const totalRemainingInLotKg = totalActiveCertifiedHoldingKg + uncertifiedRemainingKg;
+
+  const currentHoldingQRs = allLotQRs.filter(
+    (q) => q.currentHoldingId === qr.currentHoldingId && q.returnedToBulk !== true
+  );
+  const currentHoldingPackagedKg = currentHoldingQRs.reduce(
+    (sum, q) => sum + (q.representedQuantityKg || 0),
+    0
+  );
+  const currentHoldingAvailableKg = qrHolding
+    ? Math.max(0, qrHolding.availableQuantityKg || 0)
+    : Math.max(0, holdingHistory.availableQuantityKg || 0);
+  const currentHoldingUnpackagedKg = Math.max(
+    0,
+    currentHoldingAvailableKg - currentHoldingPackagedKg
+  );
+
+  const lotHolderBalances = await Promise.all(
+    [...allLotHoldings]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map(async (h) => {
+        const isOrigin = h.holdingId === originHoldingId || (!h.parentHoldingId && !h.sourceTransferId);
+        const hQRs = allLotQRs.filter(
+          (q) => q.currentHoldingId === h.holdingId && q.returnedToBulk !== true
+        );
+        const packagedKg = hQRs.reduce((sum, q) => sum + (q.representedQuantityKg || 0), 0);
+        const availableKg = Math.max(0, h.availableQuantityKg || 0);
+        const unpackagedKg = Math.max(0, availableKg - packagedKg);
+        const holderLabel = await resolvePublicEntityLabel(
+          h.holderType,
+          h.holderId,
+          farmData,
+          isOrigin,
+          labelCache
+        );
+        return {
+          holderLabel,
+          holderType: h.holderType,
+          isOrigin,
+          quantityKg: h.quantityKg,
+          availableKg,
+          packagedKg,
+          unpackagedKg,
+          status: h.status,
+        };
+      })
+  );
+
+  const publicFarmName =
+    typeof farmData?.farmName === "string" && farmData.farmName.trim()
+      ? farmData.farmName.trim()
+      : `Cameroon Origin Plot`;
+  const publicRegion =
+    typeof farmData?.region === "string" && farmData.region.trim()
+      ? farmData.region.trim()
+      : undefined;
+  const publicVillage =
+    typeof farmData?.village === "string" && farmData.village.trim()
+      ? farmData.village.trim()
+      : undefined;
   const eudrCompliant = Boolean(farmData?.eudrCompliant);
+
+  const currentHolderPublicName = await resolvePublicEntityLabel(
+    holdingHistory.holderType,
+    holdingHistory.holderId,
+    farmData,
+    holdingHistory.holdingId === originHoldingId,
+    labelCache
+  );
+
+  const supersededTime =
+    qr.lastTransferredAt ||
+    (qr.status === "transferred" || qr.status === "superseded" ? qr.revokedAt : undefined);
 
   return {
     package: {
       packageNumber: qr.packageNumber,
       packageQuantityKg: qr.representedQuantityKg,
-      status: qr.status,
+      status: isRetiredAfterSale && qr.status === "active" ? "transferred" : qr.status,
       generatedAt: qr.generatedAt,
       isPackagedAtOrigin: qr.generatedFromHoldingId === holdingHistory.originalHoldingId,
+      revocationReason: qr.revocationReason,
+      revokedAt: qr.revokedAt,
     },
     quantities: {
-      originalLotQuantityKg: lot?.quantityKg || 0,
-      certifiedQuantityKg: cert?.certifiedQuantityKg || 0,
+      originalLotQuantityKg,
+      certifiedQuantityKg,
       currentHoldingQuantityKg: holdingHistory.currentQuantityKg,
       thisPackageQuantityKg: qr.representedQuantityKg,
     },
@@ -694,15 +1188,92 @@ export async function resolvePublicQRTraceability(
       region: publicRegion,
       eudrCompliant,
       lotNumber: qr.lotNumber,
-      productionPeriod: cert?.productionPeriod || lot?.productionPeriod || "2024/2025",
-      qualityGrade: lot?.qualityGrade || "Grade 1",
+      productionPeriod: cert?.productionPeriod || lot?.productionPeriod || "",
+      qualityGrade: lot?.qualityGrade || harvest?.qualityGrade,
       certificateNumber: qr.certificateNumber,
       issueDate: cert?.issueDate || qr.generatedAt,
       cocoaImage: lot?.cocoaImage,
     },
+    freshness: {
+      qrSequenceNumber: qr.sequenceNumber,
+      totalLotQRCodes: allLotQRs.length,
+      activeLotQRCodes: activeLotQRs.length,
+      isValidAndActive,
+      isRetiredAfterSale,
+      isMostUpdatedForLot,
+      reusable: isValidAndActive,
+      verdictCode,
+      statusHeadline,
+      statusDetail,
+      latestActivePackageNumber: latestActiveQR?.packageNumber,
+      latestActiveGeneratedAt: latestActiveQR?.generatedAt,
+      newerQRsGeneratedCount,
+      buyerHasGeneratedReplacementQR,
+      supersededAt: supersededTime,
+      transferredToHolderType: qr.transferredToHolderType,
+    },
+    lotBalance: {
+      originalLotQuantityKg,
+      certifiedQuantityKg,
+      uncertifiedRemainingKg,
+      soldOrTransferredFromOriginKg,
+      remainingAtOriginCertifiedKg,
+      totalRemainingInLotKg,
+      totalActiveCertifiedHoldingKg,
+      currentHoldingQuantityKg: holdingHistory.currentQuantityKg,
+      currentHoldingAvailableKg,
+      currentHoldingPackagedKg,
+      currentHoldingUnpackagedKg,
+      lotHolderBalances,
+    },
+    upstreamChain: {
+      farm: {
+        farmName: publicFarmName,
+        region: publicRegion,
+        village: publicVillage,
+        country: "Cameroon",
+        eudrCompliant,
+      },
+      ...(production
+        ? {
+            production: {
+              seasonYear: production.seasonYear,
+              productionPeriod: production.productionPeriod,
+              startDate: production.startDate,
+              endDate: production.endDate,
+              status: production.status,
+            },
+          }
+        : {}),
+      ...(harvest
+        ? {
+            harvest: {
+              harvestDate: harvest.harvestDate,
+              quantityKg: harvest.quantityKg,
+              qualityGrade: harvest.qualityGrade,
+            },
+          }
+        : {}),
+      lot: {
+        lotNumber: lot?.lotNumber || qr.lotNumber,
+        productionDate: lot?.productionDate || "",
+        productionPeriod: lot?.productionPeriod || cert?.productionPeriod || "",
+        quantityKg: originalLotQuantityKg,
+        qualityGrade: lot?.qualityGrade,
+        lotStatus: lot?.lotStatus || "certified",
+      },
+      certificate: {
+        certificateNumber: cert?.certificateNumber || qr.certificateNumber,
+        issueDate: cert?.issueDate || qr.generatedAt,
+        certifiedQuantityKg,
+        verificationStatus: cert?.verificationStatus || "verified",
+        status: cert?.status || "active",
+      },
+    },
+    lotMovements,
     custodyChain,
     current: {
-      currentHolderPublicName: `${holdingHistory.holderType.toUpperCase()}: ${holdingHistory.holderId}`,
+      currentHolderPublicName,
       currentHolderType: holdingHistory.holderType,
       currentHoldingStatus: holdingHistory.status,
     },

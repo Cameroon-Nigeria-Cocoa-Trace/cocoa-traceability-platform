@@ -2,7 +2,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import QRCodeLib from "qrcode";
 import { getAuthenticatedUser } from "@/lib/authServer";
-import { firebaseAdminAuth, firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { buildQRVerificationUrl, resolveRequestOrigin } from "@/lib/qrUrl";
+import {
+  isCooperativeAuthorizedForHolding,
+  isPlatformAdmin,
+} from "@/lib/serverCooperativeAuth";
 import type { CertificateHolding, QRCode } from "@/types/traceability";
 
 export const runtime = "nodejs";
@@ -48,8 +53,7 @@ export async function GET(
 
     const format: "svg" | "png" = formatParam === "png" ? "png" : "svg";
 
-    const authRecord = await firebaseAdminAuth.getUser(user.userId);
-    const isAdmin = authRecord.customClaims?.admin === true;
+    const isAdmin = await isPlatformAdmin(user.userId);
 
     const qrSnapshot = await firebaseAdminDb
       .collection("qrCodes")
@@ -103,13 +107,10 @@ export async function GET(
       );
     }
 
-    // Until trusted organization membership verification exists, only a
-    // Firebase administrator or the owner of a farmer holding may download.
-    const ownsFarmerHolding =
-      holding.holderType.toLowerCase() === "farmer" &&
-      holding.holderId === user.userId;
+    const isAuthorized =
+      isAdmin || (await isCooperativeAuthorizedForHolding(user.userId, holding));
 
-    if (!isAdmin && !ownsFarmerHolding) {
+    if (!isAuthorized) {
       return NextResponse.json(
         {
           success: false,
@@ -119,11 +120,16 @@ export async function GET(
       );
     }
 
+    const verificationUrl = buildQRVerificationUrl(
+      qr.qrValue,
+      resolveRequestOrigin(req)
+    );
+
     let content: string | Buffer;
     let contentType: string;
 
     if (format === "png") {
-      content = await QRCodeLib.toBuffer(qr.qrValue, {
+      content = await QRCodeLib.toBuffer(verificationUrl, {
         type: "png",
         width: 400,
         margin: 2,
@@ -131,7 +137,7 @@ export async function GET(
       });
       contentType = "image/png";
     } else {
-      content = await QRCodeLib.toString(qr.qrValue, {
+      content = await QRCodeLib.toString(verificationUrl, {
         type: "svg",
         width: 400,
         margin: 2,

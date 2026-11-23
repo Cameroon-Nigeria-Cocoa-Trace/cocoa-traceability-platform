@@ -2,17 +2,15 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
+import { extractQrValueFromInput } from "@/lib/qrUrl";
 import {
   QrCode,
   Search,
-  ShieldCheck,
   CheckCircle2,
   Leaf,
-  ArrowRight,
-  Sparkles,
   FileSearch,
+  ShieldCheck,
 } from "lucide-react";
 
 export default function TraceabilityPortalPage() {
@@ -22,13 +20,13 @@ export default function TraceabilityPortalPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = searchValue.trim();
-    if (!clean) {
-      setError("Please enter a valid QR code identifier or package number.");
+    const extracted = extractQrValueFromInput(searchValue);
+    if (!extracted) {
+      setError("Please enter or paste a valid QR verification link, QR identifier, or package number.");
       return;
     }
     setError(null);
-    router.push(`/traceability/qr/${encodeURIComponent(clean)}`);
+    router.push(`/traceability/qr/${encodeURIComponent(extracted)}`);
   };
 
   return (
@@ -36,27 +34,27 @@ export default function TraceabilityPortalPage() {
       <Navbar />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-12">
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+        <div className="text-center space-y-3">
+          <p className="text-xs font-semibold tracking-wider text-emerald-800 uppercase flex items-center justify-center gap-1.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-700" />
             Official Cameroon Cocoa Provenance Portal
-          </div>
+          </p>
 
-          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-stone-900">
-            Verify Cocoa Origin & Bag-Level Traceability
+          <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-stone-900 text-balance max-w-2xl mx-auto">
+            Verify Cocoa Origin & Lot Traceability
           </h1>
 
           <p className="text-base text-stone-600 max-w-2xl mx-auto">
-            Scan or enter a package QR code value to verify origin farm authenticity, deforestation-free compliance (EUDR), and complete custody chain history.
+            Scan a physical bag QR code or paste its verification link or package identifier to inspect the full lot chain, remaining cocoa balance, and whether the QR code is still active and current.
           </p>
         </div>
 
         {/* Search Box */}
-        <div className="mt-8 bg-white p-6 sm:p-8 rounded-2xl border border-stone-200 shadow-sm">
+        <div className="mt-8 bg-white p-6 sm:p-8 rounded-2xl border border-stone-200 shadow-xs">
           <form onSubmit={handleSearch} className="space-y-4">
             <div>
-              <label htmlFor="qr-input" className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-2">
-                Enter QR Identifier or Package Number
+              <label htmlFor="qr-input" className="block text-xs font-semibold text-stone-700 mb-2">
+                Verification URL, QR Identifier, or Package Number
               </label>
               <div className="relative">
                 <input
@@ -67,61 +65,52 @@ export default function TraceabilityPortalPage() {
                     setSearchValue(e.target.value);
                     if (error) setError(null);
                   }}
-                  placeholder="e.g. QRV-LOT-CMR-2026-0001-001-... or LOT-CMR-2026-0001-PKG-001"
-                  className="w-full pl-11 pr-4 py-3.5 border border-stone-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                  placeholder="https://.../traceability/qr/QRV-... or QRV-... or LOT-...-PKG-001"
+                  className="w-full pl-11 pr-4 py-3.5 border border-stone-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 font-mono"
                 />
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-stone-400" />
               </div>
-              {error && <p className="text-xs text-red-600 mt-1.5 font-medium">{error}</p>}
+              {error && <p className="text-xs text-red-700 mt-1.5 font-medium">{error}</p>}
             </div>
 
             <button
               type="submit"
-              className="w-full py-3.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-xs"
+              className="w-full py-3.5 px-4 bg-emerald-800 hover:bg-emerald-900 text-white font-semibold rounded-xl text-sm transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
             >
               <QrCode className="h-4 w-4" />
-              Verify Bag Provenance
+              Verify Cocoa Chain & Freshness
             </button>
           </form>
 
-          {/* Quick Examples */}
-          <div className="mt-6 pt-6 border-t border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-stone-500 gap-2">
-            <span>Try sample package:</span>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setSearchValue("QRV-LOT-CMR-2026-0001-001-sample")}
-                className="font-mono bg-stone-100 hover:bg-stone-200 px-2 py-1 rounded text-stone-800 transition-colors"
-              >
-                QRV-LOT-CMR-2026-0001-001-sample
-              </button>
-            </div>
+          <div className="mt-5 pt-5 border-t border-stone-100 text-xs text-stone-500 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span>Supports scanned URL links, QRV identifiers, and bag package numbers.</span>
+            <span className="font-mono text-stone-600">Non-reusable once sold or transferred</span>
           </div>
         </div>
 
-        {/* Feature Badges */}
-        <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+        {/* Feature Overview */}
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div className="p-5 bg-white rounded-xl border border-stone-200">
-            <CheckCircle2 className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-            <h3 className="text-sm font-bold text-stone-900">Immutable Bag Weights</h3>
-            <p className="text-xs text-stone-500 mt-1">
-              Every bag has permanent sequence numbers and non-reusable allocations.
+            <CheckCircle2 className="h-5 w-5 text-emerald-700 mb-2.5" />
+            <h2 className="text-sm font-bold text-stone-900">Single-Custody Anti-Reuse</h2>
+            <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+              Sold or transferred QR codes retire permanently. Each new owner must generate a fresh QR code for their custody holding.
             </p>
           </div>
 
           <div className="p-5 bg-white rounded-xl border border-stone-200">
-            <Leaf className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-            <h3 className="text-sm font-bold text-stone-900">EUDR Deforestation Check</h3>
-            <p className="text-xs text-stone-500 mt-1">
-              Validates GPS plot geofencing against non-deforestation registries.
+            <Leaf className="h-5 w-5 text-emerald-700 mb-2.5" />
+            <h2 className="text-sm font-bold text-stone-900">Remaining Lot Balance</h2>
+            <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+              Live mass-balance accounting reveals how much cocoa remains unsold at origin and held across downstream custody units.
             </p>
           </div>
 
           <div className="p-5 bg-white rounded-xl border border-stone-200">
-            <FileSearch className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
-            <h3 className="text-sm font-bold text-stone-900">Full Custody DAG Chain</h3>
-            <p className="text-xs text-stone-500 mt-1">
-              Upstream lineage traversal through cooperatives, agents, and warehouses.
+            <FileSearch className="h-5 w-5 text-emerald-700 mb-2.5" />
+            <h2 className="text-sm font-bold text-stone-900">Full Origin-to-Buyer Chain</h2>
+            <p className="text-xs text-stone-600 mt-1 leading-relaxed">
+              Traces the complete path from farm plot, production season, and harvest through every transfer and sale.
             </p>
           </div>
         </div>

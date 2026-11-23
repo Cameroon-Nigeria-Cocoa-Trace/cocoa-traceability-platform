@@ -175,8 +175,13 @@ export async function POST(req: NextRequest) {
 
       await assertHoldingAccess(holding, user.userId, isAdmin);
 
-      if (holding.status !== "active") {
-        throw new Error("Holding Error: Only active holdings can be packaged.");
+      if (
+        holding.status !== "active" &&
+        holding.status !== "partially_transferred"
+      ) {
+        throw new Error(
+          "Holding Error: Only active or partially transferred holdings with available balance can be packaged."
+        );
       }
 
       if (

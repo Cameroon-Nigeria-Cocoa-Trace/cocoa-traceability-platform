@@ -492,6 +492,7 @@ export async function initiateCertificateTransfer(
       feeApplied: feeRecord,
       route,
       transferredQrPackageIds: isPackageAwareTransfer ? input.transferredQrPackageIds : undefined,
+      sourceActiveQRs: existingQRs,
     });
 
     return transfer;
@@ -509,15 +510,19 @@ export interface ExecuteTransferInTxContext {
   feeApplied: AppliedFeeRecord;
   route: SupportedTransferRoute;
   transferredQrPackageIds?: string[];
+  sourceActiveQRs?: QRCode[];
   now?: string;
 }
 
 /**
  * Executes a Certificate Transfer (holding deduction, destination holding creation,
- * QR re-anchoring, certificate status update, and transfer record creation)
+ * QR retirement on sale/transfer, certificate status update, and transfer record creation)
  * directly within an existing Firestore transaction context.
  *
- * Guarantees zero nested transaction overhead when called from marketplace finalization.
+ * Anti-Reuse Invariant:
+ * Sold or transferred QR codes are permanently retired on the seller's holding rather than
+ * moved as active to the buyer. The buyer receives an unpackaged holding and must generate
+ * their own fresh QR code(s).
  */
 export function executeCertificateTransferInTransaction(
   ctx: ExecuteTransferInTxContext
@@ -533,6 +538,7 @@ export function executeCertificateTransferInTransaction(
     feeApplied,
     route,
     transferredQrPackageIds,
+    sourceActiveQRs,
   } = ctx;
 
   const now = ctx.now || new Date().toISOString();
@@ -542,7 +548,7 @@ export function executeCertificateTransferInTransaction(
   const transferRef = doc(db, COLLECTIONS.CERTIFICATE_TRANSFERS, transferId);
 
   const isFullTransfer = (sourceHolding.availableQuantityKg - quantityKg) <= 0;
-  const newSourceQuantity = sourceHolding.quantityKg - quantityKg;
+  const newSourceQuantity = Math.max(0, sourceHolding.quantityKg - quantityKg);
   const newSourceAvailable = Math.max(0, sourceHolding.availableQuantityKg - quantityKg);
   const newSourceStatus: CertificateHoldingStatus = isFullTransfer ? "depleted" : "partially_transferred";
 
@@ -596,15 +602,73 @@ export function executeCertificateTransferInTransaction(
     updatedAt: now,
   });
 
+  const retiredQrIds = new Set<string>();
+  const retirementBase = {
+    returnedToBulk: true, // Ensures seller's remaining holding accounting does not count sold bag weights
+    retiredOnSale: true,
+    supersededByTransferId: transferId,
+    supersededByHoldingId: destHoldingId,
+    transferredToHolderId: destinationHolderId.trim(),
+    transferredToHolderType: destinationHolderType,
+    lastTransferId: transferId,
+    lastTransferredAt: now,
+    revokedAt: now,
+    updatedAt: now,
+  };
+
+  // 1. Explicitly selected QR packages being sold/transferred are permanently retired on seller holding.
   if (transferredQrPackageIds && transferredQrPackageIds.length > 0) {
     for (const qid of transferredQrPackageIds) {
+      retiredQrIds.add(qid);
       const qrRef = doc(db, COLLECTIONS.QR_CODES, qid);
       tx.update(qrRef, {
-        currentHoldingId: destHoldingId,
-        lastTransferId: transferId,
-        lastTransferredAt: now,
-        updatedAt: now,
+        ...retirementBase,
+        status: "transferred",
+        revocationReason:
+          "Cocoa sold or transferred to another holder. Original QR code cannot be reused; recipient must generate a new QR code.",
       });
+    }
+  }
+
+  // 2. If source holding balance dropped (e.g. full sale / off-platform / negotiated sale)
+  //    such that active QRs exceed remaining available cocoa (or holding is depleted),
+  //    retire affected QRs so no invalid/sold cocoa QR remains active.
+  if (sourceActiveQRs && sourceActiveQRs.length > 0) {
+    const remainingActive = sourceActiveQRs
+      .filter(
+        (q) =>
+          !retiredQrIds.has(q.qrId) &&
+          q.currentHoldingId === sourceHolding.holdingId &&
+          q.status === "active" &&
+          q.returnedToBulk !== true
+      )
+      .sort((a, b) => (a.sequenceNumber || 0) - (b.sequenceNumber || 0));
+
+    let remainingActiveKg = remainingActive.reduce(
+      (sum, q) => sum + (q.representedQuantityKg || 0),
+      0
+    );
+
+    if (newSourceAvailable <= 0) {
+      for (const qr of remainingActive) {
+        tx.update(doc(db, COLLECTIONS.QR_CODES, qr.qrId), {
+          ...retirementBase,
+          status: "transferred",
+          revocationReason:
+            "Seller holding fully sold/transferred. Original QR code retired; buyer must generate a new QR code.",
+        });
+      }
+    } else if (remainingActiveKg > newSourceAvailable + 1e-9) {
+      for (const qr of remainingActive) {
+        if (remainingActiveKg <= newSourceAvailable + 1e-9) break;
+        remainingActiveKg -= qr.representedQuantityKg || 0;
+        tx.update(doc(db, COLLECTIONS.QR_CODES, qr.qrId), {
+          ...retirementBase,
+          status: "superseded",
+          revocationReason:
+            "Cocoa balance reduced by sale/transfer. Superseded QR code retired; buyer must generate a new QR code.",
+        });
+      }
     }
   }
 

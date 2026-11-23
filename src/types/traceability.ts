@@ -682,7 +682,13 @@ export interface FeeConfiguration {
 // 12. QR CODE & QR SCAN TRACEABILITY
 // ============================================================================
 
-export type QRCodeStatus = "active" | "inactive" | "revoked" | (string & {});
+export type QRCodeStatus =
+  | "active"
+  | "inactive"
+  | "revoked"
+  | "transferred"
+  | "superseded"
+  | (string & {});
 
 export interface QRCode {
   qrId: string; // Permanent internal ID: qr_${lotId}_${sequenceNumber}
@@ -692,7 +698,7 @@ export interface QRCode {
 
   // Strict Custody Identity Anchors
   generatedFromHoldingId: string; // IMMUTABLE: Holding where this bag was packaged
-  currentHoldingId: string; // CURRENT CUSTODY: Mutates ONLY when transferred via package-aware CertificateTransfer
+  currentHoldingId: string; // Anchor holding where this package was held/sold
 
   // Domain References
   certificateId: string;
@@ -712,14 +718,20 @@ export interface QRCode {
   deactivatedAt?: string;
   revokedAt?: string;
   revocationReason?: string;
-  returnedToBulk?: boolean; // Whether physical cocoa was explicitly returned to bulk upon revocation
+  returnedToBulk?: boolean; // Whether physical cocoa was explicitly returned to bulk or retired after sale
   returnedToBulkAt?: string;
   returnedToBulkBy?: string;
   repackageNotes?: string;
+  retiredOnSale?: boolean;
+  supersededByTransferId?: string;
+  supersededByHoldingId?: string;
+  transferredToHolderId?: string;
+  transferredToHolderType?: CertificateHolderType;
 
   generatedBy: string; // Firebase UID of authenticated operator
-  lastTransferId?: string; // CertificateTransfer ID that last moved this package
+  lastTransferId?: string; // CertificateTransfer ID that retired/moved this package
   lastTransferredAt?: string;
+  updatedAt?: string;
 }
 
 /**
@@ -774,6 +786,8 @@ export interface PublicQRTraceabilityResult {
     status: string;
     generatedAt: string;
     isPackagedAtOrigin: boolean;
+    revocationReason?: string;
+    revokedAt?: string;
   };
   quantities: {
     originalLotQuantityKg: number;
@@ -793,6 +807,100 @@ export interface PublicQRTraceabilityResult {
     issueDate: string;
     cocoaImage?: CloudinaryImageReference;
   };
+  freshness?: {
+    qrSequenceNumber: number;
+    totalLotQRCodes: number;
+    activeLotQRCodes: number;
+    isValidAndActive: boolean;
+    isRetiredAfterSale: boolean;
+    isMostUpdatedForLot: boolean;
+    reusable: boolean;
+    verdictCode:
+      | "MOST_UPDATED_ACTIVE"
+      | "OLDER_ACTIVE_LOT_QR"
+      | "RETIRED_AFTER_SALE"
+      | "REVOKED_OR_INACTIVE";
+    statusHeadline: string;
+    statusDetail: string;
+    latestActivePackageNumber?: string;
+    latestActiveGeneratedAt?: string;
+    newerQRsGeneratedCount: number;
+    buyerHasGeneratedReplacementQR?: boolean;
+    supersededAt?: string;
+    transferredToHolderType?: string;
+  };
+  lotBalance?: {
+    originalLotQuantityKg: number;
+    certifiedQuantityKg: number;
+    uncertifiedRemainingKg: number;
+    soldOrTransferredFromOriginKg: number;
+    remainingAtOriginCertifiedKg: number;
+    totalRemainingInLotKg: number;
+    totalActiveCertifiedHoldingKg: number;
+    currentHoldingQuantityKg: number;
+    currentHoldingAvailableKg: number;
+    currentHoldingPackagedKg: number;
+    currentHoldingUnpackagedKg: number;
+    lotHolderBalances: Array<{
+      holderLabel: string;
+      holderType: string;
+      isOrigin: boolean;
+      quantityKg: number;
+      availableKg: number;
+      packagedKg: number;
+      unpackagedKg: number;
+      status: string;
+    }>;
+  };
+  upstreamChain?: {
+    farm: {
+      farmName: string;
+      region?: string;
+      village?: string;
+      country: "Cameroon";
+      eudrCompliant: boolean;
+    };
+    production?: {
+      seasonYear: string;
+      productionPeriod: string;
+      startDate: string;
+      endDate?: string;
+      status: string;
+    };
+    harvest?: {
+      harvestDate: string;
+      quantityKg: number;
+      qualityGrade?: string;
+    };
+    lot: {
+      lotNumber: string;
+      productionDate: string;
+      productionPeriod: string;
+      quantityKg: number;
+      qualityGrade?: string;
+      lotStatus: string;
+    };
+    certificate: {
+      certificateNumber: string;
+      issueDate: string;
+      certifiedQuantityKg: number;
+      verificationStatus: string;
+      status: string;
+    };
+  };
+  lotMovements?: Array<{
+    stepOrder: number;
+    eventType: "transfer" | "trade";
+    fromHolderLabel: string;
+    fromHolderType: string;
+    toHolderLabel: string;
+    toHolderType: string;
+    quantityKg: number;
+    timestamp: string;
+    status: string;
+    inThisQrLineage: boolean;
+    buyerGeneratedQrCount: number;
+  }>;
   custodyChain: Array<{
     stepOrder: number;
     fromHolderPublicName: string;

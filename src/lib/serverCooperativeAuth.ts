@@ -313,6 +313,38 @@ export async function isCooperativeAuthorizedForHolding(
     return isCooperativeAuthorizedForFarmer(cleanActor, cleanHolderId);
   }
 
+  try {
+    const userDoc = await firebaseAdminDb.collection("users").doc(cleanActor).get();
+    if (userDoc.exists) {
+      const uData = userDoc.data();
+      if (
+        uData?.organizationId === cleanHolderId ||
+        uData?.cooperativeOrgId === cleanHolderId ||
+        uData?.cooperativeId === cleanHolderId ||
+        uData?.agentId === cleanHolderId ||
+        uData?.warehouseId === cleanHolderId
+      ) {
+        return true;
+      }
+    }
+
+    const orgCollections =
+      holderType === "agent"
+        ? ["agents", "agent_organizations"]
+        : holderType === "warehouse"
+          ? ["warehouses", "warehouse_facilities", "warehouse_organizations"]
+          : [];
+
+    for (const col of orgCollections) {
+      const orgSnap = await firebaseAdminDb.collection(col).doc(cleanHolderId).get();
+      if (orgSnap.exists && orgSnap.data()?.createdBy === cleanActor) {
+        return true;
+      }
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+
   return false;
 }
 

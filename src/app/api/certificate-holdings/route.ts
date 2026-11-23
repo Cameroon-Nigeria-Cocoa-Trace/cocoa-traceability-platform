@@ -28,6 +28,7 @@ async function syncCompletedTradesToHoldings() {
     for (const docSnap of tradesSnap.docs) {
       const trade = docSnap.data();
       if (!trade.buyerId || !trade.tradeId) continue;
+      if (trade.destHoldingId) continue;
       const holdingId = `hold_trade_${trade.tradeId}`;
       const holdingRef = firebaseAdminDb.collection("certificateHoldings").doc(holdingId);
       const hSnap = await holdingRef.get();

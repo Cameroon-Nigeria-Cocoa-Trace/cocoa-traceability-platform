@@ -341,6 +341,17 @@ export async function verifyAndFinalizeOnPlatformPurchase(
   }
 
   const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, input.listingId.trim());
+  const preListingSnap = await getDoc(listingRef);
+  let preSourceActiveQRs: QRCode[] = [];
+  if (preListingSnap.exists()) {
+    const preListing = preListingSnap.data() as MarketplaceListing;
+    if (preListing.certificationType === "certified" && preListing.sourceHoldingId) {
+      const qrSnap = await getDocs(
+        query(collection(db, COLLECTIONS.QR_CODES), where("currentHoldingId", "==", preListing.sourceHoldingId))
+      );
+      preSourceActiveQRs = qrSnap.docs.map((d) => d.data() as QRCode);
+    }
+  }
 
   return await runTransaction(db, async (tx) => {
     // 1. Transactional Idempotency Check
@@ -502,6 +513,7 @@ export async function verifyAndFinalizeOnPlatformPurchase(
         feeApplied: transferFeeRecord,
         route,
         transferredQrPackageIds: input.selectedQrPackageIds,
+        sourceActiveQRs: preSourceActiveQRs,
         now,
       });
 
@@ -825,6 +837,18 @@ export async function declareOffPlatformSale(
   }
 
   const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, input.listingId.trim());
+  const preListingSnap = await getDoc(listingRef);
+  let preSourceActiveQRs: QRCode[] = [];
+  if (preListingSnap.exists()) {
+    const preListing = preListingSnap.data() as MarketplaceListing;
+    if (preListing.certificationType === "certified" && preListing.sourceHoldingId) {
+      const qrSnap = await getDocs(
+        query(collection(db, COLLECTIONS.QR_CODES), where("currentHoldingId", "==", preListing.sourceHoldingId))
+      );
+      preSourceActiveQRs = qrSnap.docs.map((d) => d.data() as QRCode);
+    }
+  }
+
   const candidateAccessId1 = `SAR-${input.listingId.trim()}-${input.buyerId.trim()}`;
   const candidateAccessId2 = `acc_${input.listingId.trim()}-${input.buyerId.trim()}`;
   const accRef1 = doc(db, COLLECTIONS.SELLER_ACCESS_RECORDS, candidateAccessId1);
@@ -887,6 +911,11 @@ export async function declareOffPlatformSale(
         actorUid: input.sellerHolderId.trim(),
         feeApplied: transferFeeRecord,
         route,
+        transferredQrPackageIds:
+          listing.inventoryMode === "QR_PACKAGES" && listing.currentQrPackageIds?.length
+            ? listing.currentQrPackageIds
+            : undefined,
+        sourceActiveQRs: preSourceActiveQRs,
         now,
       });
 
@@ -976,6 +1005,17 @@ export async function concludeNegotiationDeal(
   const cleanListingId = input.listingId.trim();
   const cleanSellerUid = input.sellerUid.trim();
   const listingRef = doc(db, COLLECTIONS.MARKETPLACE_LISTINGS, cleanListingId);
+  const preListingSnap = await getDoc(listingRef);
+  let preSourceActiveQRs: QRCode[] = [];
+  if (input.dealOutcome === "sold" && preListingSnap.exists()) {
+    const preListing = preListingSnap.data() as MarketplaceListing;
+    if (preListing.certificationType === "certified" && preListing.sourceHoldingId) {
+      const qrSnap = await getDocs(
+        query(collection(db, COLLECTIONS.QR_CODES), where("currentHoldingId", "==", preListing.sourceHoldingId))
+      );
+      preSourceActiveQRs = qrSnap.docs.map((d) => d.data() as QRCode);
+    }
+  }
   const buyerIdentifier = input.buyerId?.trim() || "buyer_off_platform";
 
   const accessIdClean = input.accessId?.trim();
@@ -1122,6 +1162,11 @@ export async function concludeNegotiationDeal(
         actorUid: cleanSellerUid,
         feeApplied: transferFeeRecord,
         route,
+        transferredQrPackageIds:
+          listing.inventoryMode === "QR_PACKAGES" && listing.currentQrPackageIds?.length
+            ? listing.currentQrPackageIds
+            : undefined,
+        sourceActiveQRs: preSourceActiveQRs,
         now,
       });
 
@@ -1433,28 +1478,30 @@ export async function confirmTradeByBuyer(tradeId: string, buyerUid: string): Pr
       updatedAt: now,
     }));
 
-    // Automatically create holding for buyer in certificateHoldings
-    const holdingId = `hold_trade_${trade.tradeId}`;
-    const holdingRef = doc(db, COLLECTIONS.CERTIFICATE_HOLDINGS, holdingId);
-    const isUncertified = trade.certificationType === "uncertified";
-    const holdingData = {
-      holdingId,
-      certificateId: isUncertified ? "uncertified" : (trade.certificateId || `cert_${trade.tradeId}`),
-      certificateNumber: isUncertified ? "UNCERTIFIED COCOA" : (trade.certificateId ? `CERT-${trade.certificateId.slice(-6).toUpperCase()}` : `CERT-${trade.tradeId.slice(-6).toUpperCase()}`),
-      lotId: trade.lotId || "",
-      farmId: trade.sellerHolderId || trade.lotId || "",
-      holderId: cleanBuyerUid,
-      holderType: trade.buyerHolderType || "farmer",
-      quantityKg: trade.quantityKg || 0,
-      availableQuantityKg: trade.quantityKg || 0,
-      sourceTransferId: trade.tradeId,
-      status: "active",
-      certificationType: isUncertified ? "uncertified" : "certified",
-      isUncertified,
-      createdAt: now,
-      updatedAt: now,
-    };
-    tx.set(holdingRef, cleanData(holdingData), { merge: true });
+    // Create holding only if certified transfer did not already provision trade.destHoldingId
+    if (!trade.destHoldingId) {
+      const holdingId = `hold_trade_${trade.tradeId}`;
+      const holdingRef = doc(db, COLLECTIONS.CERTIFICATE_HOLDINGS, holdingId);
+      const isUncertified = trade.certificationType === "uncertified";
+      const holdingData = {
+        holdingId,
+        certificateId: isUncertified ? "uncertified" : (trade.certificateId || `cert_${trade.tradeId}`),
+        certificateNumber: isUncertified ? "UNCERTIFIED COCOA" : (trade.certificateId ? `CERT-${trade.certificateId.slice(-6).toUpperCase()}` : `CERT-${trade.tradeId.slice(-6).toUpperCase()}`),
+        lotId: trade.lotId || "",
+        farmId: trade.sellerHolderId || trade.lotId || "",
+        holderId: cleanBuyerUid,
+        holderType: trade.buyerHolderType || "farmer",
+        quantityKg: trade.quantityKg || 0,
+        availableQuantityKg: trade.quantityKg || 0,
+        sourceTransferId: trade.tradeId,
+        status: "active",
+        certificationType: isUncertified ? "uncertified" : "certified",
+        isUncertified,
+        createdAt: now,
+        updatedAt: now,
+      };
+      tx.set(holdingRef, cleanData(holdingData), { merge: true });
+    }
 
     return updatedTrade;
   });

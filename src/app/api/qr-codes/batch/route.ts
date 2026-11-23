@@ -196,9 +196,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      if (holding.status !== "active") {
+      if (
+        holding.status !== "active" &&
+        holding.status !== "partially_transferred"
+      ) {
         throw new Error(
-          `Holding Error: Holding "${holdingId}" is not active.`
+          `Holding Error: Holding "${holdingId}" cannot be packaged in status "${holding.status}".`
         );
       }
 
