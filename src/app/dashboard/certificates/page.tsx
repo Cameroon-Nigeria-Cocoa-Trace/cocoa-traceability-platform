@@ -13,7 +13,7 @@ import {
   CocoaLot,
 } from "@/types/traceability";
 import { FarmerCooperativeAssociation } from "@/types/cooperative";
-import { PublicCertificateLineage } from "@/services/certificateService";
+import { PublicCertificateLineage, PublicTraceCertificate } from "@/services/certificateService";
 import {
   BadgeCheck,
   Plus,
@@ -171,7 +171,7 @@ export default function OriginCertificatesPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Certificates & Applications State
-  const [certificates, setCertificates] = useState<TraceCertificate[]>([]);
+  const [certificates, setCertificates] = useState<PublicTraceCertificate[]>([]);
   const [applications, setApplications] = useState<CertificateApplication[]>([]);
   const [lots, setLots] = useState<CocoaLot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -182,7 +182,7 @@ export default function OriginCertificatesPage() {
     if (isCooperativeUser && selectedFarmerFilter !== "ALL") {
       const farmerFarmIds = new Set(farms.filter(f => f.farmerId === selectedFarmerFilter).map(f => f.id));
       const farmerLotIds = new Set(lots.filter(l => farmerFarmIds.has(l.farmId)).map(l => l.lotId));
-      list = list.filter(c => farmerFarmIds.has(c.farmId) || farmerLotIds.has(c.lotId));
+      list = list.filter(c => (c.farmId ? farmerFarmIds.has(c.farmId) : false) || farmerLotIds.has(c.lotId));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -196,12 +196,21 @@ export default function OriginCertificatesPage() {
     return list;
   }, [certificates, isCooperativeUser, selectedFarmerFilter, farms, lots, searchQuery]);
 
-  const filteredApplications = useMemo(() => {
-    let list = applications;
+  const issuedApplicationIds = useMemo(() => {
+    return new Set(certificates.map((c) => c.applicationId).filter(Boolean));
+  }, [certificates]);
+
+  const activeApplications = useMemo(() => {
+    let list = applications.filter((a) => !issuedApplicationIds.has(a.applicationId));
     if (isCooperativeUser && selectedFarmerFilter !== "ALL") {
       const farmerFarmIds = new Set(farms.filter(f => f.farmerId === selectedFarmerFilter).map(f => f.id));
       list = list.filter(a => farmerFarmIds.has(a.farmId) || a.applicantId === selectedFarmerFilter);
     }
+    return list;
+  }, [applications, issuedApplicationIds, isCooperativeUser, selectedFarmerFilter, farms]);
+
+  const filteredApplications = useMemo(() => {
+    let list = activeApplications;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
@@ -212,7 +221,7 @@ export default function OriginCertificatesPage() {
       );
     }
     return list;
-  }, [applications, isCooperativeUser, selectedFarmerFilter, farms, searchQuery]);
+  }, [activeApplications, searchQuery]);
 
   // Modals & Inspector State
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -272,7 +281,7 @@ export default function OriginCertificatesPage() {
     try {
       const res = await apiClient.get<{
         success: boolean;
-        certificates: TraceCertificate[];
+        certificates: PublicTraceCertificate[];
       }>("/api/certificates", {
         params: { holderId: user.uid },
       });
@@ -568,7 +577,7 @@ export default function OriginCertificatesPage() {
               <FileCheck2 size={15} />
               <span>Applications</span>
               <span className="ml-1 rounded-full bg-black/20 px-2 py-0.5 text-[10px]">
-                {applications.length}
+                {activeApplications.length}
               </span>
             </button>
           </div>
@@ -753,17 +762,35 @@ export default function OriginCertificatesPage() {
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf7e8] text-[#2d6130] mb-3">
                   <FileCheck2 size={28} />
                 </div>
-                <h3 className="text-base font-bold text-[#10251d]">No Applications Submitted</h3>
-                <p className="mt-1 text-xs text-[#57655d] max-w-md mx-auto">
-                  Submit a Trace Certificate Application for one of your registered cocoa lots to begin the certification process.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowApplyModal(true)}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#07241b] cursor-pointer"
-                >
-                  <Plus size={14} /> Submit Application
-                </button>
+                {applications.length > 0 && activeApplications.length === 0 && !searchQuery.trim() ? (
+                  <>
+                    <h3 className="text-base font-bold text-[#10251d]">All Approved Certificates Issued</h3>
+                    <p className="mt-1 text-xs text-[#57655d] max-w-md mx-auto">
+                      Your approved certificate applications have been issued and moved to the Issued Certificates tab.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("certificates")}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#07241b] cursor-pointer"
+                    >
+                      <BadgeCheck size={14} /> View Issued Certificates
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-base font-bold text-[#10251d]">No Applications Pending</h3>
+                    <p className="mt-1 text-xs text-[#57655d] max-w-md mx-auto">
+                      Submit a Trace Certificate Application for one of your registered cocoa lots to begin the certification process.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowApplyModal(true)}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#0b3528] px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#07241b] cursor-pointer"
+                    >
+                      <Plus size={14} /> Submit Application
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <div className="overflow-hidden rounded-3xl border border-[#dfe7d8] bg-white shadow-sm">
@@ -815,22 +842,32 @@ export default function OriginCertificatesPage() {
                           </td>
                           <td className="py-3.5 px-4 text-right">
                             {app.status === "approved" ? (
-                              <button
-                                type="button"
-                                onClick={() => handleIssueCertificate(app.applicationId)}
-                                disabled={issuingAppId === app.applicationId && issueLoading}
-                                className="inline-flex items-center gap-1 rounded-full bg-[#2d6130] px-3 py-1 text-[11px] font-bold text-white shadow-xs hover:bg-[#1f4722] disabled:opacity-50 cursor-pointer"
-                              >
-                                {issuingAppId === app.applicationId && issueLoading ? (
-                                  <RefreshCw size={12} className="animate-spin" />
-                                ) : (
-                                  <BadgeCheck size={12} />
-                                )}
-                                Issue Cert
-                              </button>
+                              userRole === "admin" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleIssueCertificate(app.applicationId)}
+                                  disabled={issuingAppId === app.applicationId && issueLoading}
+                                  className="inline-flex items-center gap-1 rounded-full bg-[#2d6130] px-3 py-1 text-[11px] font-bold text-white shadow-xs hover:bg-[#1f4722] disabled:opacity-50 cursor-pointer"
+                                >
+                                  {issuingAppId === app.applicationId && issueLoading ? (
+                                    <RefreshCw size={12} className="animate-spin" />
+                                  ) : (
+                                    <BadgeCheck size={12} />
+                                  )}
+                                  Issue Cert
+                                </button>
+                              ) : (
+                                <span className="text-[11px] font-semibold text-[#2d6130]">
+                                  Approved — Issuance Processing
+                                </span>
+                              )
                             ) : (
                               <span className="text-[11px] text-[#8e9d92] italic">
-                                {app.status === "submitted" ? "Pending Review" : "No Action"}
+                                {app.status === "submitted"
+                                  ? "Pending Review"
+                                  : app.status === "under_review"
+                                  ? "Under Review"
+                                  : "No Action"}
                               </span>
                             )}
                           </td>

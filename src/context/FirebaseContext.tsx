@@ -10,6 +10,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   where,
@@ -278,8 +279,6 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           const userRef = doc(db, "users", currentUser.uid);
           const userSnap = await getDoc(userRef);
 
-          const isDesignatedAdminEmail =
-            currentUser.email?.trim().toLowerCase() === "afumbomboyo@gmail.com";
           let hasAdminDoc = false;
           try {
             const adminDocSnap = await getDoc(doc(db, "admins", currentUser.uid));
@@ -288,51 +287,35 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             hasAdminDoc = false;
           }
 
-          if (isDesignatedAdminEmail && !hasAdminDoc) {
-            await setDoc(doc(db, "admins", currentUser.uid), {
-              uid: currentUser.uid,
-              email: currentUser.email || "afumbomboyo@gmail.com",
-              displayName: currentUser.displayName || "Platform Administrator",
-              role: "admin",
-              grantedAt: new Date().toISOString(),
-            }).catch(() => {});
-            hasAdminDoc = true;
-          }
-
-          const cachedRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_user_role") : null;
-          const cachedPendingRole = typeof window !== "undefined" ? localStorage.getItem("cocoatrace_pending_role") : null;
+          const cachedPendingRole =
+            typeof window !== "undefined" ? localStorage.getItem("cocoatrace_pending_role") : null;
           let roleToSet: "farmer" | "cooperative" | "buyer" | "admin" | "agent" | "warehouse" = "farmer";
 
           if (userSnap.exists()) {
             const existingData = userSnap.data();
+            const storedRole = (existingData.role || existingData.accountType) as string | undefined;
 
-            // Check role hierarchy (admin takes top priority)
-            if (isDesignatedAdminEmail || hasAdminDoc || existingData.role === "admin") {
+            // Self-heal: if an account has an explicit non-admin role in Firestore (e.g. "farmer")
+            // but carries a stale client-generated admins/{uid} doc, remove the stale admins doc.
+            if (hasAdminDoc && storedRole && storedRole !== "admin") {
+              await deleteDoc(doc(db, "admins", currentUser.uid)).catch(() => {});
+              hasAdminDoc = false;
+            }
+
+            // Determine authoritative role strictly from this user's Firestore records (never stale localStorage)
+            if (storedRole === "admin" || (!storedRole && hasAdminDoc)) {
               roleToSet = "admin";
-            } else if (
-              existingData.role === "warehouse" ||
-              existingData.accountType === "warehouse" ||
-              cachedRole === "warehouse" ||
-              cachedPendingRole === "warehouse"
-            ) {
+            } else if (storedRole === "warehouse") {
               roleToSet = "warehouse";
-            } else if (
-              existingData.role === "agent" ||
-              existingData.accountType === "agent" ||
-              cachedRole === "agent" ||
-              cachedPendingRole === "agent"
-            ) {
+            } else if (storedRole === "agent") {
               roleToSet = "agent";
-            } else if (existingData.role === "cooperative" || existingData.accountType === "cooperative") {
+            } else if (storedRole === "cooperative") {
               roleToSet = "cooperative";
-            } else if (coopProf || coopOrgId) {
-              // Has associated cooperative profile or organization
-              roleToSet = "cooperative";
-            } else if (existingData.role === "buyer") {
+            } else if (storedRole === "buyer") {
               roleToSet = "buyer";
-            } else if (existingData.role === "farmer" || existingData.accountType === "farmer") {
+            } else if (storedRole === "farmer") {
               roleToSet = "farmer";
-            } else if (cachedRole === "cooperative" || cachedPendingRole === "cooperative") {
+            } else if (coopProf || coopOrgId) {
               roleToSet = "cooperative";
             } else {
               roleToSet = "farmer";
@@ -365,13 +348,13 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             });
           } else {
             // New user registration
-            if (isDesignatedAdminEmail || hasAdminDoc) {
+            if (hasAdminDoc) {
               roleToSet = "admin";
-            } else if (cachedRole === "warehouse" || cachedPendingRole === "warehouse") {
+            } else if (cachedPendingRole === "warehouse") {
               roleToSet = "warehouse";
-            } else if (cachedRole === "agent" || cachedPendingRole === "agent") {
+            } else if (cachedPendingRole === "agent") {
               roleToSet = "agent";
-            } else if (cachedRole === "cooperative" || cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
+            } else if (cachedPendingRole === "cooperative" || coopProf || coopOrgId) {
               roleToSet = "cooperative";
             } else {
               roleToSet = "farmer";
@@ -393,6 +376,10 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
             }).catch(() => {});
 
             setUserProfile(newProf);
+          }
+
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("cocoatrace_pending_role");
           }
 
           if (coopProf) {
@@ -436,6 +423,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
           setUserRoleState("farmer");
           localStorage.removeItem("cocoatrace_auth_user");
           localStorage.removeItem("cocoatrace_user_role");
+          localStorage.removeItem("cocoatrace_pending_role");
         }
       }
       setLoading(false);
@@ -547,6 +535,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("cocoatrace_user_role");
+      }
+      setUserProfile(null);
+      setCooperativeProfile(null);
       const cred = await authLoginWithGoogle();
       if (cred?.user) {
         setUser(cred.user as unknown as User);
@@ -569,6 +562,12 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithEmail = async (email: string, pass: string) => {
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("cocoatrace_user_role");
+        localStorage.removeItem("cocoatrace_pending_role");
+      }
+      setUserProfile(null);
+      setCooperativeProfile(null);
       const cred = await authLoginWithEmail(email, pass);
       if (cred?.user) {
         setUser(cred.user as unknown as User);
@@ -591,6 +590,11 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
 
   const signUpWithEmail = async (email: string, pass: string, displayName?: string) => {
     try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("cocoatrace_user_role");
+      }
+      setUserProfile(null);
+      setCooperativeProfile(null);
       const cred = await authSignUpWithEmail(email, pass, displayName);
       if (cred?.user) {
         setUser(cred.user as unknown as User);
@@ -635,6 +639,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem("cocoatrace_is_demo");
         localStorage.removeItem("cocoatrace_auth_user");
         localStorage.removeItem("cocoatrace_user_role");
+        localStorage.removeItem("cocoatrace_pending_role");
       }
       setUser(null);
       setUserProfile(null);
@@ -889,9 +894,7 @@ export function FirebaseProvider({ children }: { children: React.ReactNode }) {
         isCooperative: userRole === "cooperative",
         isAgent: userRole === "agent",
         isWarehouse: userRole === "warehouse",
-        isAdmin:
-          userRole === "admin" ||
-          user?.email?.trim().toLowerCase() === "afumbomboyo@gmail.com",
+        isAdmin: userRole === "admin",
         userProfile,
         cooperativeProfile,
         setUserRole,

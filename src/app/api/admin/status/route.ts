@@ -3,7 +3,7 @@ import { adminService } from "@/lib/admin/adminService";
 
 export async function GET() {
   try {
-    const status = await adminService.getSystemStatus();
+    const status = await adminService.getSystemStatus(true);
     return NextResponse.json({ success: true, status });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

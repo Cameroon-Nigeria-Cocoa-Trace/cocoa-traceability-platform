@@ -66,11 +66,17 @@ export interface AdminSystemMetrics {
   pendingCertApplications?: number;
   pendingCustomsRequests?: number;
   totalLots?: number;
+  totalListings?: number;
   totalTrades?: number;
+  totalPayments?: number;
+  warehouseReceiptsCount?: number;
 }
 
 export interface AdminDashboardData {
   systemStatus: PlatformSystemStatus;
+  systemStatusConfigured?: boolean;
+  systemStatusUpdatedAt?: string;
+  systemStatusUpdatedBy?: string;
   metrics: AdminSystemMetrics;
   feeConfigs: FeeConfig[];
   recentAuditLogs: AdminAuditRecord[];
@@ -119,6 +125,7 @@ export interface AdminCertificateSummary {
 
 export interface AdminCertApplicationSummary {
   id: string;
+  applicationNumber?: string;
   farmName: string;
   applicantName: string;
   applicantEmail?: string;
@@ -134,6 +141,7 @@ export interface AdminCustomsSummary {
   exporterName: string;
   corridor: string;
   destinationPort: string;
+  destinationCountry?: string;
   weightKg: number;
   status: string;
   clearanceFeePaid: boolean;
@@ -142,7 +150,7 @@ export interface AdminCustomsSummary {
 
 export interface AdminLotTradeSummary {
   id: string;
-  kind: "lot" | "trade";
+  kind: "lot" | "listing" | "trade";
   referenceCode: string;
   partyName: string;
   grade: string;
@@ -153,6 +161,30 @@ export interface AdminLotTradeSummary {
   createdAt?: string;
 }
 
+export interface AdminPaymentSummary {
+  id: string;
+  paymentReference: string;
+  payerName: string;
+  payeeName: string;
+  purpose: string;
+  gateway: string;
+  amount: number;
+  currency: string;
+  status: string;
+  createdAt?: string;
+}
+
+export interface AdminWarehouseReceiptSummary {
+  id: string;
+  consignmentCode: string;
+  facilityName: string;
+  sourceEntityName: string;
+  grade: string;
+  quantityKg: number;
+  totalBags: number;
+  receivedAt?: string;
+}
+
 export interface AdminFullSnapshot {
   dashboard: AdminDashboardData;
   entities: AdminManagedEntity[];
@@ -161,5 +193,8 @@ export interface AdminFullSnapshot {
   certificateApplications: AdminCertApplicationSummary[];
   customsRequests: AdminCustomsSummary[];
   lotsAndTrades: AdminLotTradeSummary[];
+  payments: AdminPaymentSummary[];
+  warehouseReceipts: AdminWarehouseReceiptSummary[];
   auditLogs: AdminAuditRecord[];
+  readWarnings?: string[];
 }

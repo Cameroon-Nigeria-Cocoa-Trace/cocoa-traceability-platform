@@ -13,6 +13,8 @@ import {
   getTraceCertificateByLot,
   getTraceCertificateByNumber,
   listTraceCertificatesByHolder,
+  listTraceCertificatesByApplicationIds,
+  listCertificateApplicationsByApplicant,
   toPublicTraceCertificate,
 } from "@/services/certificateService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
@@ -119,7 +121,26 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const certs = await listTraceCertificatesByHolder(holderId);
+      const certsByHolder = await listTraceCertificatesByHolder(holderId);
+      const certMap = new Map<string, TraceCertificate>();
+      certsByHolder.forEach((c) => certMap.set(c.certificateId, c));
+
+      if (authenticatedUser) {
+        try {
+          const apps = await listCertificateApplicationsByApplicant(holderId);
+          const appIds = apps.map((a) => a.applicationId).filter(Boolean);
+          if (appIds.length > 0) {
+            const certsByApp = await listTraceCertificatesByApplicationIds(appIds);
+            certsByApp.forEach((c) => certMap.set(c.certificateId, c));
+          }
+        } catch {
+          // Non-fatal fallback
+        }
+      }
+
+      const certs = Array.from(certMap.values()).sort((a, b) =>
+        (b.issueDate || b.createdAt || "").localeCompare(a.issueDate || a.createdAt || "")
+      );
       return NextResponse.json({
         success: true,
         certificates: certs.map(toPublicTraceCertificate),
@@ -143,11 +164,15 @@ export async function GET(req: NextRequest) {
       for (let i = 0; i < holderList.length; i += 10) {
         const chunk = holderList.slice(i, i + 10);
         if (chunk.length === 0) continue;
-        const snap = await firebaseAdminDb
-          .collection("certificates")
-          .where("currentHolderId", "in", chunk)
-          .get();
-        snap.forEach((doc) => {
+        const [snapHolder, snapCurrent] = await Promise.all([
+          firebaseAdminDb.collection("certificates").where("holderId", "in", chunk).get(),
+          firebaseAdminDb.collection("certificates").where("currentHolderId", "in", chunk).get(),
+        ]);
+        snapHolder.forEach((doc) => {
+          const cert = doc.data() as TraceCertificate;
+          certMap.set(doc.id, cert);
+        });
+        snapCurrent.forEach((doc) => {
           const cert = doc.data() as TraceCertificate;
           certMap.set(doc.id, cert);
         });

@@ -627,9 +627,9 @@ export async function issueTraceCertificate(
       holderType: application.applicantType || "farmer",
       originCountry: "Cameroon",
       certifiedQuantityKg,
-      productionPeriod: application.productionPeriod,
+      productionPeriod: application.productionPeriod || "Main Crop",
       issueDate: now,
-      expiryDate: input.expiryDate,
+      ...(input.expiryDate ? { expiryDate: input.expiryDate } : {}),
       status: "active",
       verificationStatus: input.verificationStatus || "verified",
       createdBy: issuerUid,
@@ -777,12 +777,58 @@ export async function listTraceCertificatesByHolder(
     return [];
   }
 
-  const q = query(
+  const cleanId = holderId.trim();
+  const certMap = new Map<string, TraceCertificate>();
+
+  const qPrimary = query(
     collection(db, COLLECTIONS.CERTIFICATES),
-    where("holderId", "==", holderId.trim())
+    where("holderId", "==", cleanId)
   );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as TraceCertificate);
+  const snapPrimary = await getDocs(qPrimary);
+  snapPrimary.docs.forEach((d) => {
+    const data = d.data() as TraceCertificate;
+    certMap.set(data.certificateId || d.id, { ...data, certificateId: data.certificateId || d.id });
+  });
+
+  const qCompat = query(
+    collection(db, COLLECTIONS.CERTIFICATES),
+    where("currentHolderId", "==", cleanId)
+  );
+  const snapCompat = await getDocs(qCompat);
+  snapCompat.docs.forEach((d) => {
+    const data = d.data() as TraceCertificate;
+    certMap.set(data.certificateId || d.id, { ...data, certificateId: data.certificateId || d.id });
+  });
+
+  return Array.from(certMap.values());
+}
+
+/**
+ * Lists Trace Certificates issued for a list of Certificate Application IDs.
+ */
+export async function listTraceCertificatesByApplicationIds(
+  applicationIds: string[]
+): Promise<TraceCertificate[]> {
+  const cleanIds = Array.from(
+    new Set(applicationIds.map((id) => id?.trim()).filter((id): id is string => Boolean(id)))
+  );
+  if (cleanIds.length === 0) return [];
+
+  const certMap = new Map<string, TraceCertificate>();
+  for (let i = 0; i < cleanIds.length; i += 10) {
+    const chunk = cleanIds.slice(i, i + 10);
+    const q = query(
+      collection(db, COLLECTIONS.CERTIFICATES),
+      where("applicationId", "in", chunk)
+    );
+    const snap = await getDocs(q);
+    snap.docs.forEach((d) => {
+      const data = d.data() as TraceCertificate;
+      certMap.set(data.certificateId || d.id, { ...data, certificateId: data.certificateId || d.id });
+    });
+  }
+
+  return Array.from(certMap.values());
 }
 
 /**
@@ -850,7 +896,9 @@ export async function resolveCertificateLineage(
 export interface PublicTraceCertificate {
   certificateId: string;
   certificateNumber: string;
+  applicationId?: string;
   lotId: string;
+  farmId?: string;
   originCountry: "Cameroon";
   certifiedQuantityKg: number;
   productionPeriod: string;
@@ -864,7 +912,9 @@ export function toPublicTraceCertificate(cert: TraceCertificate): PublicTraceCer
   return {
     certificateId: cert.certificateId,
     certificateNumber: cert.certificateNumber,
+    applicationId: cert.applicationId,
     lotId: cert.lotId,
+    farmId: cert.farmId,
     originCountry: cert.originCountry,
     certifiedQuantityKg: cert.certifiedQuantityKg,
     productionPeriod: cert.productionPeriod,

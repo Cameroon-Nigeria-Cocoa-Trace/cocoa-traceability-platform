@@ -20,6 +20,7 @@ import {
   UserRoleModal,
   FeeConfigModal,
   OversightReviewModal,
+  DeleteEntityModal,
 } from "@/components/admin/AdminModals";
 import {
   ShieldAlert,
@@ -39,10 +40,18 @@ import {
   FileCheck2,
   SlidersHorizontal,
   ArrowRight,
+  Trash2,
 } from "lucide-react";
 
 type AdminTab = "overview" | "entities" | "compliance" | "fees" | "audit";
-type ComplianceSubTab = "certificates" | "applications" | "customs" | "farms" | "lots";
+type ComplianceSubTab =
+  | "certificates"
+  | "applications"
+  | "customs"
+  | "farms"
+  | "lots"
+  | "payments"
+  | "receipts";
 
 const SYSTEM_MODES: {
   value: PlatformSystemStatus;
@@ -83,8 +92,11 @@ function formatDate(iso?: string): string {
   return d.toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
-function StatusChip({ status }: { status: string }) {
-  const normalized = (status || "active").toLowerCase();
+function StatusChip({ status }: { status?: string }) {
+  if (!status || !status.trim()) {
+    return <span className="text-[11px] text-[#57655d]">—</span>;
+  }
+  const normalized = status.trim().toLowerCase();
   let classes = "border-[#dfe7d8] bg-[#f7f8f3] text-[#394a41]";
   if (
     normalized === "active" ||
@@ -92,12 +104,15 @@ function StatusChip({ status }: { status: string }) {
     normalized === "cleared" ||
     normalized === "verified" ||
     normalized === "completed" ||
-    normalized === "available"
+    normalized === "available" ||
+    normalized === "paid" ||
+    normalized === "operational"
   ) {
     classes = "border-[#b8e0aa] bg-[#edf7e8] text-[#1f5425]";
   } else if (
     normalized === "pending" ||
     normalized === "submitted" ||
+    normalized === "created" ||
     normalized === "under_investigation" ||
     normalized === "maintenance" ||
     normalized === "hold"
@@ -108,7 +123,8 @@ function StatusChip({ status }: { status: string }) {
     normalized === "revoked" ||
     normalized === "rejected" ||
     normalized === "emergency_stop" ||
-    normalized === "flagged"
+    normalized === "flagged" ||
+    normalized === "failed"
   ) {
     classes = "border-red-300 bg-red-50 text-red-800";
   }
@@ -147,6 +163,7 @@ export default function AdminDashboardPage() {
   const [pendingSystemStatus, setPendingSystemStatus] = useState<PlatformSystemStatus | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<AdminManagedEntity | null>(null);
   const [roleModalEntity, setRoleModalEntity] = useState<AdminManagedEntity | null>(null);
+  const [deleteModalEntity, setDeleteModalEntity] = useState<AdminManagedEntity | null>(null);
   const [feeModalState, setFeeModalState] = useState<{
     mode: "edit" | "create";
     fee?: FeeConfig | null;
@@ -302,6 +319,32 @@ export default function AdminDashboardPage() {
       );
       setRoleModalEntity(null);
       showToast(`Updated role for "${roleModalEntity.name}" to ${newRole}.`);
+      await loadSnapshot(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmDeleteEntity = async (reason: string) => {
+    if (!user || !deleteModalEntity) return;
+    try {
+      setSubmitting(true);
+      await adminService.deleteEntity(
+        {
+          entityId: deleteModalEntity.id,
+          entityName: deleteModalEntity.name,
+          entityType: deleteModalEntity.entityType,
+          sourceCollection: deleteModalEntity.sourceCollection,
+          reason,
+        },
+        user.uid,
+        user.email || undefined
+      );
+      const removedName = deleteModalEntity.name;
+      setDeleteModalEntity(null);
+      showToast(`Deleted "${removedName}" from Firestore.`);
       await loadSnapshot(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -666,6 +709,20 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {snapshot?.readWarnings && snapshot.readWarnings.length > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+            <div className="flex items-center gap-2 font-bold">
+              <AlertCircle size={15} />
+              <span>Partial Firestore Read Warnings ({snapshot.readWarnings.length})</span>
+            </div>
+            <ul className="mt-1 list-disc pl-5 text-[11px]">
+              {snapshot.readWarnings.map((w, idx) => (
+                <li key={idx}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* TAB 1: OVERVIEW */}
         {activeTab === "overview" && snapshot && metrics && (
           <div className="mt-6 space-y-6">
@@ -744,7 +801,8 @@ export default function AdminDashboardPage() {
                     {(metrics.totalTrades || 0).toLocaleString()}
                   </p>
                   <p className="mt-1.5 font-mono text-[11px] tabular-nums text-[#57655d]">
-                    {metrics.pendingCertApplications || 0} pending certificate applications
+                    {metrics.totalLots || 0} lots · {metrics.totalListings || 0} listings ·{" "}
+                    {metrics.pendingCertApplications || 0} pending cert apps
                   </p>
                 </div>
               </div>
@@ -758,7 +816,17 @@ export default function AdminDashboardPage() {
                     Platform Operational Mode Control
                   </h2>
                   <p className="text-xs text-[#57655d]">
-                    Switch the live operational state of the network. Changes take immediate effect across clearance and transfer checks.
+                    Switch the live operational state of the network. Changes persist in Firestore{" "}
+                    <span className="font-mono">admin_settings/platform_status</span>.
+                    {snapshot.dashboard.systemStatusUpdatedAt && (
+                      <span className="ml-1 font-mono text-[11px]">
+                        (Last updated {formatDate(snapshot.dashboard.systemStatusUpdatedAt)}
+                        {snapshot.dashboard.systemStatusUpdatedBy
+                          ? ` by ${snapshot.dashboard.systemStatusUpdatedBy}`
+                          : ""}
+                        )
+                      </span>
+                    )}
                   </p>
                 </div>
                 <StatusChip status={systemStatus} />
@@ -837,7 +905,7 @@ export default function AdminDashboardPage() {
                               Cert App: {app.farmName}
                             </p>
                             <p className="truncate text-[11px] text-[#57655d]">
-                              {app.applicantName} ·{" "}
+                              {app.applicantName || "—"} ·{" "}
                               <span className="font-mono tabular-nums">
                                 {app.requestedWeightKg.toLocaleString()} kg
                               </span>
@@ -875,7 +943,7 @@ export default function AdminDashboardPage() {
                               Customs: {req.consignmentCode}
                             </p>
                             <p className="truncate text-[11px] text-[#57655d]">
-                              {req.exporterName} · {req.destinationPort}
+                              {req.exporterName || "—"} · {req.destinationPort || req.destinationCountry || "—"}
                             </p>
                           </div>
                           <button
@@ -1063,8 +1131,8 @@ export default function AdminDashboardPage() {
                             </div>
                           )}
                         </td>
-                        <td className="py-3.5 pr-4 text-[#394a41]">{entity.region}</td>
-                        <td className="py-3.5 pr-4 text-[#57655d]">{entity.subtitle}</td>
+                        <td className="py-3.5 pr-4 text-[#394a41]">{entity.region || "—"}</td>
+                        <td className="py-3.5 pr-4 text-[#57655d]">{entity.subtitle || "—"}</td>
                         <td className="py-3.5 pr-4">
                           <StatusChip status={entity.operationalStatus} />
                           {entity.statusReason && (
@@ -1092,6 +1160,15 @@ export default function AdminDashboardPage() {
                             >
                               <SlidersHorizontal size={12} />
                               Control
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteModalEntity(entity)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-700 hover:bg-red-50 cursor-pointer"
+                              title="Delete Firestore document"
+                            >
+                              <Trash2 size={12} />
+                              Delete
                             </button>
                           </div>
                         </td>
@@ -1157,8 +1234,18 @@ export default function AdminDashboardPage() {
                   },
                   {
                     id: "lots",
-                    label: "Lots & Trades",
+                    label: "Lots, Listings & Trades",
                     count: snapshot.lotsAndTrades.length,
+                  },
+                  {
+                    id: "payments",
+                    label: "Payments",
+                    count: snapshot.payments.length,
+                  },
+                  {
+                    id: "receipts",
+                    label: "Warehouse Receipts",
+                    count: snapshot.warehouseReceipts.length,
                   },
                 ] as { id: ComplianceSubTab; label: string; count: number }[]
               ).map((sub) => (
@@ -1216,14 +1303,14 @@ export default function AdminDashboardPage() {
                               </td>
                               <td className="py-3 pr-4">
                                 <div className="font-semibold text-[#10251d]">
-                                  {cert.holderName}
+                                  {cert.holderName || "—"}
                                 </div>
                                 <div className="text-[11px] capitalize text-[#57655d]">
-                                  {cert.holderType}
+                                  {cert.holderType || "—"}
                                 </div>
                               </td>
                               <td className="py-3 pr-4 text-[#394a41]">
-                                {cert.originRegion}
+                                {cert.originRegion || "—"}
                               </td>
                               <td className="py-3 pr-4 font-mono tabular-nums text-[#10251d]">
                                 {cert.weightKg.toLocaleString()} kg
@@ -1289,16 +1376,21 @@ export default function AdminDashboardPage() {
                           )
                           .map((app) => (
                             <tr key={app.id} className="hover:bg-[#fafcf9]">
-                              <td className="py-3 pr-4 font-bold text-[#10251d]">
-                                {app.farmName}
+                              <td className="py-3 pr-4">
+                                <div className="font-bold text-[#10251d]">{app.farmName}</div>
+                                {app.applicationNumber && (
+                                  <div className="font-mono text-[11px] text-[#57655d]">
+                                    {app.applicationNumber}
+                                  </div>
+                                )}
                               </td>
                               <td className="py-3 pr-4">
-                                <div className="text-[#10251d]">{app.applicantName}</div>
+                                <div className="text-[#10251d]">{app.applicantName || "—"}</div>
                                 <div className="text-[11px] text-[#57655d]">
                                   {app.applicantEmail || app.id}
                                 </div>
                               </td>
-                              <td className="py-3 pr-4 text-[#394a41]">{app.region}</td>
+                              <td className="py-3 pr-4 text-[#394a41]">{app.region || "—"}</td>
                               <td className="py-3 pr-4 font-mono tabular-nums text-[#10251d]">
                                 {app.requestedWeightKg.toLocaleString()} kg
                               </td>
@@ -1366,15 +1458,18 @@ export default function AdminDashboardPage() {
                               <td className="py-3 pr-4 font-mono font-bold text-[#10251d]">
                                 {req.consignmentCode}
                               </td>
-                              <td className="py-3 pr-4 text-[#10251d]">{req.exporterName}</td>
+                              <td className="py-3 pr-4 text-[#10251d]">{req.exporterName || "—"}</td>
                               <td className="py-3 pr-4 text-[#394a41]">
-                                <div>{req.corridor}</div>
+                                <div>{req.corridor || "—"}</div>
                                 <div className="text-[11px] text-[#57655d]">
-                                  Port: {req.destinationPort}
+                                  {[req.destinationPort, req.destinationCountry].filter(Boolean).join(" · ") || "—"}
                                 </div>
                               </td>
                               <td className="py-3 pr-4 font-mono tabular-nums text-[#10251d]">
-                                {req.weightKg.toLocaleString()} kg
+                                <div>{req.weightKg.toLocaleString()} kg</div>
+                                <div className="text-[10px] text-[#57655d]">
+                                  {req.clearanceFeePaid ? "Fee Paid" : "Fee Pending"}
+                                </div>
                               </td>
                               <td className="py-3 pr-4">
                                 <StatusChip status={req.status} />
@@ -1447,20 +1542,24 @@ export default function AdminDashboardPage() {
                                 </div>
                               </td>
                               <td className="py-3 pr-4">
-                                <div className="text-[#10251d]">{farm.farmerName}</div>
+                                <div className="text-[#10251d]">{farm.farmerName || "—"}</div>
                                 {farm.farmerEmail && (
                                   <div className="text-[11px] text-[#57655d]">
                                     {farm.farmerEmail}
                                   </div>
                                 )}
                               </td>
-                              <td className="py-3 pr-4 text-[#394a41]">{farm.region}</td>
+                              <td className="py-3 pr-4 text-[#394a41]">{farm.region || "—"}</td>
                               <td className="py-3 pr-4 font-mono tabular-nums text-[#10251d]">
                                 {farm.sizeHectares.toFixed(2)} ha
                               </td>
                               <td className="py-3 pr-4">
                                 <StatusChip
-                                  status={farm.eudrCompliant ? "verified" : farm.auditStatus}
+                                  status={
+                                    farm.eudrCompliant
+                                      ? "verified"
+                                      : farm.auditStatus || "unverified"
+                                  }
                                 />
                               </td>
                               <td className="py-3 text-right">
@@ -1492,12 +1591,12 @@ export default function AdminDashboardPage() {
                 </>
               )}
 
-              {/* Sub-tab: Lots & Trades */}
+              {/* Sub-tab: Lots, Listings & Trades */}
               {complianceTab === "lots" && (
                 <>
                   {snapshot.lotsAndTrades.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-8 text-center text-xs text-[#57655d]">
-                      No cocoa lots or marketplace trades recorded yet.
+                      No cocoa lots, marketplace listings, or trades recorded in Firestore yet.
                     </div>
                   ) : (
                     <table className="w-full min-w-[740px] border-collapse text-left text-xs">
@@ -1505,7 +1604,7 @@ export default function AdminDashboardPage() {
                         <tr className="border-b border-[#edf1ea] text-[11px] font-bold uppercase tracking-wider text-[#57655d]">
                           <th className="py-3 pr-4">Reference</th>
                           <th className="py-3 pr-4">Type</th>
-                          <th className="py-3 pr-4">Party</th>
+                          <th className="py-3 pr-4">Party / Title</th>
                           <th className="py-3 pr-4">Grade &amp; Weight</th>
                           <th className="py-3 pr-4">Value</th>
                           <th className="py-3 text-right">Status</th>
@@ -1517,7 +1616,8 @@ export default function AdminDashboardPage() {
                             (item) =>
                               !qCompliance ||
                               item.referenceCode.toLowerCase().includes(qCompliance) ||
-                              item.partyName.toLowerCase().includes(qCompliance)
+                              item.partyName.toLowerCase().includes(qCompliance) ||
+                              item.kind.toLowerCase().includes(qCompliance)
                           )
                           .map((item) => (
                             <tr key={`${item.kind}_${item.id}`} className="hover:bg-[#fafcf9]">
@@ -1527,15 +1627,135 @@ export default function AdminDashboardPage() {
                               <td className="py-3 pr-4 capitalize text-[#394a41]">
                                 {item.kind}
                               </td>
-                              <td className="py-3 pr-4 text-[#10251d]">{item.partyName}</td>
+                              <td className="py-3 pr-4 text-[#10251d]">{item.partyName || "—"}</td>
                               <td className="py-3 pr-4 font-mono tabular-nums text-[#394a41]">
-                                {item.grade} · {item.weightKg.toLocaleString()} kg
+                                {[item.grade, `${item.weightKg.toLocaleString()} kg`]
+                                  .filter(Boolean)
+                                  .join(" · ")}
                               </td>
                               <td className="py-3 pr-4 font-mono tabular-nums text-[#10251d]">
-                                {item.amount.toLocaleString()} {item.currency}
+                                {item.amount > 0
+                                  ? `${item.amount.toLocaleString()} ${item.currency}`
+                                  : item.currency || "—"}
                               </td>
                               <td className="py-3 text-right">
                                 <StatusChip status={item.status} />
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+
+              {/* Sub-tab: Payments */}
+              {complianceTab === "payments" && (
+                <>
+                  {snapshot.payments.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-8 text-center text-xs text-[#57655d]">
+                      No platform payment records stored in Firestore yet.
+                    </div>
+                  ) : (
+                    <table className="w-full min-w-[740px] border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-[#edf1ea] text-[11px] font-bold uppercase tracking-wider text-[#57655d]">
+                          <th className="py-3 pr-4">Payment Reference</th>
+                          <th className="py-3 pr-4">Payer → Payee</th>
+                          <th className="py-3 pr-4">Purpose &amp; Gateway</th>
+                          <th className="py-3 pr-4">Amount</th>
+                          <th className="py-3 pr-4">Date</th>
+                          <th className="py-3 text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#edf1ea]">
+                        {snapshot.payments
+                          .filter(
+                            (p) =>
+                              !qCompliance ||
+                              p.paymentReference.toLowerCase().includes(qCompliance) ||
+                              p.payerName.toLowerCase().includes(qCompliance) ||
+                              p.payeeName.toLowerCase().includes(qCompliance) ||
+                              p.purpose.toLowerCase().includes(qCompliance)
+                          )
+                          .map((pay) => (
+                            <tr key={pay.id} className="hover:bg-[#fafcf9]">
+                              <td className="py-3 pr-4 font-mono text-[11px] font-bold text-[#10251d]">
+                                {pay.paymentReference}
+                              </td>
+                              <td className="py-3 pr-4 text-[#10251d]">
+                                {[pay.payerName, pay.payeeName].filter(Boolean).join(" → ") || "—"}
+                              </td>
+                              <td className="py-3 pr-4 text-[#394a41]">
+                                <div>{pay.purpose || "—"}</div>
+                                <div className="text-[11px] text-[#57655d]">
+                                  {pay.gateway || "—"}
+                                </div>
+                              </td>
+                              <td className="py-3 pr-4 font-mono tabular-nums font-bold text-[#10251d]">
+                                {pay.amount.toLocaleString()} {pay.currency}
+                              </td>
+                              <td className="py-3 pr-4 font-mono text-[11px] tabular-nums text-[#57655d]">
+                                {formatDate(pay.createdAt)}
+                              </td>
+                              <td className="py-3 text-right">
+                                <StatusChip status={pay.status} />
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+
+              {/* Sub-tab: Warehouse Receipts */}
+              {complianceTab === "receipts" && (
+                <>
+                  {snapshot.warehouseReceipts.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-8 text-center text-xs text-[#57655d]">
+                      No warehouse receipts stored in Firestore yet.
+                    </div>
+                  ) : (
+                    <table className="w-full min-w-[740px] border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-[#edf1ea] text-[11px] font-bold uppercase tracking-wider text-[#57655d]">
+                          <th className="py-3 pr-4">Consignment</th>
+                          <th className="py-3 pr-4">Facility</th>
+                          <th className="py-3 pr-4">Source Entity</th>
+                          <th className="py-3 pr-4">Grade</th>
+                          <th className="py-3 pr-4">Quantity &amp; Bags</th>
+                          <th className="py-3 text-right">Received</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#edf1ea]">
+                        {snapshot.warehouseReceipts
+                          .filter(
+                            (r) =>
+                              !qCompliance ||
+                              r.consignmentCode.toLowerCase().includes(qCompliance) ||
+                              r.facilityName.toLowerCase().includes(qCompliance) ||
+                              r.sourceEntityName.toLowerCase().includes(qCompliance)
+                          )
+                          .map((rec) => (
+                            <tr key={rec.id} className="hover:bg-[#fafcf9]">
+                              <td className="py-3 pr-4 font-mono font-bold text-[#10251d]">
+                                {rec.consignmentCode}
+                              </td>
+                              <td className="py-3 pr-4 text-[#10251d]">
+                                {rec.facilityName || "—"}
+                              </td>
+                              <td className="py-3 pr-4 text-[#394a41]">
+                                {rec.sourceEntityName || "—"}
+                              </td>
+                              <td className="py-3 pr-4 text-[#394a41]">
+                                {rec.grade || "—"}
+                              </td>
+                              <td className="py-3 pr-4 font-mono tabular-nums text-[#10251d]">
+                                {rec.quantityKg.toLocaleString()} kg ({rec.totalBags.toLocaleString()} bags)
+                              </td>
+                              <td className="py-3 text-right font-mono text-[11px] tabular-nums text-[#57655d]">
+                                {formatDate(rec.receivedAt)}
                               </td>
                             </tr>
                           ))}
@@ -1571,55 +1791,63 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="mt-5 overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-[#edf1ea] text-[11px] font-bold uppercase tracking-wider text-[#57655d]">
-                    <th className="py-3 pr-4">Code</th>
-                    <th className="py-3 pr-4">Rule &amp; Description</th>
-                    <th className="py-3 pr-4">Actors</th>
-                    <th className="py-3 pr-4">Rate</th>
-                    <th className="py-3 pr-4">Last Updated</th>
-                    <th className="py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#edf1ea]">
-                  {snapshot.dashboard.feeConfigs.map((fee) => (
-                    <tr key={fee.code} className="hover:bg-[#fafcf9]">
-                      <td className="py-3.5 pr-4 font-mono text-[11px] font-bold text-[#2d6130]">
-                        {fee.code}
-                      </td>
-                      <td className="py-3.5 pr-4">
-                        <div className="font-bold text-[#10251d]">{fee.name}</div>
-                        <div className="mt-0.5 max-w-md text-[11px] text-[#57655d]">
-                          {fee.description}
-                        </div>
-                      </td>
-                      <td className="py-3.5 pr-4 capitalize text-[#394a41]">
-                        {fee.applicableActorTypes.join(", ")}
-                      </td>
-                      <td className="py-3.5 pr-4 font-mono text-sm font-bold tabular-nums text-[#10251d]">
-                        {fee.isPercentage
-                          ? `${fee.amount}%`
-                          : `${fee.amount.toLocaleString()} ${fee.currency}`}
-                      </td>
-                      <td className="py-3.5 pr-4 font-mono text-[11px] tabular-nums text-[#57655d]">
-                        <div>{formatDate(fee.updatedAt)}</div>
-                        <div className="text-[10px]">By {fee.lastUpdatedBy}</div>
-                      </td>
-                      <td className="py-3.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setFeeModalState({ mode: "edit", fee })}
-                          className="inline-flex items-center gap-1 rounded-lg border border-[#dfe7d8] bg-white px-3 py-1.5 text-[11px] font-bold text-[#10251d] transition hover:border-[#2d6130] cursor-pointer"
-                        >
-                          <Edit3 size={12} />
-                          Edit Rate
-                        </button>
-                      </td>
+              {snapshot.dashboard.feeConfigs.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#dfe7d8] bg-[#fafcf9] p-8 text-center text-xs text-[#57655d]">
+                  No statutory fee rules configured in Firestore yet. Click &ldquo;Add Fee Rule&rdquo; to create one.
+                </div>
+              ) : (
+                <table className="w-full min-w-[760px] border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-[#edf1ea] text-[11px] font-bold uppercase tracking-wider text-[#57655d]">
+                      <th className="py-3 pr-4">Code</th>
+                      <th className="py-3 pr-4">Rule &amp; Description</th>
+                      <th className="py-3 pr-4">Actors</th>
+                      <th className="py-3 pr-4">Rate</th>
+                      <th className="py-3 pr-4">Last Updated</th>
+                      <th className="py-3 text-right">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[#edf1ea]">
+                    {snapshot.dashboard.feeConfigs.map((fee) => (
+                      <tr key={fee.code} className="hover:bg-[#fafcf9]">
+                        <td className="py-3.5 pr-4 font-mono text-[11px] font-bold text-[#2d6130]">
+                          {fee.code}
+                        </td>
+                        <td className="py-3.5 pr-4">
+                          <div className="font-bold text-[#10251d]">{fee.name}</div>
+                          <div className="mt-0.5 max-w-md text-[11px] text-[#57655d]">
+                            {fee.description || "—"}
+                          </div>
+                        </td>
+                        <td className="py-3.5 pr-4 capitalize text-[#394a41]">
+                          {fee.applicableActorTypes.length > 0
+                            ? fee.applicableActorTypes.join(", ")
+                            : "—"}
+                        </td>
+                        <td className="py-3.5 pr-4 font-mono text-sm font-bold tabular-nums text-[#10251d]">
+                          {fee.isPercentage
+                            ? `${fee.amount}%`
+                            : `${fee.amount.toLocaleString()} ${fee.currency}`}
+                        </td>
+                        <td className="py-3.5 pr-4 font-mono text-[11px] tabular-nums text-[#57655d]">
+                          <div>{formatDate(fee.updatedAt)}</div>
+                          <div className="text-[10px]">By {fee.lastUpdatedBy || "—"}</div>
+                        </td>
+                        <td className="py-3.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setFeeModalState({ mode: "edit", fee })}
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#dfe7d8] bg-white px-3 py-1.5 text-[11px] font-bold text-[#10251d] transition hover:border-[#2d6130] cursor-pointer"
+                          >
+                            <Edit3 size={12} />
+                            Edit Rate
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </section>
         )}
@@ -1776,6 +2004,17 @@ export default function AdminDashboardPage() {
           submitting={submitting}
           onClose={() => setOversightModal(null)}
           onConfirm={handleConfirmOversight}
+        />
+      )}
+
+      {deleteModalEntity && (
+        <DeleteEntityModal
+          entityName={deleteModalEntity.name}
+          entityId={deleteModalEntity.id}
+          sourceCollection={deleteModalEntity.sourceCollection}
+          submitting={submitting}
+          onClose={() => setDeleteModalEntity(null)}
+          onConfirm={handleConfirmDeleteEntity}
         />
       )}
     </div>

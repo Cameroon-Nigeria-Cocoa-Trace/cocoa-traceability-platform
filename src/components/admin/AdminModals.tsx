@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, AlertTriangle, ShieldAlert, Coins, CheckCircle2, UserCog } from "lucide-react";
+import { X, AlertTriangle, ShieldAlert, Coins, CheckCircle2, UserCog, Trash2 } from "lucide-react";
 import {
   EntityOperationalStatus,
   FeeConfig,
@@ -606,6 +606,80 @@ export function OversightReviewModal({
           >
             <CheckCircle2 size={14} />
             {submitting ? "Recording..." : "Submit Decision"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+export function DeleteEntityModal({
+  entityName,
+  entityId,
+  sourceCollection,
+  submitting,
+  onClose,
+  onConfirm,
+}: {
+  entityName: string;
+  entityId: string;
+  sourceCollection: string;
+  submitting: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("Remove test/obsolete Firestore document");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await onConfirm(reason.trim() || "Removed by administrator");
+  };
+
+  return (
+    <ModalShell
+      title="Delete Firestore Entity Document"
+      subtitle={`${entityName} (${sourceCollection}/${entityId})`}
+      onClose={onClose}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-600" />
+          <div>
+            <p className="font-bold">Permanent Firestore Deletion</p>
+            <p className="mt-0.5 leading-relaxed">
+              This permanently removes document <span className="font-mono font-bold">{sourceCollection}/{entityId}</span> from Firestore.
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-[#394a41]">
+            Deletion Note
+          </label>
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-xl border border-[#dfe7d8] bg-[#f7f8f3] px-3 py-2.5 text-xs text-[#10251d] outline-none focus:border-[#2d6130] focus:bg-white"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2.5 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-xl border border-[#dfe7d8] bg-white px-4 py-2 text-xs font-semibold text-[#394a41] transition hover:bg-[#f7f8f3] cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-red-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-red-800 disabled:opacity-50 cursor-pointer"
+          >
+            <Trash2 size={14} />
+            {submitting ? "Deleting..." : "Delete Document"}
           </button>
         </div>
       </form>

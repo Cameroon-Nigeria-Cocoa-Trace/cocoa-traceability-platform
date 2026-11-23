@@ -11,42 +11,45 @@ import { adminStore } from "./adminStore";
 import { db, handleFirestoreError, OperationType } from "@/lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 
-const DESIGNATED_ADMIN_EMAIL = "afumbomboyo@gmail.com";
-
 export class AdminService {
   /**
    * Verifies that the caller has platform administrative privileges.
-   * Checks designated admin email, `admins/{userId}` document, or `users/{userId}.role === "admin"`.
+   * Checks `admins/{userId}` document or `users/{userId}.role === "admin"`.
    */
-  async assertAdminAuthorized(actorUserId: string, actorEmail?: string | null): Promise<void> {
+  async assertAdminAuthorized(actorUserId: string, _actorEmail?: string | null): Promise<void> {
     if (!actorUserId || !actorUserId.trim()) {
       throw new Error("Authentication Required: Admin user ID is required.");
     }
 
     const cleanUid = actorUserId.trim();
-    const cleanEmail = (actorEmail || "").trim().toLowerCase();
+    void _actorEmail;
 
-    // Unit-test & designated root admin checks
-    if (cleanUid.startsWith("sys_admin") || cleanEmail === DESIGNATED_ADMIN_EMAIL) {
+    // Unit-test root admin check
+    if (cleanUid.startsWith("sys_admin")) {
       return;
     }
 
     try {
-      const adminSnap = await getDoc(doc(db, "admins", cleanUid));
-      if (adminSnap.exists()) return;
-
       const userSnap = await getDoc(doc(db, "users", cleanUid));
       if (userSnap.exists()) {
         const data = userSnap.data();
-        if (
-          data?.role === "admin" ||
-          (typeof data?.email === "string" &&
-            data.email.trim().toLowerCase() === DESIGNATED_ADMIN_EMAIL)
-        ) {
+        if (data?.role === "admin" || data?.accountType === "admin") {
           return;
         }
+        // If user explicitly holds a non-admin role in users collection, reject
+        if (typeof data?.role === "string" && data.role !== "admin") {
+          throw new Error(
+            `Authorization Error: User "${cleanUid}" does not possess Administrator privileges.`
+          );
+        }
       }
+
+      const adminSnap = await getDoc(doc(db, "admins", cleanUid));
+      if (adminSnap.exists()) return;
     } catch (err) {
+      if (err instanceof Error && err.message.startsWith("Authorization Error:")) {
+        throw err;
+      }
       handleFirestoreError(err, OperationType.GET, `admins/${cleanUid}`, false);
       // In-memory / offline unit-test fallback only for explicit admin test IDs
       if (cleanUid.includes("admin")) {
@@ -60,8 +63,8 @@ export class AdminService {
   }
 
   // System Status
-  async getSystemStatus(): Promise<PlatformSystemStatus> {
-    return adminStore.getSystemStatus();
+  async getSystemStatus(strictFirestore = false): Promise<PlatformSystemStatus> {
+    return adminStore.getSystemStatus(strictFirestore);
   }
 
   async setSystemStatus(
@@ -88,16 +91,16 @@ export class AdminService {
   }
 
   // Fees Configuration
-  async getFeeConfig(codeOrId: string): Promise<FeeConfig> {
-    const fee = await adminStore.getFeeConfig(codeOrId);
+  async getFeeConfig(codeOrId: string, strictFirestore = false): Promise<FeeConfig> {
+    const fee = await adminStore.getFeeConfig(codeOrId, strictFirestore);
     if (!fee) {
       throw new Error(`Fee Configuration not found for code: "${codeOrId}".`);
     }
     return fee;
   }
 
-  async listFeeConfigs(): Promise<FeeConfig[]> {
-    return adminStore.listFeeConfigs();
+  async listFeeConfigs(strictFirestore = false): Promise<FeeConfig[]> {
+    return adminStore.listFeeConfigs(strictFirestore);
   }
 
   async updateFeeConfig(
@@ -184,9 +187,9 @@ export class AdminService {
       throw new Error("Validation Error: Fee amount cannot be negative.");
     }
 
-    const existing = await adminStore.getFeeConfig(normalizedCode);
+    const existing = await adminStore.getFeeConfig(normalizedCode, true);
     if (existing) {
-      throw new Error(`Fee Configuration "${normalizedCode}" already exists.`);
+      throw new Error(`Fee Configuration "${normalizedCode}" already exists in Firestore.`);
     }
 
     const created: FeeConfig = {
@@ -317,6 +320,35 @@ export class AdminService {
     });
   }
 
+  async deleteEntity(
+    input: {
+      entityId: string;
+      entityName: string;
+      entityType: ManagedEntityType;
+      sourceCollection: string;
+      reason?: string;
+    },
+    adminUserId: string,
+    adminEmail?: string
+  ): Promise<void> {
+    await this.assertAdminAuthorized(adminUserId, adminEmail);
+    await adminStore.deleteEntityRecord(input.sourceCollection, input.entityId);
+    await adminStore.appendAuditLog({
+      id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      action: "ENTITY_RECORD_DELETED",
+      targetEntityType: input.entityType,
+      targetEntityId: input.entityId,
+      details: {
+        entityName: input.entityName,
+        sourceCollection: input.sourceCollection,
+        reason: input.reason || "Removed test or obsolete record",
+      },
+      adminUserId,
+      adminEmail,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   async overrideCertificateStatus(
     input: { certId: string; certificateNumber: string; status: string; reason?: string },
     adminUserId: string,
@@ -357,6 +389,18 @@ export class AdminService {
       adminUserId,
       input.reason
     );
+
+    let issuedCertificateId: string | undefined;
+    let certificateNumber: string | undefined;
+    if (input.status === "approved") {
+      const issued = await adminStore.issueCertificateForApprovedApplication(
+        input.appId,
+        adminUserId
+      );
+      issuedCertificateId = issued.certificateId;
+      certificateNumber = issued.certificateNumber;
+    }
+
     await adminStore.appendAuditLog({
       id: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       action: "CERTIFICATE_APPLICATION_REVIEWED",
@@ -366,6 +410,7 @@ export class AdminService {
         farmName: input.farmName,
         newStatus: input.status,
         reason: input.reason || "Application reviewed by admin",
+        ...(issuedCertificateId ? { issuedCertificateId, certificateNumber } : {}),
       },
       adminUserId,
       adminEmail,
