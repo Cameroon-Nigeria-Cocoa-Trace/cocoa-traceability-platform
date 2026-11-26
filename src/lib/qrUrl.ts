@@ -96,3 +96,26 @@ export function extractQrValueFromInput(rawInput: string): string {
 
   return trimmed;
 }
+
+/**
+ * Checks whether a scanned QR payload matches TraceTradeNetwork verification URLs or ID formats.
+ */
+export function isTraceTradeNetworkQrInput(rawInput: string): boolean {
+  const trimmed = rawInput.trim();
+  if (!trimmed) return false;
+
+  // Match full URLs or relative paths pointing to /traceability/qr/<id>
+  if (/\/traceability\/qr\/[^/?#\s]+/i.test(trimmed)) {
+    const extracted = extractQrValueFromInput(trimmed);
+    return extracted.length > 0;
+  }
+
+  // Reject unrelated URLs (e.g. external websites, payment links, vCards, WiFi payloads)
+  if (/^(https?:\/\/|mailto:|tel:|wifi:|begin:vcard)/i.test(trimmed)) {
+    return false;
+  }
+
+  // Match TraceTradeNetwork QR ID / package identifier patterns
+  return /^(QRV-|qr_|LOT-.*-PKG-)/i.test(trimmed);
+}
+

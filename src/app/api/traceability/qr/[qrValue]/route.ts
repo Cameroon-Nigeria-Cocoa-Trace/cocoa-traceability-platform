@@ -136,8 +136,20 @@ export async function GET(
             .get();
         }
 
-        if (!qrSnapshot.empty) {
-          const qr = qrSnapshot.docs[0].data();
+        let qrDocData = !qrSnapshot.empty ? qrSnapshot.docs[0].data() : null;
+
+        if (!qrDocData) {
+          const directSnap = await firebaseAdminDb
+            .collection("qrCodes")
+            .doc(qrValue)
+            .get();
+          if (directSnap.exists) {
+            qrDocData = directSnap.data() ?? null;
+          }
+        }
+
+        if (qrDocData) {
+          const qr = qrDocData;
           const holdingId = qr.currentHoldingId;
 
           if (typeof holdingId === "string" && holdingId.trim()) {

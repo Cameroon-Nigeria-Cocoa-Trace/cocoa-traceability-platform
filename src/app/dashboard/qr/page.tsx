@@ -241,9 +241,10 @@ export default function QRTraceabilityPage() {
       );
 
       if (res && res.success) {
-        setSuccessMessage(`Successfully generated package ${res.qrCode.packageNumber} (${res.qrCode.representedQuantityKg} kg)!`);
+        setSuccessMessage(`Successfully generated package ${res.qrCode.packageNumber} (${res.qrCode.representedQuantityKg} kg) — QR ID: ${res.qrCode.qrValue}`);
         setShowCreateModal(false);
         setQrGroupId("");
+        setPreviewQR(res.qrCode);
         await Promise.all([loadHoldings(), loadQRPackages()]);
       }
     } catch (err: unknown) {
@@ -393,7 +394,7 @@ export default function QRTraceabilityPage() {
   
   const handleDownloadQR = async (
     qr: QRCode,
-    format: "svg" | "png" = "svg"
+    format: "pdf" | "png" = "pdf"
   ) => {
     setError(null);
 
@@ -896,11 +897,11 @@ export default function QRTraceabilityPage() {
                               <Eye className="h-4 w-4" />
                             </button>
 
-                            {/* Download SVG */}                            
+                            {/* Download PDF */}
                             <button
                               type="button"
-                              onClick={() => handleDownloadQR(qr, "svg")}
-                              title="Download SVG vector label"
+                              onClick={() => handleDownloadQR(qr, "pdf")}
+                              title="Download PDF label"
                               className="p-1.5 text-stone-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-colors"
                             >
                               <Download className="h-4 w-4" />
@@ -1239,8 +1240,8 @@ export default function QRTraceabilityPage() {
                     </span>
                   </div>
 
-                  {/* QR Image Canvas */}
-                  <div className="flex justify-center my-3 bg-white p-3 rounded-xl border border-stone-200 inline-block shadow-inner">
+                  {/* QR Image Canvas & Direct Readable ID Under Barcode */}
+                  <div className="my-3 bg-white p-3.5 rounded-xl border border-stone-200 shadow-inner flex flex-col items-center">
                     {previewDataUrl ? (
                       <img
                         src={previewDataUrl}
@@ -1252,6 +1253,16 @@ export default function QRTraceabilityPage() {
                         Generating QR Code...
                       </div>
                     )}
+
+                    {/* Searchable QR Code ID directly under barcode */}
+                    <div className="mt-2.5 pt-2.5 border-t border-stone-200 w-full">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-stone-500">
+                        QR Code ID (Search on Traceability Page)
+                      </p>
+                      <p className="mt-0.5 text-xs font-mono font-bold text-emerald-900 break-all select-all">
+                        {previewQR.qrValue}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Bag Metadata */}
@@ -1265,23 +1276,11 @@ export default function QRTraceabilityPage() {
                     <p className="text-[11px] text-stone-600 mt-1 font-mono">
                       LOT: {previewQR.lotNumber} · CERT: #{previewQR.certificateNumber}
                     </p>
-                    <p
-                      className="text-[10px] text-stone-500 mt-1.5 font-mono truncate max-w-[300px] mx-auto"
-                      title={buildQRVerificationUrl(
-                        previewQR.qrValue,
-                        typeof window !== "undefined" ? window.location.origin : undefined
-                      )}
-                    >
-                      Scan URL: {buildQRVerificationUrl(
-                        previewQR.qrValue,
-                        typeof window !== "undefined" ? window.location.origin : undefined
-                      )}
-                    </p>
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-stone-300 flex items-center justify-between text-[10px] text-stone-500">
                     <span>Seq #{previewQR.sequenceNumber}</span>
-                    <span className="font-mono truncate max-w-[150px]">{previewQR.qrValue}</span>
+                    <span className="font-semibold text-emerald-900">TRACETRADENETWORK</span>
                   </div>
                 </div>
               </div>
@@ -1291,18 +1290,11 @@ export default function QRTraceabilityPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() =>
-                      handleCopyValue(
-                        buildQRVerificationUrl(
-                          previewQR.qrValue,
-                          typeof window !== "undefined" ? window.location.origin : undefined
-                        )
-                      )
-                    }
+                    onClick={() => handleCopyValue(previewQR.qrValue)}
                     className="py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
                     {copiedValue ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copiedValue ? "Copied URL!" : "Copy Scan Link"}
+                    {copiedValue ? "Copied ID!" : "Copy QR ID"}
                   </button>
 
                   <button
@@ -1316,17 +1308,17 @@ export default function QRTraceabilityPage() {
 
                   <button
                     type="button"
-                    onClick={() => handleDownloadQR(previewQR, "svg")}
-                    className="py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
+                    onClick={() => handleDownloadQR(previewQR, "pdf")}
+                    className="py-2 px-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
                     <Download className="h-3.5 w-3.5" />
-                    Download SVG
+                    Download PDF
                   </button>
 
                   <button
                     type="button"
                     onClick={() => window.print()}
-                    className="py-2 px-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
+                    className="py-2 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-700 bg-white hover:bg-stone-50 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
                     <Printer className="h-3.5 w-3.5" />
                     Print Tag

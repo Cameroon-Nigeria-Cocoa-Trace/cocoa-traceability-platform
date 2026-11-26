@@ -48,7 +48,7 @@ export function Navbar() {
       : isCoop
       ? [[t("nav.cooperative", "Cooperative Workspace"), "/dashboard/cooperative"]]
       : [[t("nav.farmers", "For Farmers"), effectiveUser ? "/dashboard" : "/signup"]]),
-    [t("nav.traceability", "Traceability"), "/marketplace"],
+    [t("nav.traceability", "Traceability"), "/traceability"],
     [t("nav.portal", "Portal"), "/login"],
   ];
 
@@ -65,7 +65,9 @@ export function Navbar() {
           {/* Center: Main Navigation Links (No wrapping, flexible spacing) */}
           <div className="hidden lg:flex items-center justify-center gap-5 xl:gap-8">
             {links.map(([label, href]) => {
-              const isActive = pathname === href;
+              const isActive =
+                pathname === href ||
+                (href === "/traceability" && pathname.startsWith("/traceability"));
 
               return (
                 <Link

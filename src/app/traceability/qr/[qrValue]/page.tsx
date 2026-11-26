@@ -545,11 +545,16 @@ export default function PublicQRTraceabilityVerificationPage() {
 
                   <div className="my-4 text-center">
                     {qrDataUrl ? (
-                      <img
-                        src={qrDataUrl}
-                        alt={`QR Code for ${traceData.package.packageNumber}`}
-                        className="w-40 h-40 mx-auto rounded-xl border border-stone-200 p-2 bg-stone-50"
-                      />
+                      <div className="inline-flex flex-col items-center rounded-xl border border-stone-200 p-3 bg-stone-50">
+                        <img
+                          src={qrDataUrl}
+                          alt={`QR Code for ${traceData.package.packageNumber}`}
+                          className="w-40 h-40 mx-auto"
+                        />
+                        <p className="mt-2 pt-2 border-t border-stone-200 text-[10px] font-mono font-bold text-emerald-900 break-all max-w-[200px] select-all">
+                          {qrValue}
+                        </p>
+                      </div>
                     ) : (
                       <div className="w-40 h-40 mx-auto bg-stone-100 rounded-xl flex items-center justify-center text-xs text-stone-400">
                         Rendering QR...

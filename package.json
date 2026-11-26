@@ -17,11 +17,13 @@
     "dexie": "^4.4.6",
     "firebase": "^12.19.0",
     "firebase-admin": "^13.10.0",
+    "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.47.0",
     "mapbox-gl": "^3.33.0",
     "maplibre-gl": "^6.14.0",
     "next": "16.3.6",
+    "pdf-lib": "^1.17.1",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"

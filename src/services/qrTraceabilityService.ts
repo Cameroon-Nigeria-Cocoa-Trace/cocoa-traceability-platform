@@ -456,6 +456,11 @@ export async function getQRCodeByValue(qrValue: string): Promise<QRCode | null> 
     return pkgSnap.docs[0].data() as QRCode;
   }
 
+  const qrDocSnap = await getDoc(doc(db, COLLECTIONS.QR_CODES, clean));
+  if (qrDocSnap.exists()) {
+    return qrDocSnap.data() as QRCode;
+  }
+
   return null;
 }
 
