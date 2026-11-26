@@ -155,29 +155,7 @@ export function Navbar() {
               </Link>
             )}
 
-            {effectiveUser ? (
-              isAdmin ? (
-                <Link href="/dashboard/admin" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  {t("nav.admin", "Admin Workspace")}
-                </Link>
-              ) : isWarehouse ? (
-                <Link href="/dashboard/warehouse" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  {t("nav.warehouse", "Warehouse Workspace")}
-                </Link>
-              ) : isAgent ? (
-                <Link href="/dashboard/agent" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  {t("nav.agent", "Agent Workspace")}
-                </Link>
-              ) : isCoop ? (
-                <Link href="/dashboard/cooperative" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  {t("nav.cooperative", "Cooperative Workspace")}
-                </Link>
-              ) : (
-                <Link href="/dashboard" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
-                  {t("nav.farmer_workspace", "Farmer Workspace")}
-                </Link>
-              )
-            ) : (
+            {!effectiveUser && (
               <Link href="/signup" className="rounded-full bg-[#b8f58b] px-4 py-2 text-xs font-semibold text-[#0a3021] shadow-[0_12px_24px_rgba(184,245,139,0.22)] transition hover:bg-[#d0ffb0] whitespace-nowrap">
                 {t("nav.register_farm", "Register Your Farm")}
               </Link>

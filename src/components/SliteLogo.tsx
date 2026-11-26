@@ -105,24 +105,24 @@ export function SliteNavbarBrand() {
   const { language } = useLanguage();
   const subtitle =
     language === "fr"
-      ? "TraceTradeNetwork - De la Ferme au Monde"
-      : "TraceTradeNetwork - From Farm to World";
+      ? "De la Ferme au Monde"
+      : "From Farm to World";
 
   return (
     <Link
       href="/"
       className="group flex items-center gap-3 transition-opacity hover:opacity-95"
-      aria-label="SLITE Solutions Trace Platform Home"
+      aria-label="TraceTradeNetwork Home"
     >
-      <SliteAppTile size={40} className="transition-transform group-hover:scale-105 duration-200" />
+      <SliteAppTile size={40} className="shrink-0 transition-transform group-hover:scale-105 duration-200" />
 
-      <div className="flex flex-col justify-center">
-        <div className="flex items-center">
-          <SliteWordmark variant="dark" showSolutions={true} />
-        </div>
-        <div className="text-[8px] uppercase tracking-[0.14em] text-white/60 font-medium mt-0.5">
+      <div className="flex flex-col justify-center h-10 leading-none">
+        <span className="text-white font-extrabold text-[13px] sm:text-[14px] tracking-[0.05em] uppercase whitespace-nowrap">
+          TRACETRADENETWORK
+        </span>
+        <span className="text-[7px] sm:text-[7.5px] uppercase tracking-[0.18em] text-white/70 font-semibold mt-1 whitespace-nowrap">
           {subtitle}
-        </div>
+        </span>
       </div>
     </Link>
   );
