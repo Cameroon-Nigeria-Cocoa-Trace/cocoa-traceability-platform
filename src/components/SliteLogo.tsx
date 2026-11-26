@@ -117,7 +117,7 @@ export function SliteNavbarBrand() {
       <SliteAppTile size={40} className="shrink-0 transition-transform group-hover:scale-105 duration-200" />
 
       <div className="flex flex-col justify-center h-10 leading-none">
-        <span className="text-white font-extrabold text-[13px] sm:text-[14px] tracking-[0.05em] uppercase whitespace-nowrap">
+        <span className="text-white font-extrabold text-[15.5px] sm:text-[14.5px] tracking-[0.05em] uppercase whitespace-nowrap">
           TRACETRADENETWORK
         </span>
         <span className="text-[7px] sm:text-[7.5px] uppercase tracking-[0.18em] text-white/70 font-semibold mt-1 whitespace-nowrap">
