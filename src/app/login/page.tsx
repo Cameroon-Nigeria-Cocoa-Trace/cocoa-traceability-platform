@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
+import { ClerkPhoneAuth } from "@/components/ClerkPhoneAuth";
 import { useFirebase } from "@/context/FirebaseContext";
 import {
   LogIn,
@@ -291,6 +292,10 @@ function LoginContent() {
                   Sign Out
                 </button>
               </div>
+            </div>
+          ) : Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) ? (
+            <div className="mt-5">
+              <ClerkPhoneAuth defaultMode="signup" redirectUrl={redirectUrl} />
             </div>
           ) : (
             /* Sign In Form */
