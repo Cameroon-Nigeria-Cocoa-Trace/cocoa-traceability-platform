@@ -459,20 +459,29 @@ export default function CertificateHoldingsPage() {
                   {holding.availableQuantityKg > 0 ? (
                     ((holding as unknown as { isUncertified?: boolean }).isUncertified || holding.certificationType === "uncertified" || holding.certificateId === "uncertified") ? (
                       <Link
-                        href={`/marketplace?lotId=${holding.lotId}&maxQty=${holding.availableQuantityKg}`}
+                        href={`/marketplace?lotId=${holding.lotId}&maxQty=${holding.availableQuantityKg}&type=uncertified`}
                         className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:text-amber-950"
                       >
                         <span>Resell in Marketplace</span>
                         <ArrowUpRight size={13} />
                       </Link>
                     ) : (
-                      <Link
-                        href={`/dashboard/transfers?sourceHoldingId=${holding.holdingId}`}
-                        className="inline-flex items-center gap-1 text-xs font-bold text-[#2d6130] hover:text-[#1a382d]"
-                      >
-                        <span>Transfer</span>
-                        <ArrowLeftRight size={13} />
-                      </Link>
+                      <div className="flex items-center gap-3">
+                        <Link
+                          href={`/marketplace?holdingId=${holding.holdingId}&type=certified`}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[#0b3528] hover:text-[#2d6130]"
+                        >
+                          <span>List on Marketplace</span>
+                          <ArrowUpRight size={13} />
+                        </Link>
+                        <Link
+                          href={`/dashboard/transfers?sourceHoldingId=${holding.holdingId}`}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-[#2d6130] hover:text-[#1a382d]"
+                        >
+                          <span>Transfer</span>
+                          <ArrowLeftRight size={13} />
+                        </Link>
+                      </div>
                     )
                   ) : (
                     <span className="text-[11px] text-[#8e9d92] italic">

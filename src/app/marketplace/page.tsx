@@ -66,6 +66,7 @@ export default function MarketplacePage() {
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"ALL" | MarketplaceListingStatus>("ALL");
+  const [filterCertification, setFilterCertification] = useState<"ALL" | MarketplaceCertificationType>("ALL");
   const [viewScope, setViewScope] = useState<"catalog" | "my-listings">("catalog");
 
   // Create Listing Modal State
@@ -79,6 +80,8 @@ export default function MarketplacePage() {
   // Available backing inventory for creation
   const [myHoldings, setMyHoldings] = useState<CertificateHolding[]>([]);
   const [myLots, setMyLots] = useState<CocoaLot[]>([]);
+  const [loadingInventory, setLoadingInventory] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [holdingQRs, setHoldingQRs] = useState<QRCode[]>([]);
   const [loadingQRs, setLoadingQRs] = useState(false);
 
@@ -133,19 +136,31 @@ export default function MarketplacePage() {
   // Load Inventory for creating listings when modal opens
   const loadCreatorInventory = useCallback(async () => {
     if (!user) return;
+    setLoadingInventory(true);
+    setInventoryError(null);
     try {
-      const [holdingsRes, lotsRes] = await Promise.all([
+      const [holdingsResult, lotsResult] = await Promise.allSettled([
         apiClient.get<{ success: boolean; holdings: CertificateHolding[] }>("/api/certificate-holdings"),
         apiClient.get<{ success: boolean; lots: CocoaLot[] }>("/api/cocoa-lots"),
       ]);
-      if (holdingsRes && holdingsRes.success) {
-        setMyHoldings(holdingsRes.holdings || []);
+
+      if (holdingsResult.status === "fulfilled" && holdingsResult.value?.success) {
+        setMyHoldings(holdingsResult.value.holdings || []);
+      } else if (holdingsResult.status === "rejected") {
+        const msg =
+          holdingsResult.reason instanceof Error
+            ? holdingsResult.reason.message
+            : "Could not load certified holdings.";
+        setInventoryError(msg);
       }
-      if (lotsRes && lotsRes.success) {
-        setMyLots(lotsRes.lots || []);
+
+      if (lotsResult.status === "fulfilled" && lotsResult.value?.success) {
+        setMyLots(lotsResult.value.lots || []);
       }
     } catch (err) {
-      console.warn("Could not fetch inventory:", err);
+      setInventoryError(err instanceof Error ? err.message : "Could not load inventory.");
+    } finally {
+      setLoadingInventory(false);
     }
   }, [apiClient, user]);
 
@@ -209,9 +224,11 @@ export default function MarketplacePage() {
     return myHoldings.filter((h) => {
       const isUnc = h.isUncertified || h.certificationType === "uncertified" || h.certificateId === "uncertified";
       if (isUnc) return false;
+      const status = String(h.status || "active").toLowerCase();
+      if (status === "depleted" || status === "revoked" || status === "cancelled") return false;
       const listedKg = holdingToListedKgMap[h.holdingId] || 0;
-      const availableKg = h.availableQuantityKg || 0;
-      return listedKg < availableKg;
+      const availableKg = Number(h.availableQuantityKg ?? h.quantityKg ?? 0) || 0;
+      return availableKg - listedKg > 0.0001;
     });
   }, [myHoldings, holdingToListedKgMap]);
 
@@ -219,9 +236,11 @@ export default function MarketplacePage() {
     return myHoldings.filter((h) => {
       const isUnc = h.isUncertified || h.certificationType === "uncertified" || h.certificateId === "uncertified";
       if (!isUnc) return false;
+      const status = String(h.status || "active").toLowerCase();
+      if (status === "depleted" || status === "revoked" || status === "cancelled") return false;
       const listedKg = holdingToListedKgMap[h.holdingId] || 0;
-      const availableKg = h.availableQuantityKg || 0;
-      return listedKg < availableKg;
+      const availableKg = Number(h.availableQuantityKg ?? h.quantityKg ?? 0) || 0;
+      return availableKg - listedKg > 0.0001;
     });
   }, [myHoldings, holdingToListedKgMap]);
 
@@ -229,7 +248,7 @@ export default function MarketplacePage() {
     return myLots.filter((l) => {
       const listedKg = lotToListedKgMap[l.lotId] || 0;
       const totalKg = l.availableQuantityKg ?? l.quantityKg ?? 0;
-      return listedKg < totalKg;
+      return totalKg - listedKg > 0.0001;
     });
   }, [myLots, lotToListedKgMap]);
 
@@ -250,14 +269,18 @@ export default function MarketplacePage() {
   // Maximum allowable quantity for this selection
   const maxAvailableKg = useMemo(() => {
     if (formHoldingId && activeHolding) {
-      return activeHolding.availableQuantityKg || 0;
+      const baseAvail = Number(activeHolding.availableQuantityKg ?? activeHolding.quantityKg ?? 0) || 0;
+      const alreadyListed = holdingToListedKgMap[activeHolding.holdingId] || 0;
+      return Math.max(0, baseAvail - alreadyListed);
     }
     if (formCertificationType === "certified") {
       return 0;
     }
     if (!activeLot) return 0;
-    return activeLot.availableQuantityKg ?? activeLot.quantityKg ?? 0;
-  }, [formHoldingId, activeHolding, formCertificationType, activeLot]);
+    const baseLotAvail = activeLot.availableQuantityKg ?? activeLot.quantityKg ?? 0;
+    const alreadyListed = lotToListedKgMap[activeLot.lotId] || 0;
+    return Math.max(0, baseLotAvail - alreadyListed);
+  }, [formHoldingId, activeHolding, formCertificationType, activeLot, holdingToListedKgMap, lotToListedKgMap]);
 
   // Read URL search params on mount to auto-open modal with preselected holding/lot
   useEffect(() => {
@@ -289,11 +312,16 @@ export default function MarketplacePage() {
       if (activeLot?.qualityGrade) {
         setFormQualityGrade(activeLot.qualityGrade);
       }
+      if (activeLot && !activeLot.cocoaImage?.publicId) {
+        setFormImageSource("new");
+      }
       if (formInventoryMode === "BULK") {
-        setFormQuantityKg(activeHolding.availableQuantityKg || 0);
+        const baseAvail = Number(activeHolding.availableQuantityKg ?? activeHolding.quantityKg ?? 0) || 0;
+        const alreadyListed = holdingToListedKgMap[activeHolding.holdingId] || 0;
+        setFormQuantityKg(Math.max(0, baseAvail - alreadyListed));
       }
     }
-  }, [formHoldingId, formInventoryMode, activeHolding, activeLot]);
+  }, [formHoldingId, formInventoryMode, activeHolding, activeLot, holdingToListedKgMap]);
 
   // When physical lot is picked in uncertified mode, automatically sync Grade and Quantity
   useEffect(() => {
@@ -349,9 +377,14 @@ export default function MarketplacePage() {
         return false;
       }
 
+      // Certification Filter
+      if (filterCertification !== "ALL" && item.certificationType !== filterCertification) {
+        return false;
+      }
+
       return true;
     });
-  }, [listings, searchQuery, filterStatus, viewScope, user]);
+  }, [listings, searchQuery, filterStatus, filterCertification, viewScope, user]);
 
   // Create Listing Handler
   const handleCreateListing = async (e: React.FormEvent) => {
@@ -387,6 +420,10 @@ export default function MarketplacePage() {
         const holding = myHoldings.find((h) => h.holdingId === formHoldingId);
         if (!holding) throw new Error("Selected holding not found.");
 
+        payload.sellerHolderId = holding.holderId || user?.uid;
+        if (holding.holderType) {
+          payload.sellerHolderType = holding.holderType;
+        }
         payload.sourceHoldingId = holding.holdingId;
         payload.certificateId = holding.certificateId;
         payload.lotId = holding.lotId;
@@ -403,6 +440,7 @@ export default function MarketplacePage() {
         if (formHoldingId) {
           const holding = myHoldings.find((h) => h.holdingId === formHoldingId);
           if (holding) {
+            payload.sellerHolderId = holding.holderId || user?.uid;
             payload.sourceHoldingId = holding.holdingId;
             payload.lotId = holding.lotId;
           }
@@ -413,7 +451,10 @@ export default function MarketplacePage() {
       }
 
       let imageRefToUse = activeLot?.cocoaImage;
-      if (formImageSource === "new" && formNewImageFile) {
+      if (formImageSource === "new") {
+        if (!formNewImageFile) {
+          throw new Error("Please upload a cocoa image or switch to using the registered lot image.");
+        }
         const formData = new FormData();
         formData.append("file", formNewImageFile);
         const uploadRes = await fetch("/api/upload/cocoa-lot", {
@@ -438,11 +479,19 @@ export default function MarketplacePage() {
 
       if (res && res.success) {
         setCreateSuccess(`Listing created successfully: ${res.listing.listingNumber}`);
+        setFormHoldingId("");
+        setFormLotId("");
+        setFormTitle("");
+        setFormDescription("");
+        setFormSelectedQrIds([]);
+        setFormNewImageFile(null);
         setTimeout(() => {
           setShowCreateModal(false);
           setCreateSuccess(null);
+          setViewScope("my-listings");
           loadListings();
-        }, 1200);
+          loadCreatorInventory();
+        }, 1000);
       }
     } catch (err: unknown) {
       if (err instanceof CocoaApiError) {
@@ -582,24 +631,46 @@ export default function MarketplacePage() {
           </div>
 
           {/* Filter Pills */}
-          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#edf1ea] pt-3 text-xs">
-            <span className="font-semibold text-[#57655d] flex items-center gap-1">
-              <Filter size={12} /> Status:
-            </span>
-            {(["ALL", "available", "under_negotiation", "sold"] as const).map((st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setFilterStatus(st)}
-                className={`rounded-full px-2.5 py-1 font-semibold capitalize transition cursor-pointer ${
-                  filterStatus === st
-                    ? "bg-[#0b3528] text-white"
-                    : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
-                }`}
-              >
-                {st === "ALL" ? "All Listings" : st.replace("_", " ")}
-              </button>
-            ))}
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#edf1ea] pt-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-[#57655d] flex items-center gap-1">
+                <Filter size={12} /> Status:
+              </span>
+              {(["ALL", "available", "under_negotiation", "sold"] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setFilterStatus(st)}
+                  className={`rounded-full px-2.5 py-1 font-semibold capitalize transition cursor-pointer ${
+                    filterStatus === st
+                      ? "bg-[#0b3528] text-white"
+                      : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
+                  }`}
+                >
+                  {st === "ALL" ? "All Listings" : st.replace("_", " ")}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-[#57655d] flex items-center gap-1">
+                <ShieldCheck size={12} /> Origin:
+              </span>
+              {(["ALL", "certified", "uncertified"] as const).map((cert) => (
+                <button
+                  key={cert}
+                  type="button"
+                  onClick={() => setFilterCertification(cert)}
+                  className={`rounded-full px-2.5 py-1 font-semibold transition cursor-pointer ${
+                    filterCertification === cert
+                      ? "bg-[#2d6130] text-white"
+                      : "bg-[#edf1ea] text-[#57655d] hover:bg-[#e2e9dd]"
+                  }`}
+                >
+                  {cert === "ALL" ? "All Types" : cert === "certified" ? "Certified Origin" : "Uncertified"}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -662,7 +733,17 @@ export default function MarketplacePage() {
                 >
                   <div>
                       {/* Header Badges */}
-                      <div className="mb-3 flex items-center justify-end gap-2">
+                      <div className="mb-3 flex items-center justify-between gap-2 flex-wrap">
+                        {isCertified ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#edf7e8] border border-[#c5e8b7] px-2.5 py-0.5 text-[0.65rem] font-bold text-[#2d6130]">
+                            <ShieldCheck size={11} />
+                            Certified Origin
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[0.65rem] font-bold text-amber-800">
+                            Uncertified
+                          </span>
+                        )}
 
                       <div className="flex items-center gap-1.5">
                         {isOwner && (
@@ -939,24 +1020,51 @@ export default function MarketplacePage() {
                 {formCertificationType === "certified" ? (
                   <div className="rounded-2xl border border-[#d6e5d1] bg-[#f5f9f3] p-3.5 space-y-3.5">
                     <div>
-                      <label className="block font-semibold text-[#10251d] mb-1">
-                        Select Certificate Holding (Source Custody Unit) <span className="text-red-500">*</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-semibold text-[#10251d]">
+                          Select Certificate Holding (Source Custody Unit) <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={loadCreatorInventory}
+                          disabled={loadingInventory}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#2d6130] hover:underline disabled:opacity-50 cursor-pointer"
+                        >
+                          <RefreshCw size={11} className={loadingInventory ? "animate-spin" : ""} />
+                          {loadingInventory ? "Refreshing..." : "Refresh"}
+                        </button>
+                      </div>
                       <select
                         value={formHoldingId}
                         onChange={(e) => setFormHoldingId(e.target.value)}
-                        className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs"
+                        disabled={loadingInventory}
+                        className="w-full rounded-xl border border-[#dfe7d8] bg-white p-2.5 outline-none font-medium text-xs disabled:opacity-60"
                       >
-                        <option value="">-- Choose Eligible Holding --</option>
-                        {certifiedHoldings.map((h: CertificateHolding) => (
-                          <option key={h.holdingId} value={h.holdingId}>
-                            {h.holdingId} — Lot: {h.lotId} ({h.availableQuantityKg} kg available)
-                          </option>
-                        ))}
+                        <option value="">
+                          {loadingInventory
+                            ? "Loading your certified cocoa holdings..."
+                            : "-- Choose Eligible Certified Holding --"}
+                        </option>
+                        {certifiedHoldings.map((h: CertificateHolding) => {
+                          const matchingLot = myLots.find((l) => l.lotId === h.lotId);
+                          const baseAvail = Number(h.availableQuantityKg ?? h.quantityKg ?? 0) || 0;
+                          const listedKg = holdingToListedKgMap[h.holdingId] || 0;
+                          const remainingKg = Math.max(0, baseAvail - listedKg);
+                          return (
+                            <option key={h.holdingId} value={h.holdingId}>
+                              {h.certificateNumber || h.certificateId} — Lot: {matchingLot?.lotNumber || h.lotId} ({remainingKg.toLocaleString()} kg available)
+                            </option>
+                          );
+                        })}
                       </select>
-                      {certifiedHoldings.length === 0 && (
+                      {inventoryError && (
+                        <p className="mt-1 text-[11px] text-red-700 font-medium">
+                          {inventoryError}
+                        </p>
+                      )}
+                      {!loadingInventory && !inventoryError && certifiedHoldings.length === 0 && (
                         <p className="mt-1 text-[11px] text-amber-700">
-                          No available certified holdings (all holdings have been fully listed or none exist).
+                          No available certified holdings found (all certified holdings are already fully listed or no Origin Trace Certificate has been issued yet).
                         </p>
                       )}
                     </div>

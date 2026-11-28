@@ -44,6 +44,11 @@ import { assertActorCanActForHolder } from "@/lib/certificateAuthorization";
 import { getCocoaLot } from "./cocoaLotService";
 import { getTraceCertificate } from "./certificateService";
 import { getCertificateHolding } from "./transferService";
+import {
+  isCooperativeAuthorizedForFarm,
+  isCooperativeAuthorizedForHolding,
+  isPlatformAdmin,
+} from "@/lib/serverCooperativeAuth";
 
 export const COLLECTIONS = {
   MARKETPLACE_LISTINGS: "marketplaceListings",
@@ -292,10 +297,9 @@ export async function createMarketplaceListing(
   let sellerHolderType = resolvedSellerHolderType;
   const normalizedSellerType = sellerHolderType.toLowerCase();
 
-  // An organizational membership verifier has not yet been implemented.
-  // Only trusted administrators can currently operate organizational listings.
   const authRecord = await firebaseAdminAuth.getUser(actorUid);
-  const isAdmin = authRecord.customClaims?.admin === true;
+  const isAdmin =
+    authRecord.customClaims?.admin === true || (await isPlatformAdmin(actorUid));
 
   const marketplaceCollection =
     firebaseAdminDb.collection("marketplaceListings");
@@ -438,7 +442,7 @@ export async function createMarketplaceListing(
     const lotData = lotSnap.data() as Record<string, unknown>;
     const lot = lotData as unknown as CocoaLot;
 
-    if (lot.lotId !== lotId) {
+    if (lot.lotId && lot.lotId !== lotId) {
       throw new Error("Relational Mismatch: Lot document ID does not match lotId.");
     }
 
@@ -562,8 +566,17 @@ export async function createMarketplaceListing(
       const holding = holdingSnap.data() as Record<string, unknown>;
       const certificate = certificateSnap.data() as Record<string, unknown>;
 
+      const resolvedHoldingId =
+        typeof holding.holdingId === "string" && holding.holdingId.trim()
+          ? holding.holdingId.trim()
+          : holdingSnap.id;
+      const resolvedCertId =
+        typeof certificate.certificateId === "string" && certificate.certificateId.trim()
+          ? certificate.certificateId.trim()
+          : certificateSnap.id;
+
       if (
-        holding.holdingId !== sourceHoldingId ||
+        resolvedHoldingId !== sourceHoldingId ||
         holding.holderId !== sellerHolderId ||
         holding.lotId !== lotId ||
         holding.certificateId !== certificateId
@@ -574,11 +587,14 @@ export async function createMarketplaceListing(
       }
 
       if (holding.holderType && typeof holding.holderType === "string") {
-        sellerHolderType = holding.holderType as CertificateHolderType;
+        const candidateType = holding.holderType.trim().toLowerCase();
+        if (["farmer", "cooperative", "agent", "warehouse"].includes(candidateType)) {
+          sellerHolderType = candidateType as CertificateHolderType;
+        }
       }
 
       if (
-        certificate.certificateId !== certificateId ||
+        resolvedCertId !== certificateId ||
         (certificate.lotId !== undefined && certificate.lotId !== lotId)
       ) {
         throw new Error(
@@ -586,22 +602,31 @@ export async function createMarketplaceListing(
         );
       }
 
+      const holdingStatus = String(holding.status || "active").toLowerCase();
+      const holdingAvailableKg =
+        typeof holding.availableQuantityKg === "number"
+          ? holding.availableQuantityKg
+          : typeof holding.quantityKg === "number"
+          ? holding.quantityKg
+          : NaN;
+
       if (
-        holding.status !== "active" ||
-        typeof holding.availableQuantityKg !== "number" ||
-        !Number.isFinite(holding.availableQuantityKg) ||
-        holding.availableQuantityKg <= 0
+        (holdingStatus !== "active" && holdingStatus !== "partially_transferred") ||
+        !Number.isFinite(holdingAvailableKg) ||
+        holdingAvailableKg <= 0
       ) {
         throw new Error(
           "Capacity Error: The source holding must be active and have a valid balance."
         );
       }
 
-      if (!isAdmin) {
-        if (
-          normalizedSellerType !== "farmer" ||
-          sellerHolderId !== actorUid
-        ) {
+      if (!isAdmin && sellerHolderId !== actorUid) {
+        const authorizedForHolding = await isCooperativeAuthorizedForHolding(actorUid, {
+          holderId: sellerHolderId,
+          holderType: sellerHolderType,
+          lotId,
+        });
+        if (!authorizedForHolding) {
           throw new Error(
             "Authorization Error: You are not authorized to list inventory for this holder."
           );
@@ -634,7 +659,7 @@ export async function createMarketplaceListing(
       }
 
       const allocatedPackageQuantityKg = existingQrs
-        .filter(({ qr }) => qr.returnedToBulk !== true)
+        .filter(({ qr }) => qr.status === "active" && qr.returnedToBulk !== true)
         .reduce(
           (sum, { qr }) => sum + qr.representedQuantityKg,
           0
@@ -642,7 +667,7 @@ export async function createMarketplaceListing(
 
       const unpackagedQuantityKg = Math.max(
         0,
-        holding.availableQuantityKg - allocatedPackageQuantityKg
+        holdingAvailableKg - allocatedPackageQuantityKg
       );
 
       if (inventoryMode === "BULK") {
@@ -675,6 +700,7 @@ export async function createMarketplaceListing(
 
         const listing: MarketplaceListing = {
           ...baseListing,
+          sellerHolderType,
           certificationType: "certified",
           certificateId,
           sourceHoldingId,
@@ -775,6 +801,7 @@ export async function createMarketplaceListing(
 
       const listing: MarketplaceListing = {
         ...baseListing,
+        sellerHolderType,
         certificationType: "certified",
         certificateId,
         sourceHoldingId,
@@ -815,9 +842,12 @@ export async function createMarketplaceListing(
     }
 
     if (!isAdmin && actorUid !== sellerHolderId) {
-      throw new Error(
-        "Authorization Error: You are not authorized to list this farm's inventory."
-      );
+      const authorizedForFarm = await isCooperativeAuthorizedForFarm(actorUid, farmData);
+      if (!authorizedForFarm) {
+        throw new Error(
+          "Authorization Error: You are not authorized to list this farm's inventory."
+        );
+      }
     }
 
     const tradesQuery = firebaseAdminDb

@@ -668,7 +668,7 @@ export async function GET(req: NextRequest) {
       }
 
       const lots = Array.from(lotsMap.values())
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
       return NextResponse.json({
         success: true,
@@ -760,7 +760,7 @@ export async function GET(req: NextRequest) {
     const lots = snapshot.docs
       .map((document) => document.data() as CocoaLot)
       .sort((a, b) =>
-        b.createdAt.localeCompare(a.createdAt)
+        (b.createdAt || "").localeCompare(a.createdAt || "")
       );
 
     return NextResponse.json({
