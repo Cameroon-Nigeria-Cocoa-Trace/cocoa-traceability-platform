@@ -493,6 +493,41 @@ export async function createPurchaseOrder(
     );
   }
 
+  // Verify buyer is specifically authorized on THIS listing:
+  // Either they paid for this exact listing, OR the seller confirmed their "Start Trade" request on it.
+  const listingAccessSnap = await firebaseAdminDb
+    .collection(PO_COLLECTIONS.SELLER_ACCESS_RECORDS)
+    .where("listingId", "==", listingId)
+    .get();
+
+  const listingAccessRecords = listingAccessSnap.docs.map(
+    (d) => d.data() as { buyerId?: string; buyerUid?: string; accessStatus?: string; status?: string; accessType?: string }
+  );
+
+  const buyerDirectRecord = listingAccessRecords.find(
+    (r) =>
+      (r.buyerUid === buyerUid || r.buyerId === buyerUid) &&
+      r.accessStatus !== "revoked" &&
+      r.status !== "revoked" &&
+      r.accessStatus !== "declined" &&
+      r.accessStatus !== "deal_fell_through"
+  );
+
+  const hasDirectListingAuth =
+    Boolean(buyerDirectRecord) &&
+    buyerDirectRecord?.accessStatus !== "pending_seller_confirmation";
+
+  if (!hasDirectListingAuth) {
+    if (buyerDirectRecord?.accessStatus === "pending_seller_confirmation") {
+      throw new Error(
+        "Authorization Error: Your trade request for this listing is still awaiting seller confirmation before you can create a Purchase Order."
+      );
+    }
+    throw new Error(
+      "Authorization Error: Please click 'Start Trade' on this listing and wait for the seller to confirm before generating a Purchase Order."
+    );
+  }
+
   if (qty > listing.quantityAvailableKg) {
     throw new Error(
       `Validation Error: Agreed quantity (${qty} kg) exceeds available listing quantity (${listing.quantityAvailableKg} kg).`

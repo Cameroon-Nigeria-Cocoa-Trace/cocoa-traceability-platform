@@ -34,10 +34,26 @@ export interface NegotiatedSellerOtherListing {
     location: string;
     lastAccessGrantedAt: string;
   };
+  tradeRequest?: {
+    accessId: string;
+    status: string;
+    createdAt?: string;
+    sellerConfirmedAt?: string;
+    declinedAt?: string;
+    declineReason?: string;
+  };
+  purchaseOrder?: {
+    poId: string;
+    poNumber: string;
+    status: string;
+  };
 }
 
 function isValidPaidAccessRecord(rec: SellerAccessRecord): boolean {
   if (rec.accessStatus === "revoked" || rec.status === "revoked") {
+    return false;
+  }
+  if (rec.accessType === "repeat_buyer_trade_request") {
     return false;
   }
   const feePaid = Number(rec.feePaid ?? 0);
@@ -178,8 +194,8 @@ export async function GET(req: NextRequest) {
   try {
     const buyerUid = user.userId;
 
-    // 1. Fetch all sellerAccessRecords owned by the authenticated buyer
-    const [byBuyerUidSnap, byBuyerIdSnap] = await Promise.all([
+    // 1. Fetch all sellerAccessRecords and purchaseOrders owned by the authenticated buyer
+    const [byBuyerUidSnap, byBuyerIdSnap, buyerPosSnap] = await Promise.all([
       firebaseAdminDb
         .collection("sellerAccessRecords")
         .where("buyerUid", "==", buyerUid)
@@ -188,11 +204,27 @@ export async function GET(req: NextRequest) {
         .collection("sellerAccessRecords")
         .where("buyerId", "==", buyerUid)
         .get(),
+      firebaseAdminDb
+        .collection("purchaseOrders")
+        .where("buyerId", "==", buyerUid)
+        .get(),
     ]);
 
     const accessMap = new Map<string, SellerAccessRecord>();
+    const tradeRequestByListingId = new Map<string, SellerAccessRecord>();
+
     for (const d of [...byBuyerUidSnap.docs, ...byBuyerIdSnap.docs]) {
       const rec = d.data() as SellerAccessRecord;
+      if (rec.accessType === "repeat_buyer_trade_request") {
+        const existingReq = tradeRequestByListingId.get(rec.listingId);
+        const existingTs = existingReq?.updatedAt || existingReq?.createdAt || "";
+        const nextTs = rec.updatedAt || rec.createdAt || "";
+        if (!existingReq || nextTs >= existingTs) {
+          tradeRequestByListingId.set(rec.listingId, rec);
+        }
+        continue;
+      }
+
       if (isValidPaidAccessRecord(rec)) {
         accessMap.set(d.id, rec);
       }
@@ -205,6 +237,31 @@ export async function GET(req: NextRequest) {
         otherListings: [],
         count: 0,
       });
+    }
+
+    // Index buyer's non-cancelled purchase orders by listingId (newest first)
+    const poByListingId = new Map<
+      string,
+      { poId: string; poNumber: string; status: string; createdAt: string }
+    >();
+    for (const d of buyerPosSnap.docs) {
+      const po = d.data() as {
+        poId?: string;
+        poNumber?: string;
+        listingId?: string;
+        status?: string;
+        createdAt?: string;
+      };
+      if (!po.listingId || !po.poId || po.status === "cancelled") continue;
+      const existingPo = poByListingId.get(po.listingId);
+      if (!existingPo || (po.createdAt || "") >= existingPo.createdAt) {
+        poByListingId.set(po.listingId, {
+          poId: po.poId,
+          poNumber: po.poNumber || po.poId,
+          status: po.status || "po_submitted",
+          createdAt: po.createdAt || "",
+        });
+      }
     }
 
     // 2. Group paid access records by sellerHolderId and track which listingIds were already paid for
@@ -289,6 +346,9 @@ export async function GET(req: NextRequest) {
       });
 
       for (const listing of sellerOtherListings) {
+        const reqRec = tradeRequestByListingId.get(listing.listingId);
+        const poRec = poByListingId.get(listing.listingId);
+
         otherListings.push({
           listing,
           sellerContact: {
@@ -300,21 +360,38 @@ export async function GET(req: NextRequest) {
             location: contact.location,
             lastAccessGrantedAt: summary.lastAccessGrantedAt,
           },
+          tradeRequest: reqRec
+            ? {
+                accessId: reqRec.accessId,
+                status: reqRec.accessStatus,
+                createdAt: reqRec.createdAt,
+                sellerConfirmedAt: reqRec.sellerConfirmedAt,
+                declinedAt: reqRec.declinedAt,
+                declineReason: reqRec.declineReason,
+              }
+            : undefined,
+          purchaseOrder: poRec
+            ? {
+                poId: poRec.poId,
+                poNumber: poRec.poNumber,
+                status: poRec.status,
+              }
+            : undefined,
         });
       }
     }
 
-    // Sort: available first, then under_negotiation, then sold; within each status, newest first
-    const statusPriority = (status: string): number => {
-      if (status === "available") return 0;
-      if (status === "under_negotiation") return 1;
-      return 2;
+    // Sort: buyer's active/confirmed requests first, then pending requests, then available, then other under_negotiation, then sold
+    const itemPriority = (item: NegotiatedSellerOtherListing): number => {
+      if (item.tradeRequest?.status === "active" && !item.purchaseOrder) return 0;
+      if (item.tradeRequest?.status === "pending_seller_confirmation") return 1;
+      if (item.listing.listingStatus === "available") return 2;
+      if (item.listing.listingStatus === "under_negotiation") return 3;
+      return 4;
     };
 
     otherListings.sort((a, b) => {
-      const prioDiff =
-        statusPriority(a.listing.listingStatus) -
-        statusPriority(b.listing.listingStatus);
+      const prioDiff = itemPriority(a) - itemPriority(b);
       if (prioDiff !== 0) return prioDiff;
       return (b.listing.createdAt || "").localeCompare(a.listing.createdAt || "");
     });

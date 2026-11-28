@@ -6,13 +6,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getMarketplaceListing,
-  updateMarketplaceListing,
+  deleteMarketplaceListing,
   sanitizePublicListing,
   createMarketplaceListing,
 } from "@/services/marketplaceService";
 import type { CreateMarketplaceListingInput } from "@/services/marketplaceService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
-import { MarketplaceCertificationType, MarketplaceInventoryMode } from "@/types/traceability";
+import {
+  MarketplaceCertificationType,
+  MarketplaceInventoryMode,
+} from "@/types/traceability";
 
 
 export async function POST(req: NextRequest) {
@@ -351,7 +354,7 @@ export async function GET(
 }
 
 
-export async function PATCH(
+export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ listingId: string }> }
 ) {
@@ -380,78 +383,14 @@ export async function PATCH(
       );
     }
 
-    let rawBody: unknown;
-
-    try {
-      rawBody = await req.json();
-    } catch {
-      return NextResponse.json(
-        { success: false, error: "Validation Error: Invalid JSON body." },
-        { status: 400 }
-      );
-    }
-
-    if (
-      rawBody === null ||
-      typeof rawBody !== "object" ||
-      Array.isArray(rawBody)
-    ) {
-      return NextResponse.json(
-        { success: false, error: "Validation Error: A JSON object is required." },
-        { status: 400 }
-      );
-    }
-
-    const body = rawBody as Record<string, unknown>;
-    const allowedFields = new Set([
-      "title",
-      "description",
-      "pricePerKg",
-      "currency",
-    ]);
-
-    const unexpectedFields = Object.keys(body).filter(
-      (key) => !allowedFields.has(key)
+    const result = await deleteMarketplaceListing(
+      rawListingId.trim(),
+      user.userId
     );
-
-    if (unexpectedFields.length > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Validation Error: Unsupported fields supplied. Listing quantity, status, seller identity, certification, and QR references cannot be edited through this endpoint.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (Object.keys(body).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Validation Error: Provide at least one editable field." },
-        { status: 400 }
-      );
-    }
-
-    const updated = await updateMarketplaceListing({
-      listingId: rawListingId.trim(),
-      actorUid: user.userId,
-      ...(body.title !== undefined
-        ? { title: body.title as string }
-        : {}),
-      ...(body.description !== undefined
-        ? { description: body.description as string }
-        : {}),
-      ...(body.pricePerKg !== undefined
-        ? { pricePerKg: body.pricePerKg as number }
-        : {}),
-      ...(body.currency !== undefined
-        ? { currency: body.currency as string }
-        : {}),
-    });
 
     return NextResponse.json({
       success: true,
-      listing: updated,
+      deletedListingId: result.deletedListingId,
     });
   } catch (error: unknown) {
     const message =
@@ -473,10 +412,11 @@ export async function PATCH(
     return NextResponse.json(
       {
         success: false,
-        error: status === 500 ? "Unable to update marketplace listing." : message,
+        error: status === 500 ? "Unable to delete marketplace listing." : message,
       },
       { status }
     );
   }
 }
+
 

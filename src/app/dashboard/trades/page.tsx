@@ -151,6 +151,11 @@ export default function TradeManagementPage() {
   const [fellThroughError, setFellThroughError] = useState<string | null>(null);
   const [fellThroughSuccess, setFellThroughSuccess] = useState<string | null>(null);
 
+  // Seller Confirm / Decline Start Trade Request State
+  const [respondingAccessId, setRespondingAccessId] = useState<string | null>(null);
+  const [negotiationActionMessage, setNegotiationActionMessage] = useState<string | null>(null);
+  const [negotiationActionError, setNegotiationActionError] = useState<string | null>(null);
+
   // Filters State
   const [roleFilter, setRoleFilter] = useState<"all" | "buyer" | "seller">("all");
   const [statusFilter, setStatusFilter] = useState<"ALL" | TradeStatus>("ALL");
@@ -574,15 +579,62 @@ export default function TradeManagementPage() {
     }
   };
 
+  // Handle Seller Confirm or Decline of Returning Buyer "Start Trade" Request
+  const handleRespondNegotiationRequest = async (
+    accessId: string,
+    action: "confirm" | "decline"
+  ) => {
+    setRespondingAccessId(accessId);
+    setNegotiationActionMessage(null);
+    setNegotiationActionError(null);
+
+    try {
+      const res = await apiClient.post<{
+        success: boolean;
+        message: string;
+      }>("/api/marketplace/negotiations/respond", {
+        accessId,
+        action,
+      });
+
+      if (res && res.success) {
+        setNegotiationActionMessage(
+          res.message ||
+            (action === "confirm"
+              ? "Trade confirmed! Listing is now Under Negotiation."
+              : "Trade request declined.")
+        );
+        await Promise.all([
+          loadNegotiations(),
+          loadPurchaseOrders(),
+          loadNegotiatedSellersListings(),
+        ]);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError || err instanceof Error) {
+        setNegotiationActionError(err.message);
+      } else {
+        setNegotiationActionError("Failed to respond to trade request.");
+      }
+    } finally {
+      setRespondingAccessId(null);
+    }
+  };
+
   // Filtered Negotiations
   const filteredNegotiations = useMemo(() => {
     return negotiations.filter((item) => {
-      const isUnderNegotiation = item.listing.listingStatus === "under_negotiation";
+      const status = item.accessRecord.accessStatus;
+      const isPendingOrActive =
+        status === "pending_seller_confirmation" ||
+        status === "active" ||
+        item.listing.listingStatus === "under_negotiation";
       const isConcluded =
-        item.accessRecord.accessStatus === "concluded_sold" ||
-        item.accessRecord.accessStatus === "deal_fell_through";
+        status === "concluded_sold" ||
+        status === "deal_fell_through" ||
+        status === "declined";
 
-      if (negotiationFilter === "active" && !isUnderNegotiation) return false;
+      if (negotiationFilter === "active" && !isPendingOrActive) return false;
       if (negotiationFilter === "concluded" && !isConcluded) return false;
 
       if (negotiationSearch.trim()) {
@@ -846,11 +898,31 @@ export default function TradeManagementPage() {
           >
             <Lock size={18} />
             Buyer Inquiries &amp; Negotiations
-            {negotiations.filter((n) => n.listing.listingStatus === "under_negotiation").length > 0 && (
-              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold tabular-nums">
-                {negotiations.filter((n) => n.listing.listingStatus === "under_negotiation").length} Active
-              </span>
-            )}
+            {(() => {
+              const pendingConfirmCount = negotiations.filter(
+                (n) => n.accessRecord.accessStatus === "pending_seller_confirmation"
+              ).length;
+              const activeCount = negotiations.filter(
+                (n) =>
+                  n.accessRecord.accessStatus === "active" &&
+                  n.listing.listingStatus === "under_negotiation"
+              ).length;
+              if (pendingConfirmCount > 0) {
+                return (
+                  <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold tabular-nums">
+                    {pendingConfirmCount} Confirm
+                  </span>
+                );
+              }
+              if (activeCount > 0) {
+                return (
+                  <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold tabular-nums">
+                    {activeCount} Active
+                  </span>
+                );
+              }
+              return null;
+            })()}
             <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130] tabular-nums">
               {negotiations.length}
             </span>
@@ -1189,8 +1261,12 @@ export default function TradeManagementPage() {
               negotiations={filteredNegotiations}
               loading={loadingNegotiations}
               error={negotiationsError}
-              onConclude={openConcludeModal}
+              respondingAccessId={respondingAccessId}
+              actionMessage={negotiationActionMessage}
+              actionError={negotiationActionError}
+              onRespondRequest={handleRespondNegotiationRequest}
               onFellThrough={openFellThroughModal}
+              onOpenOrdersTab={() => setActiveTab("orders")}
             />
           </div>
         ) : null}
@@ -1202,6 +1278,16 @@ export default function TradeManagementPage() {
               otherListings={negotiatedSellerListings}
               loading={loadingUnlockedListings}
               error={unlockedListingsError}
+              currentUserName={user?.displayName || userProfile?.displayName || ""}
+              getAuthToken={async () => (user ? await user.getIdToken() : null)}
+              onRefresh={async () => {
+                await Promise.all([
+                  loadNegotiatedSellersListings(),
+                  loadPurchaseOrders(),
+                  loadNegotiations(),
+                ]);
+              }}
+              onOpenOrdersTab={() => setActiveTab("orders")}
             />
           </div>
         ) : null}

@@ -26,6 +26,7 @@ import {
 } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "@/lib/firebase";
 import { firebaseAdminAuth, firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { FieldValue } from "firebase-admin/firestore";
 import {
   MarketplaceListing,
   MarketplaceCertificationType,
@@ -88,7 +89,9 @@ export interface UpdateMarketplaceListingInput {
   description?: string;
   pricePerKg?: number;
   currency?: string;
-  quantityAvailableKg?: number; // Only allowed for BULK or uncertified listings within capacity
+  qualityGrade?: string;
+  quantityAvailableKg?: number; // Allowed for available BULK or uncertified listings within remaining capacity
+  cocoaImage?: CloudinaryImageReference;
 }
 
 export interface AdjustAvailabilityInput {
@@ -1089,10 +1092,25 @@ export async function listMarketplaceListings(
   return listings.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 }
 
+async function isAuthorizedToManageListing(
+  actorUid: string,
+  listing: MarketplaceListing,
+  isAdmin: boolean
+): Promise<boolean> {
+  if (isAdmin) return true;
+  if (listing.createdByUid === actorUid || listing.sellerHolderId === actorUid) {
+    return true;
+  }
+  return await isCooperativeAuthorizedForHolding(actorUid, {
+    holderId: listing.sellerHolderId,
+    holderType: listing.sellerHolderType,
+    lotId: listing.lotId,
+  });
+}
+
 /**
  * Updates an active marketplace listing.
  */
-
 export async function updateMarketplaceListing(
   input: UpdateMarketplaceListingInput
 ): Promise<MarketplaceListing> {
@@ -1109,13 +1127,6 @@ export async function updateMarketplaceListing(
     input.listingId.length > 256
   ) {
     throw new Error("Validation Error: A valid listingId is required.");
-  }
-
-  // Inventory changes need a dedicated inventory-safe workflow.
-  if (input.quantityAvailableKg !== undefined) {
-    throw new Error(
-      "Validation Error: Manual quantity edits are disabled. Use the inventory-safe listing workflow."
-    );
   }
 
   if (
@@ -1160,10 +1171,45 @@ export async function updateMarketplaceListing(
     );
   }
 
-  // Verify that the actor exists and obtain administrator privileges
-  // only from a trusted Firebase custom claim.
+  if (
+    input.qualityGrade !== undefined &&
+    (typeof input.qualityGrade !== "string" ||
+      !input.qualityGrade.trim() ||
+      input.qualityGrade.trim().length > 100)
+  ) {
+    throw new Error(
+      "Validation Error: Quality grade must contain 1–100 characters."
+    );
+  }
+
+  if (
+    input.quantityAvailableKg !== undefined &&
+    (typeof input.quantityAvailableKg !== "number" ||
+      !Number.isFinite(input.quantityAvailableKg) ||
+      input.quantityAvailableKg <= 0)
+  ) {
+    throw new Error(
+      "Validation Error: Quantity must be a finite positive number."
+    );
+  }
+
+  if (
+    input.cocoaImage !== undefined &&
+    (typeof input.cocoaImage !== "object" ||
+      input.cocoaImage === null ||
+      typeof input.cocoaImage.publicId !== "string" ||
+      !input.cocoaImage.publicId.trim() ||
+      typeof input.cocoaImage.secureUrl !== "string" ||
+      !input.cocoaImage.secureUrl.trim())
+  ) {
+    throw new Error(
+      "Validation Error: A valid Cloudinary cocoa image reference is required."
+    );
+  }
+
   const actorRecord = await firebaseAdminAuth.getUser(actorUid);
-  const isAdmin = actorRecord.customClaims?.admin === true;
+  const isAdmin =
+    actorRecord.customClaims?.admin === true || (await isPlatformAdmin(actorUid));
 
   const listingId = input.listingId.trim();
   const listingRef = firebaseAdminDb
@@ -1179,21 +1225,13 @@ export async function updateMarketplaceListing(
       );
     }
 
-    const current = snapshot.data() as MarketplaceListing;
+    const current = {
+      ...(snapshot.data() as MarketplaceListing),
+      listingId: snapshot.id,
+    };
 
-    if (current.listingId !== listingId) {
-      throw new Error(
-        "Validation Error: Listing document ID does not match its record."
-      );
-    }
-
-    // Fail closed for organizational holders until trusted server-side
-    // organization membership verification is available.
-    const ownsFarmerListing =
-      current.sellerHolderType?.toLowerCase() === "farmer" &&
-      current.sellerHolderId === actorUid;
-
-    if (!isAdmin && !ownsFarmerListing) {
+    const authorized = await isAuthorizedToManageListing(actorUid, current, isAdmin);
+    if (!authorized) {
       throw new Error(
         "Authorization Error: You are not authorized to edit this listing."
       );
@@ -1208,44 +1246,331 @@ export async function updateMarketplaceListing(
       );
     }
 
+    // Inventory-safe quantity edit validation (must perform all reads before writes)
+    let validatedNewQty: number | undefined;
+    if (input.quantityAvailableKg !== undefined) {
+      const requestedQty = input.quantityAvailableKg;
+      const qtyChanged = Math.abs(requestedQty - (current.quantityAvailableKg || 0)) > 1e-6;
+
+      if (qtyChanged) {
+        if (current.listingStatus !== "available") {
+          throw new Error(
+            "State Error: Quantity cannot be edited while the listing is under negotiation."
+          );
+        }
+        if (current.inventoryMode === "QR_PACKAGES") {
+          throw new Error(
+            "Validation Error: Quantity for QR_PACKAGES listings is determined by selected QR bags."
+          );
+        }
+
+        if (current.certificationType === "certified" && current.sourceHoldingId) {
+          const holdingRef = firebaseAdminDb
+            .collection("certificateHoldings")
+            .doc(current.sourceHoldingId);
+          const holdingListingsQuery = firebaseAdminDb
+            .collection("marketplaceListings")
+            .where("sourceHoldingId", "==", current.sourceHoldingId);
+          const holdingQrQuery = firebaseAdminDb
+            .collection("qrCodes")
+            .where("currentHoldingId", "==", current.sourceHoldingId);
+
+          const [holdingSnap, activeListingsSnap, qrSnap] = await Promise.all([
+            tx.get(holdingRef),
+            tx.get(holdingListingsQuery),
+            tx.get(holdingQrQuery),
+          ]);
+
+          if (!holdingSnap.exists) {
+            throw new Error(
+              `Capacity Error: Backing certificate holding "${current.sourceHoldingId}" not found.`
+            );
+          }
+
+          const holdingData = holdingSnap.data() as Record<string, unknown>;
+          const holdingAvailableKg =
+            typeof holdingData.availableQuantityKg === "number"
+              ? holdingData.availableQuantityKg
+              : typeof holdingData.quantityKg === "number"
+              ? holdingData.quantityKg
+              : 0;
+
+          const allocatedQrKg = qrSnap.docs
+            .map((d) => d.data() as QRCode)
+            .filter((qr) => qr.status === "active" && qr.returnedToBulk !== true)
+            .reduce((sum, qr) => sum + (qr.representedQuantityKg || 0), 0);
+
+          const otherCommittedBulkKg = activeListingsSnap.docs
+            .filter((d) => d.id !== listingId)
+            .map((d) => d.data() as MarketplaceListing)
+            .filter(
+              (l) =>
+                (l.listingStatus === "available" || l.listingStatus === "under_negotiation") &&
+                l.inventoryMode === "BULK"
+            )
+            .reduce((sum, l) => sum + (l.quantityAvailableKg || 0), 0);
+
+          const maxAllowedKg = Math.max(0, holdingAvailableKg - allocatedQrKg - otherCommittedBulkKg);
+
+          if (requestedQty > maxAllowedKg + 1e-9) {
+            throw new Error(
+              `Capacity Error: Requested ${requestedQty} kg, but only ${maxAllowedKg} kg is available in this certified holding.`
+            );
+          }
+        } else {
+          // Uncertified lot capacity check
+          const lotRef = firebaseAdminDb.collection("cocoaLots").doc(current.lotId);
+          const tradesQuery = firebaseAdminDb
+            .collection("trades")
+            .where("lotId", "==", current.lotId)
+            .where("certificationType", "==", "uncertified");
+          const adjustmentsQuery = firebaseAdminDb
+            .collection("cocoaLotAdjustments")
+            .where("lotId", "==", current.lotId);
+          const activeUncertifiedListingsQuery = firebaseAdminDb
+            .collection("marketplaceListings")
+            .where("lotId", "==", current.lotId)
+            .where("certificationType", "==", "uncertified");
+
+          const [lotSnap, tradesSnap, adjSnap, activeListingsSnap] = await Promise.all([
+            tx.get(lotRef),
+            tx.get(tradesQuery),
+            tx.get(adjustmentsQuery),
+            tx.get(activeUncertifiedListingsQuery),
+          ]);
+
+          if (!lotSnap.exists) {
+            throw new Error(`Capacity Error: Backing cocoa lot "${current.lotId}" not found.`);
+          }
+
+          const lot = lotSnap.data() as CocoaLot;
+          const completedSalesKg = tradesSnap.docs
+            .map((d) => d.data())
+            .filter((t) => t.tradeStatus === "completed")
+            .reduce((sum, t) => sum + (Number(t.quantityKg) || 0), 0);
+          const physicalDeductionsKg = adjSnap.docs
+            .map((d) => d.data())
+            .filter((a) => a.isPhysicalDeduction === true)
+            .reduce((sum, a) => sum + (Number(a.deductedQuantityKg) || 0), 0);
+          const otherCommittedKg = activeListingsSnap.docs
+            .filter((d) => d.id !== listingId)
+            .map((d) => d.data() as MarketplaceListing)
+            .filter(
+              (l) => l.listingStatus === "available" || l.listingStatus === "under_negotiation"
+            )
+            .reduce((sum, l) => sum + (l.quantityAvailableKg || 0), 0);
+
+          const eligibleKg =
+            (lot.quantityKg || 0) -
+            (lot.certifiedQuantityKg || 0) -
+            completedSalesKg -
+            physicalDeductionsKg;
+          const maxAllowedKg = Math.max(0, eligibleKg - otherCommittedKg);
+
+          if (requestedQty > maxAllowedKg + 1e-9) {
+            throw new Error(
+              `Capacity Error: Requested ${requestedQty} kg, but only ${maxAllowedKg} kg is available for this uncertified lot.`
+            );
+          }
+        }
+
+        validatedNewQty = requestedQty;
+      }
+    }
+
     const now = new Date().toISOString();
 
-    const updates: Partial<MarketplaceListing> = {
+    const firestoreUpdates: Record<string, unknown> = {
+      updatedAt: now,
+    };
+    const mergedResult: MarketplaceListing = {
+      ...current,
       updatedAt: now,
     };
 
     if (input.title !== undefined) {
-      updates.title = input.title.trim();
+      const cleanTitle = input.title.trim();
+      firestoreUpdates.title = cleanTitle;
+      mergedResult.title = cleanTitle;
     }
 
     if (input.description !== undefined) {
-      updates.description = input.description.trim() || undefined;
+      const cleanDesc = input.description.trim();
+      if (cleanDesc) {
+        firestoreUpdates.description = cleanDesc;
+        mergedResult.description = cleanDesc;
+      } else {
+        firestoreUpdates.description = FieldValue.delete();
+        delete mergedResult.description;
+      }
     }
 
     if (input.pricePerKg !== undefined) {
-      updates.pricePerKg = input.pricePerKg;
+      firestoreUpdates.pricePerKg = input.pricePerKg;
+      mergedResult.pricePerKg = input.pricePerKg;
     }
 
     if (input.currency !== undefined) {
-      updates.currency = input.currency.trim().toUpperCase();
+      const cleanCurrency = input.currency.trim().toUpperCase();
+      firestoreUpdates.currency = cleanCurrency;
+      mergedResult.currency = cleanCurrency;
     }
 
-    // Update only editable metadata. Inventory references, seller identity,
-    // certification data, QR package IDs, quantities, and listing status
-    // remain unchanged.
-    tx.update(listingRef, updates);
+    if (input.qualityGrade !== undefined) {
+      const cleanGrade = input.qualityGrade.trim();
+      firestoreUpdates.qualityGrade = cleanGrade;
+      mergedResult.qualityGrade = cleanGrade;
+    }
 
-    return {
-      ...current,
-      ...updates,
+    if (input.cocoaImage !== undefined) {
+      firestoreUpdates.cocoaImage = input.cocoaImage;
+      mergedResult.cocoaImage = input.cocoaImage;
+    }
+
+    if (validatedNewQty !== undefined) {
+      firestoreUpdates.quantityAvailableKg = validatedNewQty;
+      mergedResult.quantityAvailableKg = validatedNewQty;
+      // Keep quantityInitialKg synchronized when listing has not yet had partial sales, or when expanded
+      if (
+        Math.abs((current.quantityAvailableKg || 0) - (current.quantityInitialKg || 0)) < 1e-6 ||
+        validatedNewQty > (current.quantityInitialKg || 0)
+      ) {
+        firestoreUpdates.quantityInitialKg = validatedNewQty;
+        mergedResult.quantityInitialKg = validatedNewQty;
+      }
+    }
+
+    tx.update(listingRef, firestoreUpdates);
+
+    return mergedResult;
+  });
+}
+
+/**
+ * Permanently deletes a seller's marketplace listing when it is not sold and has
+ * no active purchase orders or trades, automatically freeing its reserved cocoa
+ * quantity / QR packages back to the seller's holding or lot.
+ */
+export async function deleteMarketplaceListing(
+  listingId: string,
+  actorUid?: string
+): Promise<{ deletedListingId: string }> {
+  const verifiedActor =
+    typeof actorUid === "string" ? actorUid.trim() : "";
+
+  if (!verifiedActor) {
+    throw new Error("Authentication Required: A verified actor UID is required.");
+  }
+
+  if (
+    typeof listingId !== "string" ||
+    !listingId.trim() ||
+    listingId.length > 256
+  ) {
+    throw new Error("Validation Error: A valid listingId is required.");
+  }
+
+  const normalizedListingId = listingId.trim();
+  const authRecord = await firebaseAdminAuth.getUser(verifiedActor);
+  const isAdmin =
+    authRecord.customClaims?.admin === true || (await isPlatformAdmin(verifiedActor));
+
+  const listingRef = firebaseAdminDb
+    .collection("marketplaceListings")
+    .doc(normalizedListingId);
+
+  return await firebaseAdminDb.runTransaction(async (tx) => {
+    const posQuery = firebaseAdminDb
+      .collection("purchaseOrders")
+      .where("listingId", "==", normalizedListingId);
+    const tradesQuery = firebaseAdminDb
+      .collection("trades")
+      .where("listingId", "==", normalizedListingId);
+
+    const [snapshot, posSnap, tradesSnap] = await Promise.all([
+      tx.get(listingRef),
+      tx.get(posQuery),
+      tx.get(tradesQuery),
+    ]);
+
+    if (!snapshot.exists) {
+      throw new Error(
+        `Listing Error: Marketplace listing "${normalizedListingId}" does not exist.`
+      );
+    }
+
+    const current = {
+      ...(snapshot.data() as MarketplaceListing),
+      listingId: snapshot.id,
     };
+
+    const authorized = await isAuthorizedToManageListing(verifiedActor, current, isAdmin);
+    if (!authorized) {
+      throw new Error(
+        "Authorization Error: You are not authorized to delete this listing."
+      );
+    }
+
+    if (current.listingStatus === "sold") {
+      throw new Error(
+        "State Error: Sold listings cannot be deleted because they are part of completed trade records."
+      );
+    }
+
+    const inactivePoStatuses = new Set(["cancelled", "rejected", "expired", "refunded"]);
+    const hasActivePo = posSnap.docs.some((d) => {
+      const st = String(d.data()?.status || "").toLowerCase();
+      return st && !inactivePoStatuses.has(st);
+    });
+    if (hasActivePo) {
+      throw new Error(
+        "State Error: Cannot delete this listing because it has an active purchase order."
+      );
+    }
+
+    const inactiveTradeStatuses = new Set(["cancelled", "failed"]);
+    const hasActiveTrade = tradesSnap.docs.some((d) => {
+      const st = String(d.data()?.tradeStatus || "").toLowerCase();
+      return st && !inactiveTradeStatuses.has(st);
+    });
+    if (hasActiveTrade) {
+      throw new Error(
+        "State Error: Cannot delete this listing because it has an active or completed trade."
+      );
+    }
+
+    // Bump inventory revision on backing holding or lot if present to serialize concurrent creates
+    if (current.certificationType === "certified" && current.sourceHoldingId) {
+      const holdingRef = firebaseAdminDb
+        .collection("certificateHoldings")
+        .doc(current.sourceHoldingId);
+      const holdingSnap = await tx.get(holdingRef);
+      if (holdingSnap.exists) {
+        const rev = holdingSnap.data()?.inventoryRevision;
+        tx.update(holdingRef, {
+          inventoryRevision: (typeof rev === "number" ? rev : 0) + 1,
+        });
+      }
+    } else if (current.lotId) {
+      const lotRef = firebaseAdminDb.collection("cocoaLots").doc(current.lotId);
+      const lotSnap = await tx.get(lotRef);
+      if (lotSnap.exists) {
+        const rev = lotSnap.data()?.inventoryRevision;
+        tx.update(lotRef, {
+          inventoryRevision: (typeof rev === "number" ? rev : 0) + 1,
+        });
+      }
+    }
+
+    tx.delete(listingRef);
+
+    return { deletedListingId: normalizedListingId };
   });
 }
 
 /**
  * Cancels an active or under_negotiation marketplace listing and releases commitments.
  */
-
 export async function cancelMarketplaceListing(
   listingId: string,
   actorUid?: string,
@@ -1279,9 +1604,9 @@ export async function cancelMarketplaceListing(
 
   const normalizedListingId = listingId.trim();
 
-  // Check administrator privileges using trusted Firebase custom claims.
   const authRecord = await firebaseAdminAuth.getUser(verifiedActor);
-  const isAdmin = authRecord.customClaims?.admin === true;
+  const isAdmin =
+    authRecord.customClaims?.admin === true || (await isPlatformAdmin(verifiedActor));
 
   const listingRef = firebaseAdminDb
     .collection("marketplaceListings")
@@ -1296,21 +1621,13 @@ export async function cancelMarketplaceListing(
       );
     }
 
-    const current = snapshot.data() as MarketplaceListing;
+    const current = {
+      ...(snapshot.data() as MarketplaceListing),
+      listingId: snapshot.id,
+    };
 
-    if (current.listingId !== normalizedListingId) {
-      throw new Error(
-        "Validation Error: Listing document ID does not match its record."
-      );
-    }
-
-    // Until trusted server-side organization membership verification exists,
-    // non-admin access is restricted to the user's own farmer listings.
-    const ownsFarmerListing =
-      current.sellerHolderType?.toLowerCase() === "farmer" &&
-      current.sellerHolderId === verifiedActor;
-
-    if (!isAdmin && !ownsFarmerListing) {
+    const authorized = await isAuthorizedToManageListing(verifiedActor, current, isAdmin);
+    if (!authorized) {
       throw new Error(
         "Authorization Error: You are not authorized to cancel this listing."
       );

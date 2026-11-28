@@ -455,7 +455,7 @@ export interface CocoaLotAdjustment {
 }
 
 export interface SellerAccessRecord {
-  accessId: string; // e.g. "SAR-LST-CMR-2026-XXXXXX-BUYERUID" or "acc_..."
+  accessId: string; // e.g. "SAR-LST-CMR-2026-XXXXXX-BUYERUID" or "acc_..." or "req_..."
   listingId: string;
   lotId?: string;
   buyerId: string; // Firebase UID (alias: buyerUid)
@@ -464,13 +464,30 @@ export interface SellerAccessRecord {
   sellerId?: string; // Firebase UID of seller
   paymentId?: string;
   paymentReference?: string;
-  accessType?: "off_platform_negotiation" | "on_platform_purchase" | "flutterwave_seller_info_access" | (string & {});
+  accessType?:
+    | "off_platform_negotiation"
+    | "on_platform_purchase"
+    | "flutterwave_seller_info_access"
+    | "repeat_buyer_trade_request"
+    | (string & {});
   feePaid: number; // Snapshot of fee paid
   amountPaid?: number; // Snapshot of amount paid (NGN)
   currency: string;
-  accessStatus: "active" | "expired" | "revoked" | "concluded_sold" | "deal_fell_through" | (string & {});
-  status?: "active" | "revoked";
+  accessStatus:
+    | "pending_seller_confirmation"
+    | "active"
+    | "expired"
+    | "revoked"
+    | "declined"
+    | "concluded_sold"
+    | "deal_fell_through"
+    | (string & {});
+  status?: "pending_seller_confirmation" | "active" | "revoked" | "declined" | (string & {});
   accessGrantedAt: string; // ISO 8601 Timestamp
+  sellerConfirmedAt?: string;
+  declinedAt?: string;
+  declineReason?: string;
+  buyerNote?: string;
   expiresAt?: string; // Optional configurable expiration
   createdAt?: string;
   updatedAt?: string;
@@ -492,6 +509,11 @@ export interface SellerNegotiationItem {
     email?: string;
     phone?: string;
     role?: string;
+  };
+  purchaseOrder?: {
+    poId: string;
+    poNumber: string;
+    status: string;
   };
 }
 

@@ -43,6 +43,7 @@ import {
   Award,
   Info,
   Star,
+  Trash2,
 } from "lucide-react";
 import { getAllListingReviewStats } from "@/services/reviewService";
 import { CocoaGradeModal, CocoaGradeSelector } from "@/components/CocoaGradeInfo";
@@ -99,6 +100,11 @@ export default function MarketplacePage() {
   const [formQualityGrade, setFormQualityGrade] = useState("Grade 1 Export");
   const [formImageSource, setFormImageSource] = useState<"previous" | "new">("previous");
   const [formNewImageFile, setFormNewImageFile] = useState<File | null>(null);
+
+  // Delete Listing Confirmation Modal State (My Offerings)
+  const [deletingListing, setDeletingListing] = useState<MarketplaceListing | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [listingReviewStats, setListingReviewStats] = useState<Record<string, { averageRating: number; totalReviews: number }>>({});
 
@@ -503,6 +509,34 @@ export default function MarketplacePage() {
       }
     } finally {
       setCreateSubmitting(false);
+    }
+  };
+
+  // Delete Listing Handler
+  const handleConfirmDelete = async () => {
+    if (!deletingListing) return;
+    setDeleteError(null);
+    setDeleteSubmitting(true);
+
+    try {
+      const res = await apiClient.delete<{ success: boolean; deletedListingId: string }>(
+        `/api/marketplace/listings/${encodeURIComponent(deletingListing.listingId)}`
+      );
+
+      if (res && res.success) {
+        setListings((prev) => prev.filter((l) => l.listingId !== deletingListing.listingId));
+        setDeletingListing(null);
+        loadListings();
+        loadCreatorInventory();
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError || err instanceof Error) {
+        setDeleteError(err.message);
+      } else {
+        setDeleteError("Failed to delete offering.");
+      }
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -920,6 +954,26 @@ export default function MarketplacePage() {
                             See Seller Info &amp; Buy Cocoa
                           </Link>
                         )
+                      )}
+
+                      {isOwner && viewScope === "my-listings" && (
+                        <button
+                          type="button"
+                          disabled={isSold}
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeletingListing(item);
+                          }}
+                          title={
+                            isSold
+                              ? "Sold offerings cannot be deleted."
+                              : "Delete this cocoa offering"
+                          }
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-red-200 bg-red-50 py-2 px-4 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap"
+                        >
+                          <Trash2 size={13} />
+                          Delete Offering
+                        </button>
                       )}
 
                       <Link
@@ -1516,6 +1570,67 @@ export default function MarketplacePage() {
                   className="rounded-full bg-[#0b3528] px-6 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
                 >
                   Got It, Close Guide
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Delete Seller Offering Confirmation */}
+        {deletingListing && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="relative w-full max-w-md rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setDeletingListing(null)}
+                disabled={deleteSubmitting}
+                className="absolute right-4 top-4 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer disabled:opacity-50"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-600 border border-red-200">
+                <Trash2 size={20} />
+              </div>
+
+              <h3 className="mt-3 text-lg font-bold text-[#10251d]">
+                Delete Cocoa Offering?
+              </h3>
+              <p className="mt-1.5 text-xs leading-relaxed text-[#57655d]">
+                Are you sure you want to delete{" "}
+                <strong className="text-[#10251d]">{deletingListing.title}</strong>{" "}
+                (<span className="font-mono">{deletingListing.listingNumber}</span>)?
+                This will permanently remove it from the marketplace and release{" "}
+                <strong className="text-[#10251d]">
+                  {(Number(deletingListing.quantityAvailableKg) || 0).toLocaleString()} kg
+                </strong>{" "}
+                back to your available inventory so you can re-list or transfer it anytime.
+              </p>
+
+              {deleteError && (
+                <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2 border border-red-200">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <div className="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
+                <button
+                  type="button"
+                  disabled={deleteSubmitting}
+                  onClick={() => setDeletingListing(null)}
+                  className="rounded-full px-5 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 cursor-pointer disabled:opacity-50"
+                >
+                  Keep Offering
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteSubmitting}
+                  onClick={handleConfirmDelete}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-red-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-red-700 disabled:opacity-50 cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  {deleteSubmitting ? "Deleting..." : "Delete Offering"}
                 </button>
               </div>
             </div>
