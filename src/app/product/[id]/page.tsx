@@ -40,8 +40,10 @@ import {
   RefreshCw,
   Star,
   MessageSquare,
+  FileText,
 } from "lucide-react";
 import { CocoaGradeCard } from "@/components/CocoaGradeInfo";
+import { CreatePurchaseOrderModal } from "@/components/trades/CreatePurchaseOrderModal";
 
 const MapboxGeofenceMap = dynamic(() => import("@/components/MapboxGeofenceMap"), {
   ssr: false,
@@ -78,19 +80,16 @@ export default function ProductDetailPage() {
   const [backingQRs, setBackingQRs] = useState<QRCode[]>([]);
   const [sellerInfo, setSellerInfo] = useState<any | null>(null);
   const [hasSellerAccess, setHasSellerAccess] = useState(false);
+  const [sellerAccessChecked, setSellerAccessChecked] = useState(false);
+  const [flowHandled, setFlowHandled] = useState(false);
 
   // Seller Access Payment Modal State
   const [showSellerPayModal, setShowSellerPayModal] = useState(false);
   const [sellerPaySubmitting, setSellerPaySubmitting] = useState(false);
   const [sellerPayError, setSellerPayError] = useState<string | null>(null);
 
-  // Purchase Modal State
-  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const [purchaseQuantityKg, setPurchaseQuantityKg] = useState<number>(0);
-  const [purchaseBuyerType, setPurchaseBuyerType] = useState<CertificateHolderType>("cooperative");
-  const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
+  // Purchase Order Modal State (Stage 1 after paying for seller info)
+  const [showPoModal, setShowPoModal] = useState(false);
 
   // Reviews & Ratings State
   const [reviews, setReviews] = useState<MarketplaceReview[]>([]);
@@ -209,7 +208,6 @@ export default function ProductDetailPage() {
 
       const l = res.listing;
       setListing(l);
-      setPurchaseQuantityKg(l.quantityAvailableKg);
 
       // 2. Fetch Backing Cocoa Lot if available
       if (l.lotId) {
@@ -265,10 +263,20 @@ export default function ProductDetailPage() {
           if (accessRes && accessRes.success && accessRes.sellerInfo) {
             setSellerInfo(accessRes.sellerInfo);
             setHasSellerAccess(true);
+          } else {
+            setSellerInfo(null);
+            setHasSellerAccess(false);
           }
         } catch {
+          setSellerInfo(null);
           setHasSellerAccess(false);
+        } finally {
+          setSellerAccessChecked(true);
         }
+      } else {
+        setSellerInfo(null);
+        setHasSellerAccess(false);
+        setSellerAccessChecked(true);
       }
     } catch (err: unknown) {
       if (err instanceof CocoaApiError) {
@@ -286,6 +294,31 @@ export default function ProductDetailPage() {
   useEffect(() => {
     loadListingDetails();
   }, [loadListingDetails]);
+
+  // If navigated via "See Seller Info & Buy Cocoa" (?flow=buy) or post-payment (?flow=po),
+  // automatically open the appropriate next step once access status is verified.
+  useEffect(() => {
+    if (flowHandled || loading || !sellerAccessChecked || !listing) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const flow = params.get("flow");
+    if (flow !== "buy" && flow !== "po") return;
+
+    const isOwner = Boolean(
+      user && (listing.createdByUid === user.uid || listing.sellerHolderId === user.uid)
+    );
+    if (isOwner || listing.listingStatus === "sold") {
+      setFlowHandled(true);
+      return;
+    }
+
+    setFlowHandled(true);
+    if (hasSellerAccess && listing.quantityAvailableKg > 0) {
+      setShowPoModal(true);
+    } else if (listing.listingStatus === "available" && !hasSellerAccess) {
+      setShowSellerPayModal(true);
+    }
+  }, [flowHandled, loading, sellerAccessChecked, listing, user, hasSellerAccess]);
 
   // Handle Flutterwave Seller Information Access Payment Initiation
   const handleInitiateSellerPayment = async () => {
@@ -345,69 +378,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  // Handle Purchase Finalization
-  const handlePurchase = async () => {
-    if (!listing) return;
-    setPurchaseSubmitting(true);
-    setPurchaseError(null);
 
-    try {
-      // 1. Get Purchase Intent
-      const intentRes = await apiClient.post<{ success: boolean; intent: any }>(
-        "/api/marketplace/trades/on-platform-purchase",
-        {
-          action: "intent",
-          listingId: listing.listingId,
-          buyerHolderType: purchaseBuyerType,
-          requestedQuantityKg: purchaseQuantityKg,
-          selectedQrPackageIds:
-            listing.inventoryMode === "QR_PACKAGES" ? listing.currentQrPackageIds : undefined,
-        }
-      );
-
-      if (!intentRes || !intentRes.intent) {
-        throw new Error("Failed to initialize purchase intent.");
-      }
-
-      const intent = intentRes.intent;
-
-      // 2. Finalize On-Platform Purchase
-      const finalizeRes = await apiClient.post<{ success: boolean; trade: any; destHolding?: any }>(
-        "/api/marketplace/trades/on-platform-purchase",
-        {
-          action: "finalize",
-          paymentReference: intent.paymentReference,
-          listingId: listing.listingId,
-          buyerHolderType: purchaseBuyerType,
-          purchasedQuantityKg: intent.quantityKg,
-          selectedQrPackageIds: intent.selectedQrPackageIds,
-          paymentMethod: "mtn_momo",
-          externalTransactionReference: `MOMO-REF-${Date.now()}`,
-        }
-      );
-
-      if (finalizeRes && finalizeRes.success) {
-        setPurchaseSuccess(
-          `Purchase finalized! Trade: ${finalizeRes.trade.tradeNumber}. Custody holding provisioned.`
-        );
-        setTimeout(() => {
-          setShowPurchaseModal(false);
-          setPurchaseSuccess(null);
-          router.push("/dashboard/trades");
-        }, 1500);
-      }
-    } catch (err: unknown) {
-      if (err instanceof CocoaApiError) {
-        setPurchaseError(err.message);
-      } else if (err instanceof Error) {
-        setPurchaseError(err.message);
-      } else {
-        setPurchaseError("Purchase failed to finalize.");
-      }
-    } finally {
-      setPurchaseSubmitting(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -562,31 +533,80 @@ export default function ProductDetailPage() {
                   );
                 }
                 if (isUnderNegotiation) {
+                  if (hasSellerAccess && !isSold) {
+                    return (
+                      <div className="space-y-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowPoModal(true)}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 px-4 text-sm font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer transition whitespace-nowrap"
+                        >
+                          <FileText size={16} /> Generate Purchase Order
+                        </button>
+                        <a
+                          href="#seller-info-section"
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white py-2 px-4 text-xs font-bold text-[#10251d] hover:bg-[#f0f4ec] transition"
+                        >
+                          <ShieldCheck size={14} className="text-[#2d6130]" /> View Unlocked Seller Contact
+                        </a>
+                        <p className="text-[11px] text-center text-[#2d6130] font-medium leading-relaxed">
+                          Seller info unlocked. Submit a signed Purchase Order with your agreed terms &amp; letterhead.
+                        </p>
+                      </div>
+                    );
+                  }
                   return (
                     <div className="space-y-2">
                       <button
                         type="button"
                         disabled
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-amber-100 border border-amber-300 py-3 text-sm font-bold text-amber-900 shadow-none opacity-80 cursor-not-allowed"
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-amber-100 border border-amber-300 py-3 px-4 text-sm font-bold text-amber-900 shadow-none opacity-80 cursor-not-allowed"
                         title="This cocoa offering is currently under negotiation and cannot be purchased."
                       >
-                        <Lock size={16} /> Under Negotiation (Purchase Disabled)
+                        <Lock size={16} /> Under Negotiation (Locked)
                       </button>
                       <p className="text-[11px] text-center text-amber-800 font-medium leading-relaxed">
-                        A buyer is actively negotiating this cocoa offering. Direct purchase is disabled.
+                        A buyer is actively negotiating this cocoa offering. Seller info &amp; purchase are temporarily disabled.
                       </p>
                     </div>
                   );
                 }
                 if (!isSold) {
+                  if (hasSellerAccess) {
+                    return (
+                      <div className="space-y-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowPoModal(true)}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 px-4 text-sm font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer transition whitespace-nowrap"
+                        >
+                          <FileText size={16} /> Generate Purchase Order
+                        </button>
+                        <a
+                          href="#seller-info-section"
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-[#dfe7d8] bg-white py-2 px-4 text-xs font-bold text-[#10251d] hover:bg-[#f0f4ec] transition"
+                        >
+                          <ShieldCheck size={14} className="text-[#2d6130]" /> View Unlocked Seller Contact
+                        </a>
+                        <p className="text-[11px] text-center text-[#2d6130] font-medium leading-relaxed">
+                          Seller contact unlocked. Generate a Purchase Order once you agree on quantity &amp; price.
+                        </p>
+                      </div>
+                    );
+                  }
                   return (
-                    <button
-                      type="button"
-                      onClick={() => setShowPurchaseModal(true)}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-sm font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                    >
-                      <CreditCard size={16} /> Purchase Cocoa
-                    </button>
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowSellerPayModal(true)}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 px-4 text-sm font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer transition"
+                      >
+                        <ShieldCheck size={16} /> See Seller Info &amp; Buy Cocoa
+                      </button>
+                      <p className="text-[11px] text-center text-[#57655d] leading-relaxed">
+                        Pay the seller info access fee first to unlock verified contact details and buy this cocoa.
+                      </p>
+                    </div>
                   );
                 }
                 return (
@@ -911,7 +931,7 @@ export default function ProductDetailPage() {
             </div>
 
             {/* Seller Contact & Verification */}
-            <div className="rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
+            <div id="seller-info-section" className="rounded-[28px] border border-[#dfe7d8] bg-white p-6 shadow-sm">
               <h3 className="text-lg font-bold text-[#10251d]">Seller Information</h3>
 
               {(() => {
@@ -933,6 +953,11 @@ export default function ProductDetailPage() {
                     <div className="mt-4 space-y-2.5 text-xs">
                       <div className="rounded-2xl bg-[#eefbf3] p-3 text-[#1d6a45] font-semibold">
                         ✓ Verified Contact Access Granted
+                        {sellerInfo.unlockedViaPreviousSellerAccess && (
+                          <span className="block mt-1 text-[11px] font-normal text-[#2d6130]">
+                            Unlocked automatically from your previous paid seller access.
+                          </span>
+                        )}
                       </div>
 
                       {sellerInfo.contactName && (
@@ -987,54 +1012,25 @@ export default function ProductDetailPage() {
                       <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
                         <Lock size={14} /> Protected Entity: {listing.sellerHolderType.toUpperCase()}
                       </div>
-                      <button
-                        type="button"
-                        disabled
-                        className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full border border-amber-300 bg-amber-100 py-3 text-xs font-bold text-amber-800 shadow-none cursor-not-allowed opacity-80"
-                        title="This cocoa offering is currently under negotiation. Contact access cannot be purchased."
-                      >
-                        <Lock size={14} /> Under Negotiation (Contact Access Disabled)
-                      </button>
                     </div>
                   );
                 }
                 return (
                   <div className="mt-4 space-y-3 text-xs text-gray-600">
-                    <p>
-                      Seller direct contact information is open for direct communication and negotiation.
-                    </p>
-                    <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
-                      <ShieldCheck size={14} /> Verified Entity: {listing.sellerHolderType.toUpperCase()}
+                    <div className="rounded-2xl border border-[#dfe7d8] bg-[#f8f9f3] p-4 space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold text-sm text-[#10251d]">
+                        <Lock size={15} className="text-[#2d6130]" /> Verified Contact Protected
+                      </div>
+                      <p className="text-[11px] text-[#57655d] leading-relaxed">
+                        Seller contact credentials are revealed immediately after completing the{" "}
+                        <strong>See Seller Info &amp; Buy Cocoa</strong> step above. Unlocking this
+                        seller also gives you direct access to their other cocoa listings in your
+                        Cocoa Trade dashboard.
+                      </p>
                     </div>
-                    {user ? (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await apiClient.get<{ success: boolean; sellerInfo: any }>(
-                              `/api/marketplace/seller-info/${listing.listingId}`
-                            );
-                            if (res && res.success && res.sellerInfo) {
-                              setSellerInfo(res.sellerInfo);
-                              setHasSellerAccess(true);
-                            }
-                          } catch (e: unknown) {
-                            setError(e instanceof Error ? e.message : "Failed to load seller contact");
-                          }
-                        }}
-                        className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                      >
-                        <ShieldCheck size={14} /> View Seller Contact (Free Access)
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleGoogleSignInToPay}
-                        className="mt-2 w-full inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] py-3 text-xs font-bold text-white shadow-sm hover:bg-[#144737] cursor-pointer"
-                      >
-                        <ShieldCheck size={14} /> Sign in to View Seller Contact
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 font-mono text-[11px] text-gray-500 bg-[#f7f8f3] p-2.5 rounded-xl">
+                      <ShieldCheck size={14} className="text-[#2d6130]" /> Verified Entity: {listing.sellerHolderType.toUpperCase()}
+                    </div>
                   </div>
                 );
               })()}
@@ -1055,13 +1051,12 @@ export default function ProductDetailPage() {
               </button>
 
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
-                <ShieldCheck size={14} /> Flutterwave Secure Gateway
+                <ShieldCheck size={14} /> Step 1 of Purchase • Flutterwave Secure Gateway
               </div>
-              <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Seller Information Access Fee</h2>
-              <div className="flex justify-between pt-2 border-t border-[#dfe7d8] font-bold text-sm text-[#2d6130]">
-                <span>Seller Access Fee:</span>
-                <span>Calculated in XAF (Converted to NGN at checkout)</span>
-              </div>
+              <h2 className="mt-1 text-2xl font-bold text-[#10251d]">See Seller Info &amp; Buy Cocoa</h2>
+              <p className="mt-1 text-xs text-[#57655d] leading-relaxed">
+                Unlock this seller&apos;s verified contact details first to negotiate and buy this cocoa lot. Once paid, you also unlock access to this seller&apos;s other listings in your Cocoa Trade dashboard.
+              </p>
 
               {isUnderNegotiation && (
                 <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
@@ -1082,19 +1077,19 @@ export default function ProductDetailPage() {
               <div className="mt-5 rounded-2xl bg-[#f8f9f3] p-4 space-y-3 text-xs border border-[#dfe7d8]">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Listing Quantity:</span>
-                  <span className="font-bold text-[#10251d]">{listing.quantityAvailableKg.toLocaleString()} kg</span>
+                  <span className="font-bold text-[#10251d] tabular-nums">{listing.quantityAvailableKg.toLocaleString()} kg</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Price per kg:</span>
-                  <span className="font-bold text-[#10251d]">{listing.pricePerKg.toLocaleString()} {listing.currency}</span>
+                  <span className="font-bold text-[#10251d] tabular-nums">{listing.pricePerKg.toLocaleString()} {listing.currency}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Listing Total Value:</span>
-                  <span className="font-bold text-[#10251d]">{(listing.quantityAvailableKg * listing.pricePerKg).toLocaleString()} {listing.currency}</span>
+                  <span className="font-bold text-[#10251d] tabular-nums">{(listing.quantityAvailableKg * listing.pricePerKg).toLocaleString()} {listing.currency}</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t border-[#dfe7d8] font-bold text-sm text-[#2d6130]">
-                  <span>Access Fee:</span>
-                  <span>{Math.ceil(listing.quantityAvailableKg * listing.pricePerKg * 0.005).toLocaleString()} XAF (Converted at checkout)</span>
+                  <span>Seller Info Access Fee (0.5%):</span>
+                  <span className="tabular-nums">{Math.ceil(listing.quantityAvailableKg * listing.pricePerKg * 0.005).toLocaleString()} {listing.currency} (NGN at checkout)</span>
                 </div>
               </div>
 
@@ -1162,127 +1157,17 @@ export default function ProductDetailPage() {
           </div>
         )}
 
-        {/* Modal: Purchase Confirmation */}
-        {showPurchaseModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
-            <div className="relative my-8 w-full max-w-xl rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl">
-              <button
-                type="button"
-                onClick={() => setShowPurchaseModal(false)}
-                className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100"
-              >
-                ✕
-              </button>
-
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
-                <CreditCard size={14} /> Execute Cocoa Purchase
-              </div>
-              <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Confirm Trade Order</h2>
-
-              {isUnderNegotiation && (
-                <div className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-300 flex items-start gap-2">
-                  <Lock size={15} className="shrink-0 mt-0.5 text-amber-600" />
-                  <span>This cocoa offering is currently under negotiation. Purchases are temporarily locked.</span>
-                </div>
-              )}
-
-              {purchaseError && (
-                <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                  {purchaseError}
-                </div>
-              )}
-
-              {purchaseSuccess && (
-                <div className="mt-4 rounded-2xl bg-green-50 p-3 text-xs text-green-700 border border-green-200">
-                  {purchaseSuccess}
-                </div>
-              )}
-
-              <div className="mt-5 space-y-4 text-xs">
-                <div>
-                  <label className="block font-semibold text-[#10251d] mb-1">Your Buyer Entity Role</label>
-                  <select
-                    value={purchaseBuyerType}
-                    onChange={(e) => setPurchaseBuyerType(e.target.value as CertificateHolderType)}
-                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                  >
-                    <option value="cooperative">Cooperative Society</option>
-                    <option value="agent">Licensed Buying Agent</option>
-                    <option value="warehouse">Licensed Export Warehouse</option>
-                  </select>
-                </div>
-
-                {listing.inventoryMode !== "QR_PACKAGES" ? (
-                  <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">Quantity (kg)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={listing.quantityAvailableKg}
-                      value={purchaseQuantityKg || ""}
-                      onChange={(e) => setPurchaseQuantityKg(Number(e.target.value))}
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-2xl bg-[#f8f9f3] p-3 text-gray-600">
-                    Purchasing all {listing.currentQrPackageIds?.length} active packages (
-                    {listing.quantityAvailableKg} kg).
-                  </div>
-                )}
-
-                <div className="rounded-2xl bg-[#edf7e8] p-4 space-y-1.5 font-medium text-xs text-[#10251d]">
-                  <div className="flex justify-between">
-                    <span>Base Value:</span>
-                    <span>
-                      {(purchaseQuantityKg * listing.pricePerKg).toLocaleString()} {listing.currency}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>Platform Fee:</span>
-                    <span>
-                      {Math.round(purchaseQuantityKg * listing.pricePerKg * 0.02).toLocaleString()}{" "}
-                      {listing.currency}
-                    </span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-[#c5e4ba] font-bold text-sm">
-                    <span>Total Amount Payable:</span>
-                    <span>
-                      {Math.round(purchaseQuantityKg * listing.pricePerKg * 1.02).toLocaleString()}{" "}
-                      {listing.currency}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
-                  <button
-                    type="button"
-                    onClick={() => setShowPurchaseModal(false)}
-                    className="rounded-full px-5 py-2 font-bold text-gray-500 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                  {!user ? (
-                    <Link
-                      href={`/login?redirect=${encodeURIComponent(`/product/${listing.listingId}`)}`}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737]"
-                    >
-                      Sign In to Confirm Trade
-                    </Link>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handlePurchase}
-                      disabled={purchaseSubmitting || isUnderNegotiation}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                      {purchaseSubmitting ? "Finalizing Trade..." : isUnderNegotiation ? "Under Negotiation" : "Confirm & Pay"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* Modal: Generate Purchase Order (Stage 1 after seller info unlock) */}
+        {showPoModal && listing && (
+          <CreatePurchaseOrderModal
+            listing={listing}
+            defaultSignerName={user?.displayName || ""}
+            getAuthToken={async () => (user ? await user.getIdToken() : null)}
+            onClose={() => setShowPoModal(false)}
+            onCreated={() => {
+              loadListingDetails();
+            }}
+          />
         )}
       </main>
     </div>

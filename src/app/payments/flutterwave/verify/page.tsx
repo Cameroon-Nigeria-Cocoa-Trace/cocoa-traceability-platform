@@ -292,26 +292,36 @@ function VerifyContent() {
           </div>
         </div>
       ) : result && result.success ? (
-        /* 4. Success state: Seller details unlocked */
+        /* 4. Success state: Purpose-aware confirmation */
         <div className="py-6 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#edf7e8] text-[#2d6130]">
             <CheckCircle2 size={36} />
           </div>
-          <h2 className="mt-4 text-2xl font-bold text-[#10251d]">Seller Access Payment Successful!</h2>
+          <h2 className="mt-4 text-2xl font-bold text-[#10251d]">
+            {result.paymentPurpose === "TRADE_INVOICE_ON_PLATFORM"
+              ? "Invoice Paid & Delivery Note Initialized!"
+              : result.paymentPurpose === "OFF_PLATFORM_TRANSFER_FEE"
+              ? "0.5% Certificate Transfer Fee Verified!"
+              : "Seller Access Payment Successful!"}
+          </h2>
           <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
-            Payment verified securely via Flutterwave. Direct contact credentials and farm traceability for this listing have been unlocked for your account.
+            {result.paymentPurpose === "TRADE_INVOICE_ON_PLATFORM"
+              ? "Your on-platform cocoa invoice payment (including 1.5% service fee) has been verified. Certificate custody transfer has executed automatically and your delivery note is now active."
+              : result.paymentPurpose === "OFF_PLATFORM_TRANSFER_FEE"
+              ? "Your 0.5% certificate transfer fee has been confirmed. The certificate transfer is complete and your delivery note is now active—mark delivery as successful in your trade dashboard once you receive the cocoa."
+              : "Payment verified securely via Flutterwave. Direct seller contact details are now unlocked—you can generate your Purchase Order right away."}
           </p>
 
           <div className="mt-6 rounded-2xl bg-[#f8f9f3] p-5 text-left text-xs space-y-2.5 border border-[#dfe7d8] max-w-md mx-auto">
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-3">
               <span className="text-gray-500">Payment Reference:</span>
-              <span className="font-mono font-bold text-[#10251d]">
+              <span className="font-mono font-bold text-[#10251d] truncate">
                 {result.paymentRecord?.paymentReference || txRef}
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">Amount Paid:</span>
-              <span className="font-bold text-[#2d6130]">
+              <span className="font-bold text-[#2d6130] tabular-nums">
                 ₦{(result.paymentRecord?.amountCharged || result.paymentRecord?.amount || 0).toLocaleString()} NGN
               </span>
             </div>
@@ -319,6 +329,18 @@ function VerifyContent() {
               <span className="text-gray-500">Payment Status:</span>
               <span className="font-bold uppercase text-green-700">{result.paymentStatus}</span>
             </div>
+            {result.invoiceNumber && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Invoice Number:</span>
+                <span className="font-mono font-semibold text-[#10251d]">{result.invoiceNumber}</span>
+              </div>
+            )}
+            {result.deliveryNoteNumber && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Delivery Note:</span>
+                <span className="font-mono font-semibold text-[#2d6130]">{result.deliveryNoteNumber}</span>
+              </div>
+            )}
             {result.accessRecord && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Seller Access ID:</span>
@@ -327,21 +349,43 @@ function VerifyContent() {
             )}
           </div>
 
-          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4">
-            {result.paymentRecord?.listingId && (
-              <Link
-                href={`/product/${result.paymentRecord.listingId}`}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-8 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#144737] transition"
-              >
-                View Unlocked Listing <ExternalLink size={14} />
-              </Link>
+          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
+            {result.paymentPurpose === "TRADE_INVOICE_ON_PLATFORM" ||
+            result.paymentPurpose === "OFF_PLATFORM_TRANSFER_FEE" ? (
+              <>
+                <Link
+                  href="/dashboard/trades?tab=orders"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-7 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#144737] transition whitespace-nowrap"
+                >
+                  Open Trade Orders &amp; Download PDFs <ExternalLink size={14} />
+                </Link>
+                <Link
+                  href="/dashboard/certificates"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-[#dfe7d8] bg-white px-6 py-3 text-sm font-bold text-[#10251d] hover:bg-[#f7f8f3] transition whitespace-nowrap"
+                >
+                  View Certificate Holdings
+                </Link>
+              </>
+            ) : (
+              <>
+                {result.paymentRecord?.listingId && (
+                  <Link
+                    href={`/product/${result.paymentRecord.listingId}?flow=po`}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0b3528] px-7 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#144737] transition whitespace-nowrap"
+                  >
+                    Generate Purchase Order <ExternalLink size={14} />
+                  </Link>
+                )}
+                {result.paymentRecord?.listingId && (
+                  <Link
+                    href={`/product/${result.paymentRecord.listingId}`}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-[#dfe7d8] bg-white px-6 py-3 text-sm font-bold text-[#10251d] hover:bg-[#f7f8f3] transition whitespace-nowrap"
+                  >
+                    View Seller Contact
+                  </Link>
+                )}
+              </>
             )}
-            <Link
-              href="/marketplace"
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#dfe7d8] bg-white px-8 py-3 text-sm font-bold text-[#10251d] hover:bg-[#f7f8f3] transition"
-            >
-              Return to Marketplace
-            </Link>
           </div>
         </div>
       ) : (

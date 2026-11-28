@@ -14,6 +14,7 @@ import {
   CertificateHolding,
   CertificateHolderType,
   SellerNegotiationItem,
+  PurchaseOrderBundle,
 } from "@/types/traceability";
 import {
   Handshake,
@@ -45,8 +46,15 @@ import {
   Tag,
   Scale,
   Info,
+  Users,
 } from "lucide-react";
 import { NegotiationsView } from "@/components/trades/NegotiationsView";
+import {
+  NegotiatedSellersListingsView,
+  NegotiatedSellerOtherListingItem,
+  UnlockedSellerSummary,
+} from "@/components/trades/NegotiatedSellersListingsView";
+import { PurchaseOrderPipelineView } from "@/components/trades/PurchaseOrderPipelineView";
 
 
 export default function TradeManagementPage() {
@@ -80,8 +88,29 @@ export default function TradeManagementPage() {
     return Array.from(map.entries()).map(([farmerId, farmerName]) => ({ farmerId, farmerName }));
   }, [farms, user]);
 
-  // Navigation Tab State: Completed Trades vs Active Negotiations
-  const [activeTab, setActiveTab] = useState<"trades" | "negotiations">("trades");
+  // Navigation Tab State: Purchase Orders & Deals | Completed Trades | Active Negotiations | Negotiated Sellers' Other Listings
+  const [activeTab, setActiveTab] = useState<
+    "orders" | "trades" | "negotiations" | "unlocked-sellers"
+  >("orders");
+
+  // Sync deep-link query param (?tab=orders|trades|negotiations|unlocked-sellers)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const tabParam = new URLSearchParams(window.location.search).get("tab");
+    if (
+      tabParam === "orders" ||
+      tabParam === "trades" ||
+      tabParam === "negotiations" ||
+      tabParam === "unlocked-sellers"
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, []);
+
+  // Purchase Orders Pipeline State
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderBundle[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
   // Trades State
   const [trades, setTrades] = useState<TradeRecord[]>([]);
@@ -94,6 +123,14 @@ export default function TradeManagementPage() {
   const [negotiationsError, setNegotiationsError] = useState<string | null>(null);
   const [negotiationFilter, setNegotiationFilter] = useState<"all" | "active" | "concluded">("all");
   const [negotiationSearch, setNegotiationSearch] = useState("");
+
+  // Negotiated Sellers' Other Listings State (Buyers viewing other listings from sellers they paid info for)
+  const [unlockedSellers, setUnlockedSellers] = useState<UnlockedSellerSummary[]>([]);
+  const [negotiatedSellerListings, setNegotiatedSellerListings] = useState<
+    NegotiatedSellerOtherListingItem[]
+  >([]);
+  const [loadingUnlockedListings, setLoadingUnlockedListings] = useState(false);
+  const [unlockedListingsError, setUnlockedListingsError] = useState<string | null>(null);
 
   // Conclude Sale Modal State
   const [concludeModalItem, setConcludeModalItem] = useState<SellerNegotiationItem | null>(null);
@@ -293,6 +330,54 @@ export default function TradeManagementPage() {
     loadTrades();
   }, [loadTrades]);
 
+  // Load Purchase Orders Pipeline
+  const loadPurchaseOrders = useCallback(async () => {
+    if (!user) return;
+    setLoadingOrders(true);
+    setOrdersError(null);
+
+    try {
+      const res = await apiClient.get<{ success: boolean; orders: PurchaseOrderBundle[] }>(
+        "/api/marketplace/purchase-orders"
+      );
+      if (res && res.success && Array.isArray(res.orders)) {
+        setPurchaseOrders(res.orders);
+      } else {
+        setPurchaseOrders([]);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError) {
+        setOrdersError(err.message);
+      } else {
+        setOrdersError("Failed to fetch purchase orders.");
+      }
+      setPurchaseOrders([]);
+    } finally {
+      setLoadingOrders(false);
+    }
+  }, [user, apiClient]);
+
+  useEffect(() => {
+    loadPurchaseOrders();
+  }, [loadPurchaseOrders]);
+
+  const actionRequiredOrdersCount = useMemo(() => {
+    if (!user) return 0;
+    return purchaseOrders.filter(({ purchaseOrder: po }) => {
+      if (po.sellerId === user.uid) {
+        return po.status === "po_submitted" || po.status === "off_platform_paid_pending_seller";
+      }
+      if (po.buyerId === user.uid) {
+        return (
+          po.status === "invoice_issued" ||
+          po.status === "transfer_fee_pending" ||
+          po.status === "delivery_initialized"
+        );
+      }
+      return false;
+    }).length;
+  }, [purchaseOrders, user]);
+
   // Load Negotiations
   const loadNegotiations = useCallback(async () => {
     if (!user) return;
@@ -323,6 +408,43 @@ export default function TradeManagementPage() {
   useEffect(() => {
     loadNegotiations();
   }, [loadNegotiations]);
+
+  // Load Other Listings from Sellers Previously Negotiated With (Paid Info For)
+  const loadNegotiatedSellersListings = useCallback(async () => {
+    if (!user) return;
+    setLoadingUnlockedListings(true);
+    setUnlockedListingsError(null);
+
+    try {
+      const res = await apiClient.get<{
+        success: boolean;
+        unlockedSellers: UnlockedSellerSummary[];
+        otherListings: NegotiatedSellerOtherListingItem[];
+      }>("/api/marketplace/negotiated-sellers-listings");
+
+      if (res && res.success) {
+        setUnlockedSellers(Array.isArray(res.unlockedSellers) ? res.unlockedSellers : []);
+        setNegotiatedSellerListings(Array.isArray(res.otherListings) ? res.otherListings : []);
+      } else {
+        setUnlockedSellers([]);
+        setNegotiatedSellerListings([]);
+      }
+    } catch (err: unknown) {
+      if (err instanceof CocoaApiError) {
+        setUnlockedListingsError(err.message);
+      } else {
+        setUnlockedListingsError("Failed to fetch listings from negotiated sellers.");
+      }
+      setUnlockedSellers([]);
+      setNegotiatedSellerListings([]);
+    } finally {
+      setLoadingUnlockedListings(false);
+    }
+  }, [user, apiClient]);
+
+  useEffect(() => {
+    loadNegotiatedSellersListings();
+  }, [loadNegotiatedSellersListings]);
 
   // Open Conclude Sale Modal
   const openConcludeModal = (item: SellerNegotiationItem) => {
@@ -674,12 +796,33 @@ export default function TradeManagementPage() {
           </div>
         )}
 
-        {/* Main View Switcher: Completed Trades vs Negotiations (Seller Info Unlocked) */}
-        <div className="mb-6 flex border-b border-[#dfe7d8] gap-2">
+        {/* Main View Switcher */}
+        <div className="mb-6 flex overflow-x-auto border-b border-[#dfe7d8] gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("orders")}
+            className={`flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+              activeTab === "orders"
+                ? "border-[#2d6130] text-[#0b3528]"
+                : "border-transparent text-[#57655d] hover:text-[#10251d]"
+            }`}
+          >
+            <FileText size={18} />
+            Purchase Orders &amp; Deals
+            {actionRequiredOrdersCount > 0 && (
+              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold tabular-nums">
+                {actionRequiredOrdersCount} Action
+              </span>
+            )}
+            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130] tabular-nums">
+              {purchaseOrders.length}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab("trades")}
-            className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === "trades"
                 ? "border-[#2d6130] text-[#0b3528]"
                 : "border-transparent text-[#57655d] hover:text-[#10251d]"
@@ -687,7 +830,7 @@ export default function TradeManagementPage() {
           >
             <Handshake size={18} />
             Completed Commercial Trades
-            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130]">
+            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130] tabular-nums">
               {trades.length}
             </span>
           </button>
@@ -695,7 +838,7 @@ export default function TradeManagementPage() {
           <button
             type="button"
             onClick={() => setActiveTab("negotiations")}
-            className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === "negotiations"
                 ? "border-[#2d6130] text-[#0b3528]"
                 : "border-transparent text-[#57655d] hover:text-[#10251d]"
@@ -704,15 +847,45 @@ export default function TradeManagementPage() {
             <Lock size={18} />
             Buyer Inquiries &amp; Negotiations
             {negotiations.filter((n) => n.listing.listingStatus === "under_negotiation").length > 0 && (
-              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold animate-pulse">
+              <span className="rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-xs text-amber-900 font-extrabold tabular-nums">
                 {negotiations.filter((n) => n.listing.listingStatus === "under_negotiation").length} Active
               </span>
             )}
-            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130]">
+            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130] tabular-nums">
               {negotiations.length}
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("unlocked-sellers")}
+            className={`flex items-center gap-2 border-b-2 px-5 py-3.5 text-sm font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+              activeTab === "unlocked-sellers"
+                ? "border-[#2d6130] text-[#0b3528]"
+                : "border-transparent text-[#57655d] hover:text-[#10251d]"
+            }`}
+          >
+            <Users size={18} />
+            Negotiated Sellers&apos; Other Listings
+            <span className="rounded-full bg-[#f0f4ec] px-2 py-0.5 text-xs text-[#2d6130] tabular-nums">
+              {negotiatedSellerListings.length}
+            </span>
+          </button>
         </div>
+
+        {activeTab === "orders" && (
+          <PurchaseOrderPipelineView
+            orders={purchaseOrders}
+            currentUserId={user?.uid || ""}
+            currentUserName={user?.displayName || userProfile?.displayName || ""}
+            loading={loadingOrders}
+            error={ordersError}
+            getAuthToken={async () => (user ? await user.getIdToken() : null)}
+            onRefresh={async () => {
+              await Promise.all([loadPurchaseOrders(), loadTrades(), loadNegotiations()]);
+            }}
+          />
+        )}
 
         {activeTab === "trades" && (
           <div>
@@ -1018,6 +1191,17 @@ export default function TradeManagementPage() {
               error={negotiationsError}
               onConclude={openConcludeModal}
               onFellThrough={openFellThroughModal}
+            />
+          </div>
+        ) : null}
+
+        {activeTab === "unlocked-sellers" ? (
+          <div className="mt-8">
+            <NegotiatedSellersListingsView
+              unlockedSellers={unlockedSellers}
+              otherListings={negotiatedSellerListings}
+              loading={loadingUnlockedListings}
+              error={unlockedListingsError}
             />
           </div>
         ) : null}

@@ -4,8 +4,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createPurchaseIntent } from "@/services/tradeService";
+import { createPurchaseIntent, hasPaidSellerInfoAccess } from "@/services/tradeService";
 import { getAuthenticatedUser, AuthenticatedUser } from "@/lib/authServer";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
+import { MarketplaceListing } from "@/types/traceability";
 
 export async function POST(req: NextRequest) {
   let user: AuthenticatedUser;
@@ -21,8 +23,58 @@ export async function POST(req: NextRequest) {
     const action = body?.action;
 
     if (action === "intent") {
+      const listingId = typeof body?.listingId === "string" ? body.listingId.trim() : "";
+      if (!listingId) {
+        return NextResponse.json(
+          { success: false, error: "Validation Error: listingId is required." },
+          { status: 400 }
+        );
+      }
+
+      // Enforce server-side: buyers must pay for seller info before purchasing cocoa
+      const listingSnap = await firebaseAdminDb
+        .collection("marketplaceListings")
+        .doc(listingId)
+        .get();
+
+      if (!listingSnap.exists) {
+        return NextResponse.json(
+          { success: false, error: `Lookup Error: Marketplace listing "${listingId}" does not exist.` },
+          { status: 404 }
+        );
+      }
+
+      const listing = listingSnap.data() as MarketplaceListing;
+      const isSeller =
+        listing.sellerHolderId === user.userId || listing.createdByUid === user.userId;
+
+      if (isSeller) {
+        return NextResponse.json(
+          { success: false, error: "Authorization Error: Sellers cannot purchase their own listing." },
+          { status: 403 }
+        );
+      }
+
+      const accessCheck = await hasPaidSellerInfoAccess(
+        user.userId,
+        listing.sellerHolderId,
+        listingId
+      );
+
+      if (!accessCheck.hasAccess) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Authorization Error: You must pay for seller information access before purchasing this cocoa.",
+          },
+          { status: 403 }
+        );
+      }
+
       const intent = await createPurchaseIntent({
         ...body,
+        listingId,
         buyerId: user.userId,
       });
 

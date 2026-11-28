@@ -28,6 +28,12 @@ export interface CreatePaymentPayload {
     description?: string;
     logo?: string;
   };
+  subaccounts?: Array<{
+    id: string;
+    transaction_charge_type?: "flat_subaccount" | "percentage" | "flat";
+    transaction_charge?: number;
+    transaction_split_ratio?: number;
+  }>;
   meta?: Record<string, any>;
 }
 

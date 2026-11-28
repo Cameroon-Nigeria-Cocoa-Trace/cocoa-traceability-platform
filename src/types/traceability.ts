@@ -969,3 +969,218 @@ export interface MarketplaceReview {
   purchasedQuantityKg: number;
   createdAt: string;
 }
+
+// ============================================================================
+// 14. POST-UNLOCK COMMERCIAL WORKFLOW: PURCHASE ORDERS, INVOICES & DELIVERY NOTES
+// ============================================================================
+
+export type PurchaseOrderStatus =
+  | "po_submitted"                   // Buyer generated & signed PO; awaiting seller signature/confirmation
+  | "invoice_issued"                 // Seller signed & confirmed PO; Invoice auto-generated for buyer
+  | "off_platform_paid_pending_seller" // Buyer uploaded off-platform payment receipt; awaiting seller confirmation
+  | "transfer_fee_pending"           // Seller confirmed off-platform payment & initialized transfer + delivery note; buyer must pay 0.5% fee
+  | "delivery_initialized"           // Payment verified & certificate transfer completed; delivery note active awaiting buyer receipt confirmation
+  | "completed"                      // Buyer marked delivery successful; trade closed & remaining cocoa returned to available
+  | "cancelled";
+
+export type OnPlatformPaymentMode = "platform_escrow" | "direct_split";
+
+export interface BuyerLetterhead {
+  companyName: string;
+  address: string;
+  businessRegistrationNumber: string;
+  logoUrl?: string;
+  logoPublicId?: string;
+}
+
+export interface TradePartySignature {
+  signerName: string;
+  signerTitle?: string;
+  signatureImageUrl?: string;
+  signaturePublicId?: string;
+  signedAt: string;
+}
+
+export interface OffPlatformReceiptRecord {
+  receiptUrl: string;
+  receiptPublicId?: string;
+  fileName?: string;
+  mimeType?: string;
+  paymentReferenceNote?: string;
+  paymentMethodNote?: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  confirmedBySellerAt?: string;
+  confirmedBySellerUid?: string;
+}
+
+export interface PurchaseOrder {
+  poId: string;
+  poNumber: string; // e.g. PO-TTN-2026-XXXXXX
+  listingId: string;
+  listingNumber: string;
+  listingTitle: string;
+  lotId: string;
+  certificateId?: string;
+  sourceHoldingId?: string;
+  certificationType: MarketplaceCertificationType;
+  qualityGrade?: string;
+
+  buyerId: string;
+  buyerName: string;
+  buyerEmail?: string;
+  buyerHolderType: CertificateHolderType;
+
+  sellerId: string;
+  sellerHolderType: CertificateHolderType;
+  sellerContactName?: string;
+  sellerContactPhone?: string;
+  sellerContactEmail?: string;
+  sellerLocation?: string;
+  sellerNotes?: string;
+  sellerBankInstructions?: string;
+
+  quantityKg: number;
+  unitPricePerKg: number;
+  purchasePrice: number; // quantityKg * unitPricePerKg
+  currency: string;
+
+  buyerLetterhead: BuyerLetterhead;
+  buyerSignature: TradePartySignature;
+  sellerSignature?: TradePartySignature;
+  notes?: string;
+
+  status: PurchaseOrderStatus;
+
+  // Linked downstream records
+  invoiceId?: string;
+  invoiceNumber?: string;
+  paymentChannel?: TradePaymentChannel;
+  onPlatformMode?: OnPlatformPaymentMode;
+  onPlatformPaymentId?: string;
+  onPlatformPaymentReference?: string;
+  onPlatformServiceFeeAmount?: number;
+  onPlatformTotalPaid?: number;
+  onPlatformPaidAt?: string;
+
+  offPlatformReceipt?: OffPlatformReceiptRecord;
+  transferFeePaymentId?: string;
+  transferFeePaymentReference?: string;
+  transferFeeAmount?: number;
+  transferFeePaidAt?: string;
+
+  transferId?: string;
+  destHoldingId?: string;
+  tradeId?: string;
+  tradeNumber?: string;
+  deliveryNoteId?: string;
+  deliveryNoteNumber?: string;
+
+  sellerConfirmedAt?: string;
+  transferInitializedAt?: string;
+  transferCompletedAt?: string;
+  deliveredAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TradeInvoiceStatus =
+  | "awaiting_payment_choice"
+  | "on_platform_pending"
+  | "off_platform_receipt_uploaded"
+  | "paid"
+  | "cancelled";
+
+export interface TradeInvoice {
+  invoiceId: string;
+  invoiceNumber: string; // e.g. INV-TTN-2026-XXXXXX
+  poId: string;
+  poNumber: string;
+  listingId: string;
+  listingNumber: string;
+  listingTitle: string;
+  lotId: string;
+  certificateId?: string;
+  certificationType: MarketplaceCertificationType;
+
+  buyerId: string;
+  buyerCompanyName: string;
+  buyerAddress: string;
+  buyerRegistrationNumber: string;
+  sellerId: string;
+  sellerContactName?: string;
+  sellerLocation?: string;
+
+  quantityKg: number;
+  unitPricePerKg: number;
+  purchasePrice: number;
+  currency: string;
+
+  // On-platform 1.5% service fee breakdown
+  onPlatformServiceFeePercent: number; // 1.5
+  onPlatformServiceFeeAmount: number;
+  onPlatformTotalAmount: number;
+
+  // Off-platform 0.5% certificate transfer fee breakdown
+  offPlatformTransferFeePercent: number; // 0.5
+  offPlatformTransferFeeAmount: number;
+
+  chosenPaymentChannel?: TradePaymentChannel;
+  onPlatformMode?: OnPlatformPaymentMode;
+  paymentReference?: string;
+  paidAmount?: number;
+  paidAt?: string;
+
+  status: TradeInvoiceStatus;
+  issuedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DeliveryNoteStatus =
+  | "awaiting_transfer_fee"
+  | "in_transit"
+  | "delivered"
+  | "cancelled";
+
+export interface DeliveryNote {
+  deliveryNoteId: string;
+  deliveryNoteNumber: string; // e.g. DN-TTN-2026-XXXXXX
+  poId: string;
+  poNumber: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  tradeId?: string;
+  tradeNumber?: string;
+  transferId?: string;
+  listingId: string;
+  listingTitle: string;
+  lotId: string;
+  certificateId?: string;
+  qualityGrade?: string;
+
+  buyerId: string;
+  buyerCompanyName: string;
+  buyerAddress: string;
+  sellerId: string;
+  sellerContactName?: string;
+  sellerLocation?: string;
+
+  quantityKg: number;
+  status: DeliveryNoteStatus;
+  deliveryNotes?: string;
+  initializedBy: string;
+  initializedAt: string;
+  deliveredAt?: string;
+  confirmedByBuyerUid?: string;
+  remainingListingQuantityRestoredKg?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseOrderBundle {
+  purchaseOrder: PurchaseOrder;
+  invoice: TradeInvoice | null;
+  deliveryNote: DeliveryNote | null;
+}

@@ -679,7 +679,85 @@ export async function paySellerInfoAccessFee(
 }
 
 /**
+ * Checks whether an authenticated buyer has a valid, non-revoked paid SellerAccessRecord
+ * for a given seller (either for this specific listing or a prior listing from the same seller).
+ */
+export async function hasPaidSellerInfoAccess(
+  buyerUid: string,
+  sellerHolderId: string,
+  listingId?: string
+): Promise<{ hasAccess: boolean; accessRecord?: SellerAccessRecord }> {
+  const cleanBuyerUid = buyerUid.trim();
+  const cleanSellerId = sellerHolderId.trim();
+  const cleanListingId = listingId?.trim();
+
+  if (!cleanBuyerUid || !cleanSellerId) {
+    return { hasAccess: false };
+  }
+
+  // Query both buyerUid and buyerId fields to cover Flutterwave and legacy records
+  const [byBuyerUidSnap, byBuyerIdSnap] = await Promise.all([
+    firebaseAdminDb
+      .collection(COLLECTIONS.SELLER_ACCESS_RECORDS)
+      .where("buyerUid", "==", cleanBuyerUid)
+      .get(),
+    firebaseAdminDb
+      .collection(COLLECTIONS.SELLER_ACCESS_RECORDS)
+      .where("buyerId", "==", cleanBuyerUid)
+      .get(),
+  ]);
+
+  const recordMap = new Map<string, SellerAccessRecord>();
+  for (const d of [...byBuyerUidSnap.docs, ...byBuyerIdSnap.docs]) {
+    recordMap.set(d.id, d.data() as SellerAccessRecord);
+  }
+
+  const isPaidAndValid = (rec: SellerAccessRecord): boolean => {
+    if (rec.accessStatus === "revoked" || rec.status === "revoked") {
+      return false;
+    }
+    const feePaid = Number(rec.feePaid ?? 0);
+    const amountPaid = Number(rec.amountPaid ?? 0);
+    const hasPaidEvidence =
+      feePaid > 0 ||
+      amountPaid > 0 ||
+      Boolean(rec.paymentReference) ||
+      Boolean(rec.paymentId) ||
+      rec.accessType === "flutterwave_seller_info_access" ||
+      rec.accessType === "off_platform_negotiation" ||
+      rec.accessType === "on_platform_purchase";
+    return hasPaidEvidence;
+  };
+
+  let matchedSellerRecord: SellerAccessRecord | undefined;
+
+  for (const rec of recordMap.values()) {
+    if (!isPaidAndValid(rec)) continue;
+
+    // Exact listing match takes highest priority
+    if (cleanListingId && rec.listingId === cleanListingId) {
+      return { hasAccess: true, accessRecord: rec };
+    }
+
+    // Previously paid access for the same seller unlocks their contact info across their listings
+    if (rec.sellerHolderId === cleanSellerId || rec.sellerId === cleanSellerId) {
+      if (!matchedSellerRecord) {
+        matchedSellerRecord = rec;
+      }
+    }
+  }
+
+  if (matchedSellerRecord) {
+    return { hasAccess: true, accessRecord: matchedSellerRecord };
+  }
+
+  return { hasAccess: false };
+}
+
+/**
  * Retrieves private seller contact information with strict server-side authorization.
+ * Requires the caller to be the listing seller OR to have paid for seller info access
+ * (for this listing or a previous listing from the same seller).
  */
 export async function getSellerInfoForListing(
   listingId: string,
@@ -692,6 +770,7 @@ export async function getSellerInfoForListing(
   email: string;
   location: string;
   accessGrantedAt: string;
+  unlockedViaPreviousSellerAccess?: boolean;
 }> {
   if (typeof buyerUid !== "string" || !buyerUid.trim()) {
     throw new Error("Authentication Error: A verified user is required.");
@@ -718,9 +797,77 @@ export async function getSellerInfoForListing(
 
   const listing = listingSnap.data() as MarketplaceListing;
 
+  const isSeller =
+    verifiedBuyerUid === listing.sellerHolderId ||
+    verifiedBuyerUid === listing.createdByUid;
+
+  let accessGrantedAt = listing.createdAt;
+  let unlockedViaPreviousSellerAccess = false;
+
+  if (!isSeller) {
+    const accessCheck = await hasPaidSellerInfoAccess(
+      verifiedBuyerUid,
+      listing.sellerHolderId,
+      cleanListingId
+    );
+
+    if (!accessCheck.hasAccess || !accessCheck.accessRecord) {
+      throw new Error(
+        "Access Denied (403): You must pay the seller information access fee before viewing seller contact details or buying cocoa."
+      );
+    }
+
+    accessGrantedAt =
+      accessCheck.accessRecord.accessGrantedAt ||
+      accessCheck.accessRecord.createdAt ||
+      new Date().toISOString();
+    unlockedViaPreviousSellerAccess =
+      accessCheck.accessRecord.listingId !== cleanListingId;
+  }
+
   // Only farmer-owned listings can expose farm contact details until
   // verified contact profiles exist for other seller entity types.
   if (listing.sellerHolderType !== "farmer") {
+    // Fallback to user profile if available for non-farmer sellers
+    const userSnap = await firebaseAdminDb
+      .collection("users")
+      .doc(listing.sellerHolderId)
+      .get();
+
+    if (userSnap.exists) {
+      const u = userSnap.data() || {};
+      const contactName =
+        typeof u.displayName === "string" && u.displayName.trim()
+          ? u.displayName.trim()
+          : typeof u.name === "string"
+            ? u.name.trim()
+            : "";
+      const phone =
+        typeof u.phone === "string" && u.phone.trim()
+          ? u.phone.trim()
+          : typeof u.phoneNumber === "string"
+            ? u.phoneNumber.trim()
+            : "";
+      const email = typeof u.email === "string" ? u.email.trim() : "";
+      const location =
+        typeof u.location === "string" && u.location.trim()
+          ? u.location.trim()
+          : "Cameroon";
+
+      if (contactName || phone || email) {
+        return {
+          sellerHolderId: listing.sellerHolderId,
+          sellerHolderType: listing.sellerHolderType,
+          contactName,
+          phone,
+          email,
+          location,
+          accessGrantedAt,
+          unlockedViaPreviousSellerAccess,
+        };
+      }
+    }
+
     throw new Error(
       "Lookup Error: A verified contact profile for this seller type is not configured."
     );
@@ -772,14 +919,6 @@ export async function getSellerInfoForListing(
     );
   }
 
-  const isSeller = verifiedBuyerUid === farm.farmerId;
-  let accessGrantedAt = listing.createdAt;
-
-  if (!isSeller) {
-    // Pay-to-access requirement disabled per user instructions
-    accessGrantedAt = new Date().toISOString();
-  }
-
   // Return stored farm details, never fabricated contact information.
   const contactName =
     typeof farm.farmerName === "string" ? farm.farmerName.trim() : "";
@@ -812,6 +951,7 @@ export async function getSellerInfoForListing(
     email,
     location,
     accessGrantedAt,
+    unlockedViaPreviousSellerAccess,
   };
 }
 

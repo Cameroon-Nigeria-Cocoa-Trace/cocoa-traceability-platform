@@ -97,15 +97,6 @@ export default function MarketplacePage() {
   const [formImageSource, setFormImageSource] = useState<"previous" | "new">("previous");
   const [formNewImageFile, setFormNewImageFile] = useState<File | null>(null);
 
-  // Quick Purchase Modal State
-  const [purchaseListing, setPurchaseListing] = useState<MarketplaceListing | null>(null);
-  const [purchaseQuantityKg, setPurchaseQuantityKg] = useState<number>(0);
-  const [purchaseSelectedQrs, setPurchaseSelectedQrs] = useState<string[]>([]);
-  const [purchaseBuyerType, setPurchaseBuyerType] = useState<CertificateHolderType>("cooperative");
-  const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
-  const [calculatedIntent, setCalculatedIntent] = useState<any | null>(null);
   const [listingReviewStats, setListingReviewStats] = useState<Record<string, { averageRating: number; totalReviews: number }>>({});
 
   // Load Listings
@@ -466,107 +457,7 @@ export default function MarketplacePage() {
     }
   };
 
-  // Open Purchase Modal
-  const openPurchaseModal = async (listing: MarketplaceListing) => {
-    if (listing.listingStatus === "under_negotiation") {
-      return;
-    }
-    setPurchaseListing(listing);
-    setPurchaseError(null);
-    setPurchaseSuccess(null);
-    setCalculatedIntent(null);
-    setPurchaseQuantityKg(listing.quantityAvailableKg);
-    setPurchaseSelectedQrs(listing.currentQrPackageIds || []);
 
-    // Precalculate intent
-    if (user) {
-      try {
-        const intentRes = await apiClient.post<{ success: boolean; intent: any }>(
-          "/api/marketplace/trades/on-platform-purchase",
-          {
-            action: "intent",
-            listingId: listing.listingId,
-            buyerHolderType: purchaseBuyerType,
-            requestedQuantityKg: listing.quantityAvailableKg,
-            selectedQrPackageIds: listing.inventoryMode === "QR_PACKAGES" ? listing.currentQrPackageIds : undefined,
-          }
-        );
-        if (intentRes && intentRes.intent) {
-          setCalculatedIntent(intentRes.intent);
-        }
-      } catch (err) {
-        console.warn("Could not precalculate intent:", err);
-      }
-    }
-  };
-
-  // Execute Purchase
-  const handleExecutePurchase = async () => {
-    if (!purchaseListing) return;
-    if (purchaseListing.listingStatus === "under_negotiation") {
-      setPurchaseError("This cocoa offering is currently under negotiation and cannot be purchased.");
-      return;
-    }
-    setPurchaseSubmitting(true);
-    setPurchaseError(null);
-
-    try {
-      // 1. Get Purchase Intent
-      const intentRes = await apiClient.post<{ success: boolean; intent: any }>(
-        "/api/marketplace/trades/on-platform-purchase",
-        {
-          action: "intent",
-          listingId: purchaseListing.listingId,
-          buyerHolderType: purchaseBuyerType,
-          requestedQuantityKg: purchaseQuantityKg,
-          selectedQrPackageIds:
-            purchaseListing.inventoryMode === "QR_PACKAGES" ? purchaseSelectedQrs : undefined,
-        }
-      );
-
-      if (!intentRes || !intentRes.intent) {
-        throw new Error("Failed to generate purchase intent.");
-      }
-
-      const intent = intentRes.intent;
-
-      // 2. Finalize On-Platform Purchase
-      const finalizeRes = await apiClient.post<{ success: boolean; trade: any; destHolding?: any }>(
-        "/api/marketplace/trades/on-platform-purchase",
-        {
-          action: "finalize",
-          paymentReference: intent.paymentReference,
-          listingId: purchaseListing.listingId,
-          buyerHolderType: purchaseBuyerType,
-          purchasedQuantityKg: intent.quantityKg,
-          selectedQrPackageIds: intent.selectedQrPackageIds,
-          paymentMethod: "mtn_momo",
-          externalTransactionReference: `MOMO-REF-${Date.now()}`,
-        }
-      );
-
-      if (finalizeRes && finalizeRes.success) {
-        setPurchaseSuccess(
-          `Trade successfully finalized! Trade Number: ${finalizeRes.trade.tradeNumber}`
-        );
-        setTimeout(() => {
-          setPurchaseListing(null);
-          setPurchaseSuccess(null);
-          loadListings();
-        }, 1500);
-      }
-    } catch (err: unknown) {
-      if (err instanceof CocoaApiError) {
-        setPurchaseError(err.message);
-      } else if (err instanceof Error) {
-        setPurchaseError(err.message);
-      } else {
-        setPurchaseError("Purchase finalization failed.");
-      }
-    } finally {
-      setPurchaseSubmitting(false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#f7f8f3] text-[#10251d]">
@@ -929,43 +820,33 @@ export default function MarketplacePage() {
                       </strong>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-2">
+                      {!isSold && !isOwner && (
+                        isUnderNegotiation ? (
+                          <button
+                            type="button"
+                            disabled
+                            title="This cocoa offering is currently under negotiation and cannot be purchased."
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-full py-2.5 px-4 text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 opacity-80 cursor-not-allowed whitespace-nowrap"
+                          >
+                            <Lock size={12} /> Under Negotiation
+                          </button>
+                        ) : (
+                          <Link
+                            href={`/product/${item.listingId}?flow=buy`}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] py-2.5 px-4 text-xs font-bold text-white transition hover:bg-[#144737] shadow-sm whitespace-nowrap"
+                          >
+                            See Seller Info &amp; Buy Cocoa
+                          </Link>
+                        )
+                      )}
+
                       <Link
                         href={`/product/${item.listingId}`}
-                        className="flex-1 inline-flex items-center justify-center rounded-full border border-[#dfe7d8] bg-white py-2 text-xs font-bold text-[#10251d] transition hover:bg-[#edf2ea]"
+                        className="w-full inline-flex items-center justify-center rounded-full border border-[#dfe7d8] bg-white py-2 px-4 text-xs font-bold text-[#10251d] transition hover:bg-[#edf2ea] whitespace-nowrap"
                       >
                         Details &amp; Trace
                       </Link>
-
-                      {!isSold && !isOwner && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isUnderNegotiation) {
-                              openPurchaseModal(item);
-                            }
-                          }}
-                          disabled={isUnderNegotiation}
-                          title={
-                            isUnderNegotiation
-                              ? "This cocoa offering is currently under negotiation and cannot be purchased."
-                              : "Buy Cocoa"
-                          }
-                          className={`flex-1 inline-flex items-center justify-center rounded-full py-2 text-xs font-bold transition ${
-                            isUnderNegotiation
-                              ? "bg-amber-100 text-amber-800 border border-amber-300 opacity-80 cursor-not-allowed shadow-none"
-                              : "bg-[#0b3528] text-white hover:bg-[#144737] shadow-sm cursor-pointer"
-                          }`}
-                        >
-                          {isUnderNegotiation ? (
-                            <span className="flex items-center gap-1">
-                              <Lock size={12} /> Under Negotiation
-                            </span>
-                          ) : (
-                            "Buy Cocoa"
-                          )}
-                        </button>
-                      )}
                     </div>
                   </div>
                 </article>
@@ -1445,228 +1326,6 @@ export default function MarketplacePage() {
           </div>
         )}
 
-        {/* Modal: Quick Purchase / Buy Cocoa */}
-        {purchaseListing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
-            <div className="relative my-8 w-full max-w-xl rounded-[32px] border border-[#dfe7d8] bg-white p-6 shadow-2xl">
-              <button
-                type="button"
-                onClick={() => setPurchaseListing(null)}
-                className="absolute right-5 top-5 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-              >
-                <X size={18} />
-              </button>
-
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#2d6130]">
-                <CreditCard size={14} /> Commercial Purchase
-              </div>
-              <h2 className="mt-1 text-2xl font-bold text-[#10251d]">Purchase Cocoa Offering</h2>
-              <p className="mt-1 text-xs text-[#57655d]">
-                Execute real on-platform trade execution with automated platform fees and atomic
-                certificate transfer.
-              </p>
-
-              {purchaseListing.listingStatus === "under_negotiation" && (
-                <div className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs text-amber-800 border border-amber-300 flex items-start gap-2">
-                  <Lock size={15} className="shrink-0 mt-0.5 text-amber-600" />
-                  <span>This cocoa offering is currently under negotiation. Purchases are temporarily locked.</span>
-                </div>
-              )}
-
-              {purchaseError && (
-                <div className="mt-4 rounded-2xl bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2 border border-red-200">
-                  <AlertCircle size={15} className="shrink-0 mt-0.5" />
-                  <span>{purchaseError}</span>
-                </div>
-              )}
-
-              {purchaseSuccess && (
-                <div className="mt-4 rounded-2xl bg-green-50 p-3 text-xs text-green-700 flex items-start gap-2 border border-green-200">
-                  <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
-                  <span>{purchaseSuccess}</span>
-                </div>
-              )}
-
-              <div className="mt-5 space-y-4 text-xs">
-                {/* Offering Summary */}
-                <div className="rounded-2xl border border-[#dfe7d8] bg-[#f8f9f3] p-4">
-                  <h3 className="font-bold text-sm text-[#10251d]">{purchaseListing.title}</h3>
-                  <div className="mt-1 text-gray-500 font-mono text-[11px]">
-                    Listing: {purchaseListing.listingNumber} • Status: {purchaseListing.listingStatus}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-gray-500">Unit Price:</span>{" "}
-                      <strong className="text-[#10251d]">
-                        {(Number(purchaseListing.pricePerKg) || 0).toLocaleString()} {purchaseListing.currency} / kg
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Available:</span>{" "}
-                      <strong className="text-[#10251d]">
-                        {(Number(purchaseListing.quantityAvailableKg) || 0).toLocaleString()} kg
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Assessed Quality Grade Details for Selected Lot */}
-                <div className="rounded-2xl border border-[#dfe7d8] bg-white p-4">
-                  <div className="flex items-center justify-between pb-2 border-b border-[#edf1ea]">
-                    <div className="flex items-center gap-2">
-                      <Award size={18} className="text-[#2d6130]" />
-                      <div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#2d6130] block">
-                          Assessed Quality Grade
-                        </span>
-                        <strong className="text-sm font-extrabold text-[#10251d]">
-                          {getCocoaGradeSpec(purchaseListing.qualityGrade).title}
-                        </strong>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSelectedGradeForModal(
-                          purchaseListing.qualityGrade || "Grade 1"
-                        )
-                      }
-                      className="inline-flex items-center gap-1 rounded-full bg-[#edf7e8] px-2.5 py-1 text-[11px] font-bold text-[#2d6130] hover:bg-[#d8f0d0] transition cursor-pointer"
-                    >
-                      <Info size={12} /> Full Guide
-                    </button>
-                  </div>
-
-                  <p className="mt-2 text-[11px] text-[#57655d] leading-relaxed">
-                    {getCocoaGradeSpec(purchaseListing.qualityGrade).tagline}
-                  </p>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                    {getCocoaGradeSpec(purchaseListing.qualityGrade).criteria.map(
-                      (c, i) => (
-                        <div
-                          key={i}
-                          className="rounded-xl border border-[#edf1ea] bg-[#fafcf9] p-2"
-                        >
-                          <strong className="block text-[#10251d] text-[10px] uppercase font-bold">
-                            {c.label}
-                          </strong>
-                          <span className="text-[#47544d] text-[10px] leading-snug block mt-0.5">
-                            {c.value}
-                          </span>
-                        </div>
-                      )
-                    )}
-                  </div>
-
-                  {getCocoaGradeSpec(purchaseListing.qualityGrade).actionNote && (
-                    <div className="mt-2.5 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[10px] text-amber-900 leading-tight">
-                      {getCocoaGradeSpec(purchaseListing.qualityGrade).actionNote}
-                    </div>
-                  )}
-                </div>
-
-                {/* Buyer Entity Role */}
-                <div>
-                  <label className="block font-semibold text-[#10251d] mb-1">Your Buyer Entity Role</label>
-                  <select
-                    value={purchaseBuyerType}
-                    onChange={(e) => setPurchaseBuyerType(e.target.value as CertificateHolderType)}
-                    className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                  >
-                    <option value="cooperative">Cooperative Society</option>
-                    <option value="agent">Licensed Buying Agent</option>
-                    <option value="warehouse">Licensed Export Warehouse</option>
-                  </select>
-                </div>
-
-                {/* Quantity Input if Bulk / Uncertified */}
-                {purchaseListing.inventoryMode !== "QR_PACKAGES" ? (
-                  <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">
-                      Purchase Quantity (kg)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={purchaseListing.quantityAvailableKg}
-                      value={purchaseQuantityKg || ""}
-                      onChange={(e) => setPurchaseQuantityKg(Number(e.target.value))}
-                      className="w-full rounded-2xl border border-[#dfe7d8] bg-[#f7f8f3] p-2.5 outline-none font-medium"
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block font-semibold text-[#10251d] mb-1">
-                      Discrete Packages ({purchaseListing.currentQrPackageIds?.length || 0} available)
-                    </label>
-                    <div className="rounded-xl border border-[#dfe7d8] bg-[#f8f9f3] p-3 text-gray-600">
-                      Purchasing all {purchaseListing.currentQrPackageIds?.length} active packages (
-                      {purchaseListing.quantityAvailableKg} kg).
-                    </div>
-                  </div>
-                )}
-
-                {/* Financial Summary */}
-                <div className="rounded-2xl bg-[#edf7e8] border border-[#cdebc2] p-4 space-y-1.5 text-xs text-[#10251d]">
-                  <div className="flex justify-between">
-                    <span>Base Trade Value:</span>
-                    <span>
-                      {((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0)).toLocaleString()}{" "}
-                      {purchaseListing.currency}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>Platform Service Fee:</span>
-                    <span>
-                      {Math.round((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0) * 0.02).toLocaleString()}{" "}
-                      {purchaseListing.currency}
-                    </span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-[#c6e6bb] font-bold text-sm">
-                    <span>Total Amount Payable:</span>
-                    <span>
-                      {Math.round((Number(purchaseQuantityKg) || 0) * (Number(purchaseListing.pricePerKg) || 0) * 1.02).toLocaleString()}{" "}
-                      {purchaseListing.currency}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Execute Button */}
-                <div className="mt-5 flex items-center justify-end gap-3 pt-3 border-t border-[#edf1ea]">
-                  <button
-                    type="button"
-                    onClick={() => setPurchaseListing(null)}
-                    className="rounded-full px-5 py-2 font-bold text-gray-500 hover:bg-gray-100"
-                  >
-                    Cancel
-                  </button>
-                  {!user ? (
-                    <Link
-                      href={`/login?redirect=${encodeURIComponent(`/marketplace`)}`}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737]"
-                    >
-                      Sign In to Complete Trade
-                    </Link>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleExecutePurchase}
-                      disabled={purchaseSubmitting || purchaseListing.listingStatus === "under_negotiation"}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b3528] px-6 py-2.5 font-bold text-white shadow-sm hover:bg-[#144737] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                      {purchaseSubmitting
-                        ? "Finalizing Transaction..."
-                        : purchaseListing.listingStatus === "under_negotiation"
-                        ? "Under Negotiation"
-                        : "Confirm & Execute Trade"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         {/* Marketplace Info & Guide Modal */}
         {showInfoModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">

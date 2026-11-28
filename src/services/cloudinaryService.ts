@@ -240,3 +240,69 @@ export async function uploadTraceabilityAsset(
     uploadStream.end(buffer);
   });
 }
+
+export const ALLOWED_TRADE_DOCUMENT_MIME_TYPES = [
+  ...ALLOWED_IMAGE_MIME_TYPES,
+  "application/pdf",
+];
+
+/**
+ * Validates and uploads a trade document asset (letterhead logo, signature image, or payment receipt PDF/image).
+ */
+export async function uploadTradeDocumentAsset(
+  buffer: Buffer,
+  options?: UploadImageOptions
+): Promise<CloudinaryImageReference> {
+  if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new Error("Document Validation Error: A non-empty file is required.");
+  }
+  if (buffer.length > MAX_IMAGE_SIZE_BYTES) {
+    throw new Error("Document Validation Error: File exceeds the 10 MB maximum size.");
+  }
+
+  const normalizedMime = options?.mimeType?.toLowerCase().trim();
+  if (normalizedMime && !ALLOWED_TRADE_DOCUMENT_MIME_TYPES.includes(normalizedMime)) {
+    throw new Error(
+      `Document Validation Error: Unsupported format "${options?.mimeType}". Allowed: PNG, JPEG, WEBP, or PDF.`
+    );
+  }
+
+  initializeCloudinary();
+  const folder = options?.folder || CLOUDINARY_FOLDERS.DOCUMENTS;
+  const isPdf = normalizedMime === "application/pdf";
+
+  return new Promise((resolve, reject) => {
+    const tags = options?.tags ? [...options.tags] : ["trade-document", "traceability"];
+    if (options?.uploaderId) {
+      tags.push(`uploader:${options.uploaderId}`);
+    }
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: isPdf ? "raw" : "image",
+        public_id: options?.customPublicId,
+        tags,
+        context: options?.uploaderId ? { uploadedBy: options.uploaderId } : undefined,
+      },
+      (error, result) => {
+        if (error || !result) {
+          return reject(
+            new Error(
+              `Cloudinary Document Upload Failed: ${error?.message || "Failed to upload document."}`
+            )
+          );
+        }
+
+        try {
+          resolve(mapCloudinaryResponseToReference(result));
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+
+    uploadStream.end(buffer);
+  });
+}
+

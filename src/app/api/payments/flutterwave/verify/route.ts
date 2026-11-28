@@ -1,7 +1,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/authServer";
+import { firebaseAdminDb } from "@/lib/firebaseAdmin";
 import { verifyAndFinalizeSellerInfoAccessPayment } from "@/services/flutterwavePaymentService";
+import {
+  verifyAndFinalizeOnPlatformInvoicePayment,
+  verifyAndFinalizeOffPlatformTransferFeePayment,
+} from "@/services/purchaseOrderService";
 
 async function handleVerification(
   req: NextRequest,
@@ -18,8 +23,65 @@ async function handleVerification(
       );
     }
 
+    const cleanRef = paymentReference.trim();
+
+    // Check paymentPurpose on the stored payment document to route verification accurately
+    const paymentSnap = await firebaseAdminDb.collection("payments").doc(cleanRef).get();
+    const paymentPurpose = paymentSnap.exists
+      ? String(paymentSnap.data()?.paymentPurpose || "SELLER_INFORMATION_ACCESS")
+      : "SELLER_INFORMATION_ACCESS";
+
+    if (paymentPurpose === "TRADE_INVOICE_ON_PLATFORM") {
+      const result = await verifyAndFinalizeOnPlatformInvoicePayment(cleanRef, user.userId);
+      const payment = result.paymentRecord;
+      return NextResponse.json({
+        success: result.success,
+        paymentPurpose,
+        paymentStatus: result.paymentStatus,
+        statusReason: result.statusReason,
+        poId: result.poId,
+        invoiceNumber: result.invoiceNumber,
+        deliveryNoteNumber: result.deliveryNoteNumber,
+        paymentRecord: payment
+          ? {
+              paymentReference: payment.paymentReference,
+              paymentId: payment.paymentId,
+              listingId: payment.listingId,
+              amountCharged: payment.amountCharged,
+              amount: payment.amount,
+              currency: payment.currency,
+              paymentStatus: payment.paymentStatus,
+            }
+          : undefined,
+      });
+    }
+
+    if (paymentPurpose === "OFF_PLATFORM_TRANSFER_FEE") {
+      const result = await verifyAndFinalizeOffPlatformTransferFeePayment(cleanRef, user.userId);
+      const payment = result.paymentRecord;
+      return NextResponse.json({
+        success: result.success,
+        paymentPurpose,
+        paymentStatus: result.paymentStatus,
+        statusReason: result.statusReason,
+        poId: result.poId,
+        deliveryNoteNumber: result.deliveryNoteNumber,
+        paymentRecord: payment
+          ? {
+              paymentReference: payment.paymentReference,
+              paymentId: payment.paymentId,
+              listingId: payment.listingId,
+              amountCharged: payment.amountCharged,
+              amount: payment.amount,
+              currency: payment.currency,
+              paymentStatus: payment.paymentStatus,
+            }
+          : undefined,
+      });
+    }
+
     const result = await verifyAndFinalizeSellerInfoAccessPayment(
-      paymentReference.trim(),
+      cleanRef,
       user.userId
     );
 
@@ -30,6 +92,7 @@ async function handleVerification(
 
     return NextResponse.json({
       success: result.success,
+      paymentPurpose: "SELLER_INFORMATION_ACCESS",
       paymentStatus: result.paymentStatus,
       statusReason: result.statusReason,
       paymentRecord: payment
